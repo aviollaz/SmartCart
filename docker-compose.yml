@@ -1,0 +1,15 @@
+services:
+  postgres_db:
+    image: pgvector/pgvector:pg16 # Ya viene con la extensión compilada
+    container_name: smartcart_db
+    ports:
+      - "5432:5432"
+    environment:
+      POSTGRES_USER: smartuser
+      POSTGRES_PASSWORD: smartpassword
+      POSTGRES_DB: smartcart
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+
+volumes:
+  postgres_data:
