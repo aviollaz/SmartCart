@@ -16,7 +16,7 @@ class CotoScraper:
             "Sec-Fetch-Site": "cross-site",
             "Sec-GPC": "1"
         }
-        # Agregamos timeout=15.0 para que no muera si Coto tarda en responder
+        # 15s timeout in case website takes long to respond
         self.client = httpx.Client(headers=self.headers, http2=True, timeout=15.0)
         
     def scrape_category(self, category_id: str):
@@ -51,18 +51,16 @@ class CotoScraper:
                 for item in results:
                     prod_data = item.get("data", {})
                     
-                    # Extraccion de precio robusta
                     base_price = 0.0
                     prices_list = prod_data.get("price", [])
                     
-                    # Intentamos buscar el precio de la sucursal digital '200'
+                    # store #200 is the digital store
                     if isinstance(prices_list, list):
                         for p_store in prices_list:
                             if p_store.get("store") == "200":
                                 base_price = float(p_store.get("listPrice", 0))
                                 break
                     
-                    # Si no lo encontramos en la lista de sucursales, usamos el fallback global
                     if base_price == 0.0:
                         base_price = float(prod_data.get("product_list_price", 0))
                     
@@ -92,7 +90,6 @@ class CotoScraper:
         return all_products
 
 if __name__ == "__main__":
-    # 1. Importamos la base de datos (agregá esto arriba de todo o acá adentro)
     import sys
     import os
     sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
@@ -114,7 +111,7 @@ if __name__ == "__main__":
     for cat_id in categorias_mvp:
         productos_recolectados = scraper.scrape_category(cat_id)
         
-        # 3. Guardamos los productos de esta categoría directamente en Postgres
+        # 3. Save to Postgre DB
         if productos_recolectados:
             db.save_store_products(productos_recolectados, "coto_online")
             
