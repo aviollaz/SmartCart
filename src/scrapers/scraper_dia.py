@@ -5,7 +5,6 @@ import random
 import sys
 import os
 
-# Ajuste de ruta para poder importar database.py
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 from database import SmartCartDB
 
@@ -105,7 +104,7 @@ class DiaScraper:
         Página de forma automática iterando los índices 'from' y 'to'
         hasta que VTEX no devuelva más productos.
         """
-        step = 16  # Traemos bloques de 16 productos
+        step = 16  # use a batch of 16
         from_idx = 0
         to_idx = step - 1
         all_category_products = []
@@ -121,10 +120,9 @@ class DiaScraper:
 
             all_category_products.extend(products)
 
-            # Siguiente bloque de productos
             from_idx += step
             to_idx += step
-            time.sleep(random.uniform(1.5, 3.0)) # Delay defensivo anti-bloqueos
+            time.sleep(random.uniform(1.5, 3.0)) # Delay to prevent blocking
 
         return all_category_products
 
@@ -132,7 +130,6 @@ if __name__ == "__main__":
     scraper = DiaScraper()
     db = SmartCartDB()
     
-    # Slugs reales y testeados para el motor de búsqueda de Día
     categorias_dia_mvp = [
         "almacen/harinas/harinas-de-trigo",       # Harina de Trigo (bien específico)
         "frescos/leches",                         # Leche
