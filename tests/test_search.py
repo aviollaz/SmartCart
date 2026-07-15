@@ -1,18 +1,19 @@
+# tests/test_search.py
 import logging
-import sys
 import psycopg
 from psycopg.rows import dict_row
 from sentence_transformers import SentenceTransformer
-from src.database import SmartCartDB
+from src.database import SmartCartDB  # Importación limpia gracias a pytest.ini
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
 logger = logging.getLogger(__name__)
 
-def test_search(query_text: str):
+def test_semantic_search_query():
+    query_text = "Puré de papas"
     logger.info(f"Cargando modelo local...")
     model = SentenceTransformer("all-MiniLM-L6-v2")
     
-    logger.info(f"Generando embedding para la consulta: '{query_text}'...")
+    logger.info(f"Generando embedding para la consulta de prueba: '{query_text}'...")
     emb = model.encode(query_text)
     vector_str = f"[{','.join(map(str, emb))}]"
     
@@ -32,19 +33,14 @@ def test_search(query_text: str):
             
             rows = cur.fetchall()
             
-    if not rows:
-        logger.warning("No se encontraron productos indexados. ¿Corriste el pipeline de embeddings primero?")
-        return
-        
-    logger.info("Resultados de la búsqueda semántica:")
+    # Validación del test de búsqueda
+    assert rows, "La consulta no retornó productos. Verificá si corriste el pipeline de embeddings y tenés datos cargados."
+    
+    logger.info("Resultados de la búsqueda semántica obtenidos exitosamente:")
     print(f"\nResultados para: '{query_text}'")
     print("-" * 80)
     for i, row in enumerate(rows, 1):
         print(f"{i:2d}. Distancia: {row['distance']:.4f} | EAN: {row['ean']} | {row['brand']} - {row['name']} (ID: {row['id']})")
+        # Aseguramos que la distancia coseno se mantenga dentro de un rango matemático válido [0, 2]
+        assert 0.0 <= row['distance'] <= 2.0, "La distancia de coseno calculada no es válida"
     print("-" * 80)
-
-if __name__ == "__main__":
-    query = "Leche Descremada"
-    if len(sys.argv) > 1:
-        query = " ".join(sys.argv[1:])
-    test_search(query)

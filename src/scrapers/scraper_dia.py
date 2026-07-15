@@ -94,7 +94,7 @@ class DiaScraper:
                 "in_stock": True,
                 "is_weighable": False,
                 "unit_type": first_item.get("measurementUnit", "un"),
-                "raw_promos": sellers[0].get("commertialOffer", {}).get("Teasers", []) if sellers else []
+                "raw_promos": sellers[0].get("commertialOffer", {}) if sellers else []
             }
             parsed_products.append(product)
             

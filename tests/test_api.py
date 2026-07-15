@@ -1,6 +1,7 @@
+# tests/test_api.py
 import logging
 from fastapi.testclient import TestClient
-from src.api import app
+from src.api import app  # Importación limpia gracias a pytest.ini
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
 logger = logging.getLogger(__name__)
@@ -52,6 +53,3 @@ def test_fastapi_endpoints():
         assert "available_at_stores" in first_item
 
         logger.info("¡Todas las pruebas del API pasaron con éxito!")
-
-if __name__ == "__main__":
-    test_fastapi_endpoints()
