@@ -5,3 +5,4 @@ pandas
 sentence-transformers
 fastapi
 uvicorn[standard]
+pytest
