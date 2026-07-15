@@ -2,7 +2,7 @@ import httpx
 import json
 
 def get_dia_categories_rest():
-    # API REST pública de taxonomía de VTEX (trae hasta nivel 3 de profundidad)
+    # Public VTEX REST API  
     url = "https://diaonline.supermercadosdia.com.ar/api/catalog_system/pub/category/tree/3"
     
     headers = {
@@ -24,30 +24,27 @@ def get_dia_categories_rest():
                 
             categories_list = response.json()
             
-            # El catálogo viene como un árbol anidado de diccionarios
+            # The catalog is a nested tree
             for level1 in categories_list:
                 l1_name = level1.get("name", "")
                 
-                # Nivel 2 (Subcategorías como 'Almacén', 'Frescos', etc.)
+                # Level 2
                 children_l2 = level1.get("children", []) or []
                 for level2 in children_l2:
                     l2_name = level2.get("name", "")
                     
-                    # Nivel 3 (Productos específicos como 'Leches', 'Harinas')
+                    # Level 3
                     children_l3 = level2.get("children", []) or []
                     for level3 in children_l3:
                         l3_name = level3.get("name", "")
                         url_completa = level3.get("url", "")
                         
                         if url_completa:
-                            # Extraemos el slug relativo de la URL (ej: https://.../almacen/harinas -> almacen/harinas)
-                            # Quitamos el dominio y nos quedamos con el path limpio
                             slug_match = url_completa.replace("https://diaonline.supermercadosdia.com.ar/", "").strip("/")
                             
                             if slug_match:
                                 categories_map[slug_match] = f"{l1_name} -> {l2_name} -> {l3_name}"
                                 
-                    # También guardamos el nivel 2 por si alguna góndola no tiene nivel 3
                     url_l2 = level2.get("url", "")
                     if url_l2:
                         slug_l2 = url_l2.replace("https://diaonline.supermercadosdia.com.ar/", "").strip("/")
