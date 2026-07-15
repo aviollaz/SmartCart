@@ -12,7 +12,7 @@ def get_coto_categories_map():
         "Connection": "keep-alive"
     }
     
-    # Espejamos las cookies que te dieron acceso en Firefox
+    # Mirror the firefox cookies
     cookies = {
         "JSESSIONID": "Kfo9ARJWbLz5hUFiTTAvSpDPv29vMNBUC7CP-bBBZFOCwJOlERyD!464085810",
         "cookiesession1": "678A3E1E667EF3DEC24384F3219D4055"
@@ -36,7 +36,7 @@ def get_coto_categories_map():
                 top_level = item.get("topLevelCategory", {})
                 top_name = top_level.get("displayName", "")
                 
-                # Ignoramos categorías que no tengan que ver con supermercado puro (Electro, Textil, Hogar)
+                # Ignore non grocery categories
                 if top_name in ["Electro", "Textil y Calzado", "Hogar y Bazar", "Aire Libre y Automotor"]:
                     continue
                     
@@ -49,7 +49,7 @@ def get_coto_categories_map():
                         cat_name = sub2.get("displayName")
                         
                         if cat_id and cat_name:
-                            # Guardamos la relación amigable: código -> Nombre descriptivo
+                            # Save the category name in a readable format
                             categories_map[cat_id] = f"{top_name} -> {sub1.get('displayName')} -> {cat_name}"
                             
         return categories_map
@@ -64,7 +64,7 @@ if __name__ == "__main__":
     if menu_mapeado:
         print(f"\n[ÉXITO] Se encontraron {len(menu_mapeado)} subcategorías finales de supermercado.")
         
-        # Guardamos el mapa en un archivo local para que el scraper de productos lo consuma cuando quiera
+        # Save file
         with open("src/scrapers/coto_categories.json", "w", encoding="utf-8") as f:
             json.dump(menu_mapeado, f, indent=2, ensure_ascii=False)
         print("[INFO] Archivo 'src/scrapers/coto_categories.json' generado con éxito.")
