@@ -64,3 +64,31 @@ class SmartCartDB:
             print("[DB] Guardado exitoso.")
         except Exception as e:
             print(f"[DB] Error: {e}")
+    
+    def get_market_prices_for_cart(self, unified_ids: list) -> list:
+        """
+        Retorna la información de precios base, stock y promociones estructuradas
+        de todas las tiendas disponibles para una lista de productos unificados.
+        """
+        if not unified_ids:
+            return []
+
+        query = """
+            SELECT 
+                unified_product_id,
+                store_id,
+                base_price,
+                in_stock,
+                promotions_json
+            FROM store_products
+            WHERE unified_product_id = ANY(%s) AND in_stock = TRUE;
+        """
+        
+        try:
+            with psycopg.connect(self.conn_string, row_factory=dict_row) as conn:
+                with conn.cursor() as cur:
+                    cur.execute(query, (unified_ids,))
+                    return cur.fetchall()
+        except Exception as e:
+            print(f"[DB] Error al recuperar precios para el carrito: {e}")
+            return []

@@ -133,8 +133,9 @@ if __name__ == "__main__":
     categorias_dia_mvp = [
         "almacen/harinas/harinas-de-trigo",       # Harina de Trigo (bien específico)
         "frescos/leches",                         # Leche
-        "almacen/aceites-y-aderezos",              # Aceite (Trae aceites de girasol, oliva, blend, etc.)
-        "desayuno/para-untar/dulces-de-leche"     # Dulce de Leche
+        "almacen/aceites-y-aderezos",             # Aceite (Trae aceites de girasol, oliva, blend, etc.)
+        "desayuno/para-untar/dulces-de-leche",    # Dulce de Leche
+        "almacen/golosinas-y-alfajores/alfajores" # Alfajores
     ]
     
     print("\n--- INICIANDO PROCESO GLOBAL SMARTCART (DÍA ONLINE) ---")

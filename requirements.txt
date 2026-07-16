@@ -6,3 +6,4 @@ sentence-transformers
 fastapi
 uvicorn[standard]
 pytest
+ortools

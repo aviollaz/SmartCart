@@ -103,8 +103,9 @@ if __name__ == "__main__":
     # catv00003266 = Leche
     # catv00001413 = Aceite
     # catv00003250 = Dulce de Leche
+    # catv00003596 = Alfajores
 
-    categorias_mvp = ["catv00001412", "catv00003266", "catv00001413", "catv00003250"]
+    categorias_mvp = ["catv00001412", "catv00003266", "catv00001413", "catv00003250", "catv00003596"]
     
     print("\n--- INICIANDO PROCESO GLOBAL SMARTCART ---")
     
