@@ -8,6 +8,7 @@ import psycopg
 from psycopg.rows import dict_row
 from sentence_transformers import SentenceTransformer
 from src.database import SmartCartDB
+from src.optimizer import optimize_cart
 
 # Configuración de Logging
 logging.basicConfig(
@@ -51,6 +52,17 @@ class ProductResponse(BaseModel):
     unit_info: UnitInfo
     distance: float = Field(..., description="Distancia de coseno con respecto a la búsqueda (menor es más similar)")
     available_at_stores: List[StoreOffer] = []
+
+class CartItem(BaseModel):
+    unified_id: str
+    quantity: int
+
+class OptimizationRequest(BaseModel):
+    cart: List[CartItem]
+    user_memberships: Optional[List[str]] = []
+    user_cards: Optional[List[str]] = []
+    # En el futuro la dirección determinará los costos, ahora los pasamos opcionales
+    delivery_costs: Optional[Dict[str, float]] = None
 
 # Estado global para mantener el modelo cargado en memoria
 ml_models = {}
@@ -221,3 +233,35 @@ def search_products(
     except Exception as e:
         logger.error(f"Error interno durante la búsqueda semántica: {e}")
         raise HTTPException(status_code=500, detail=f"Error interno en el servidor: {e}")
+
+@app.post("/optimize")
+def optimize_shopping_cart(request: OptimizationRequest):
+    """
+    Recibe un carrito y devuelve la asignación óptima de supermercados 
+    considerando mínimos de compra, envíos y descuentos bancarios.
+    """
+    logger.info(f"Recibida solicitud de optimización para {len(request.cart)} productos.")
+    
+    try:
+        # Convertimos los objetos Pydantic a lista de dicts para el optimizer
+        cart_data = [item.model_dump() for item in request.cart]
+        
+        result = optimize_cart(
+            cart_items=cart_data,
+            user_memberships=request.user_memberships,
+            user_cards=request.user_cards,
+            delivery_costs=request.delivery_costs
+        )
+        
+        if result["status"] == "infeasible":
+            raise HTTPException(status_code=400, detail=result["message"])
+            
+        return result
+        
+    except Exception as e:
+        logger.error(f"Error en el motor de optimización: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+if __name__ == "__main__":
+    import uvicorn
+    uvicorn.run("src.api:app", host="127.0.0.1", port=8000, reload=True)
