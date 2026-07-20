@@ -43,55 +43,48 @@ Este formato consolidado representa la estructura limpia y corregida que se cons
 
 ```json
 {
-  "unified_id": "prod_7790000000123",
-  "ean": "7790000000123",
-  "name": "Hamburguesa Paty Clásica 4x80g",
-  "brand": "Paty",
-  "category": "congelados_hamburguesas",
+  "unified_id": "prod_7790742348005",
+  "ean": "7790742348005",
+  "name": "Leche Multidefensas 1% LA SERENISIMA Sachet 1l",
+  "brand": "LA SERENISIMA",
+  "category": "Lácteos",
+  "image_url": "https://static.cotodigital3.com.ar/sitios/fotos/large/00539100/00539126.jpg",
+  "min_price": 1975.0,
   "unit_info": {
-    "units_per_pack": 4,
-    "unit_type": "gr",
-    "total_volume_weight": 320.0
+    "units_per_pack": 1,
+    "unit_type": "Ltr",
+    "total_volume_weight": 1.0
   },
-  "embedding": [0.012, -0.045, 0.821, 0.114],
+  "distance": 0.0,
   "available_at_stores": [
     {
       "store_id": "coto_online",
-      "product_url": "https://www.cotodigital3.com.ar/sitios/cdigi/producto?id=123",
-      "base_price": 2500.0,
+      "product_url": "https://www.cotodigital3.com.ar/...",
+      "base_price": 1975.0,
       "in_stock": true,
-      "last_updated": "2026-07-02T14:30:00Z",
+      "last_updated": "2026-07-20T18:30:00Z",
+      "image_url": "https://static.cotodigital3.com.ar/...",
       "promotions": [
         {
-          "promo_id": "coto_paty_3x2",
-          "type": "multi_buy",
-          "description": "Llevando 3 pagás 2",
-          "required_quantity": 3,
-          "free_quantity": 1,
-          "discount_percentage_on_next": 0.0,
-          "requires_membership": null,
-          "valid_until": "2026-07-05T23:59:59Z"
+          "promo_id": "coto_promo_123",
+          "type": "discount",
+          "description": "15% de descuento con Comunidad Coto",
+          "required_quantity": null,
+          "free_quantity": null,
+          "discount_percentage_on_next": 15.0,
+          "requires_membership": "comunidad_coto",
+          "valid_until": null
         }
       ]
     },
     {
       "store_id": "dia_online",
-      "product_url": "https://diaonline.supermercadosdia.com.ar/producto/456",
-      "base_price": 2700.0,
+      "product_url": "https://diaonline.supermercadosdia.com.ar/...",
+      "base_price": 1975.0,
       "in_stock": true,
-      "last_updated": "2026-07-02T15:10:00Z",
-      "promotions": [
-        {
-          "promo_id": "dia_paty_2da_50",
-          "type": "conditional_discount",
-          "description": "50% de descuento en la 2da unidad con Club Día",
-          "required_quantity": 2,
-          "free_quantity": 0,
-          "discount_percentage_on_next": 50.0,
-          "requires_membership": "club_dia",
-          "valid_until": "2026-07-07T23:59:59Z"
-        }
-      ]
+      "last_updated": "2026-07-20T18:31:00Z",
+      "image_url": "https://diaio.vtexassets.com/...",
+      "promotions": []
     }
   ]
 }
