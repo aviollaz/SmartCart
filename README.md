@@ -1,2 +1,2 @@
 # SmartCart
-Program to help you find the best price for each item in your shopping cart
+Calculates the best price for your shopping cart.
