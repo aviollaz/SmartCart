@@ -83,12 +83,33 @@ class DiaScraper:
                 comm_comm = sellers[0].get("commertialOffer", {})
                 price = float(comm_comm.get("Price", 0.0))
 
+            # --- EXTRACCIÓN Y NORMALIZACIÓN DE CATEGORÍA ---
+            raw_categories = p.get("categories", [])
+            category_name = "Sin Categoría"
+            
+            if raw_categories:
+                # VTEX envía rutas como "/Frescos/Leches/Leches descremadas/"
+                # Tomamos la primera ruta, eliminamos las barras de los extremos y separamos por "/"
+                path_parts = [part for part in raw_categories[0].strip("/").split("/") if part]
+                
+                # Intentamos agarrar el segundo nivel (ej: "Leches"), si no existe, agarramos el primero
+                if len(path_parts) >= 2:
+                    category_name = path_parts[1]
+                elif len(path_parts) == 1:
+                    category_name = path_parts[0]
+            # -----------------------------------------------
+
+            images = first_item.get("images", [])
+            image_url = images[0].get("imageUrl") if images else None
+
             product = {
                 "store_sku": p.get("productId"),
                 "ean": first_item.get("ean"),
                 "name": p.get("productName"),
                 "brand": p.get("brand"),
+                "category": category_name,  # <-- Se inyecta la categoría extraída
                 "url": p.get("link"),
+                "image_url": image_url,
                 "base_price": price,
                 "in_stock": True,
                 "is_weighable": False,

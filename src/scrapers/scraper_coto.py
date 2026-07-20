@@ -1,5 +1,4 @@
 import httpx
-import json
 import time
 import random
 
@@ -16,7 +15,6 @@ class CotoScraper:
             "Sec-Fetch-Site": "cross-site",
             "Sec-GPC": "1"
         }
-        # 15s timeout in case website takes long to respond
         self.client = httpx.Client(headers=self.headers, http2=True, timeout=15.0)
         
     def scrape_category(self, category_id: str):
@@ -42,6 +40,15 @@ class CotoScraper:
                     break
                     
                 data = response.json()
+                
+                # --- EXTRACCIÓN DE CATEGORÍA ---
+                # Extraemos el nombre de la categoría del primer grupo disponible
+                category_name = "Sin Categoría"
+                groups = data.get("response", {}).get("groups", [])
+                if groups:
+                    category_name = groups[0].get("display_name", "Sin Categoría")
+                # -------------------------------
+
                 results = data.get("response", {}).get("results", [])
                 
                 if not results:
@@ -54,7 +61,6 @@ class CotoScraper:
                     base_price = 0.0
                     prices_list = prod_data.get("price", [])
                     
-                    # store #200 is the digital store
                     if isinstance(prices_list, list):
                         for p_store in prices_list:
                             if p_store.get("store") == "200":
@@ -64,18 +70,18 @@ class CotoScraper:
                     if base_price == 0.0:
                         base_price = float(prod_data.get("product_list_price", 0))
                     
-                    # ------------------------------------------------
-                    
                     product = {
                         "store_sku": prod_data.get("sku_id"),
                         "ean": str(prod_data.get("product_main_ean")) if prod_data.get("product_main_ean") else None,
                         "name": item.get("value"),
                         "brand": prod_data.get("product_brand"),
+                        "category": category_name,  
                         "url": f"https://www.cotodigital.com.ar{prod_data.get('url')}" if prod_data.get('url') else None,
+                        "image_url": prod_data.get("image_url"),
                         "base_price": base_price,
                         "in_stock": prod_data.get("in_stock", True),
                         "is_weighable": bool(prod_data.get("product_weighable", 0)),
-                        "unit_type": prod_data.get("product_unit_of_measure"), # 'UNI', 'KGS', etc.
+                        "unit_type": prod_data.get("product_unit_of_measure"), 
                         "raw_promos": prod_data.get("discounts", [])
                     }
                     all_products.append(product)
@@ -98,13 +104,6 @@ if __name__ == "__main__":
     scraper = CotoScraper()
     db = SmartCartDB()
     
-    # 2. Filtramos un par de categorías de prueba para nuestro MVP
-    # catv00001412 = Harina de Trigo
-    # catv00003266 = Leche
-    # catv00001413 = Aceite
-    # catv00003250 = Dulce de Leche
-    # catv00003596 = Alfajores
-
     categorias_mvp = ["catv00001412", "catv00003266", "catv00001413", "catv00003250", "catv00003596"]
     
     print("\n--- INICIANDO PROCESO GLOBAL SMARTCART ---")
@@ -112,7 +111,6 @@ if __name__ == "__main__":
     for cat_id in categorias_mvp:
         productos_recolectados = scraper.scrape_category(cat_id)
         
-        # 3. Save to Postgre DB
         if productos_recolectados:
             db.save_store_products(productos_recolectados, "coto_online")
             

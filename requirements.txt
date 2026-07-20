@@ -7,3 +7,4 @@ fastapi
 uvicorn[standard]
 pytest
 ortools
+streamlit

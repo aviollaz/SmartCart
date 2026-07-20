@@ -41,6 +41,7 @@ class StoreOffer(BaseModel):
     base_price: float = Field(..., example=2500.0)
     in_stock: bool = Field(..., example=True)
     last_updated: Optional[str] = None
+    image_url: Optional[str] = None
     promotions: List[StorePromotion] = []
 
 class ProductResponse(BaseModel):
@@ -49,6 +50,8 @@ class ProductResponse(BaseModel):
     name: str = Field(..., example="Hamburguesa Paty Clásica")
     brand: Optional[str] = Field(None, example="Paty")
     category: Optional[str] = Field(None, example="congelados_hamburguesas")
+    image_url: Optional[str] = None
+    min_price: Optional[float] = None
     unit_info: UnitInfo
     distance: float = Field(..., description="Distancia de coseno con respecto a la búsqueda (menor es más similar)")
     available_at_stores: List[StoreOffer] = []
@@ -252,14 +255,134 @@ def optimize_shopping_cart(request: OptimizationRequest):
             user_cards=request.user_cards,
             delivery_costs=request.delivery_costs
         )
-        
-        if result["status"] == "infeasible":
-            raise HTTPException(status_code=400, detail=result["message"])
-            
-        return result
-        
     except Exception as e:
+        # Solo capturamos errores reales de código matemático o de servidor
         logger.error(f"Error en el motor de optimización: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+    # FUERA del try/except: Manejo de reglas de negocio (mínimos no alcanzados)
+    if result.get("status") == "infeasible":
+        msg = result.get("message", "El carrito no alcanza los montos mínimos requeridos por las tiendas ($15.000 Coto / $12.000 Día). Agregá más productos.")
+        raise HTTPException(status_code=400, detail=msg)
+        
+    return result
+
+@app.get("/categories")
+def get_categories():
+    """Devuelve una lista de todas las categorías únicas en la base de datos."""
+    try:
+        db = SmartCartDB()
+        with psycopg.connect(db.conn_string) as conn:
+            with conn.cursor() as cur:
+                cur.execute("SELECT DISTINCT category FROM unified_products WHERE category IS NOT NULL ORDER BY category")
+                return [row[0] for row in cur.fetchall()]
+    except Exception as e:
+        logger.error(f"Error obteniendo categorías: {e}")
+        return []
+
+@app.get("/category/{category_name}", response_model=List[ProductResponse])
+def get_products_by_category(category_name: str, limit: int = 50):
+    """Devuelve productos filtrados por una categoría exacta."""
+    try:
+        db = SmartCartDB()
+        with psycopg.connect(db.conn_string, row_factory=dict_row) as conn:
+            with conn.cursor() as cur:
+                cur.execute("""
+                    SELECT id, ean, name, brand, category, units_per_pack, unit_type, total_volume_weight,
+                           0.0 AS distance
+                    FROM unified_products
+                    WHERE category = %s
+                    LIMIT %s
+                """, (category_name, limit))
+                nearest_products = cur.fetchall()
+
+                if not nearest_products:
+                    return []
+
+                product_ids = [p["id"] for p in nearest_products]
+                
+                # LA CLAVE ESTÁ ACÁ: Nos aseguramos de que 'image_url' esté en el SELECT
+                cur.execute("""
+                    SELECT unified_product_id, store_id, product_url, base_price, in_stock, promotions_json, image_url, last_updated
+                    FROM store_products
+                    WHERE unified_product_id = ANY(%s)
+                """, (product_ids,))
+                store_products = cur.fetchall()
+
+        offers_by_product = {}
+        for sp in store_products:
+            prod_id = sp["unified_product_id"]
+            if prod_id not in offers_by_product:
+                offers_by_product[prod_id] = []
+            
+            promotions = []
+            if sp["promotions_json"]:
+                raw_promos = sp["promotions_json"]
+                if isinstance(raw_promos, str):
+                    import json
+                    try: raw_promos = json.loads(raw_promos)
+                    except: raw_promos = []
+                
+                if isinstance(raw_promos, list):
+                    for rp in raw_promos:
+                        promotions.append({
+                            "promo_id": rp.get("promo_id") or rp.get("id"),
+                            "type": rp.get("type") or rp.get("promo_type"),
+                            "description": rp.get("description") or rp.get("name"),
+                            "required_quantity": rp.get("required_quantity"),
+                            "free_quantity": rp.get("free_quantity"),
+                            "discount_percentage_on_next": rp.get("discount_percentage_on_next") or rp.get("discount"),
+                            "requires_membership": rp.get("requires_membership"),
+                            "valid_until": rp.get("valid_until")
+                        })
+            
+            offers_by_product[prod_id].append({
+                "store_id": sp["store_id"],
+                "product_url": sp["product_url"],
+                "base_price": float(sp["base_price"]) if sp["base_price"] is not None else 0.0,
+                "in_stock": bool(sp["in_stock"]),
+                "last_updated": sp["last_updated"].isoformat() if sp["last_updated"] else None,
+                "image_url": sp.get("image_url"), # Extracción segura de la base de datos
+                "promotions": promotions
+            })
+
+        results = []
+        for p in nearest_products:
+            prod_id = p["id"]
+            offers = offers_by_product.get(prod_id, [])
+            
+            # --- CALCULAR PRECIO MÍNIMO ---
+            min_price = min([o["base_price"] for o in offers if o["base_price"] > 0], default=0.0)
+            
+            # --- PRIORIZAR IMAGEN DE COTO ---
+            best_image = None
+            coto_offer = next((o for o in offers if o["store_id"] == "coto_online" and o.get("image_url")), None)
+            dia_offer = next((o for o in offers if o["store_id"] == "dia_online" and o.get("image_url")), None)
+            
+            if coto_offer:
+                best_image = coto_offer["image_url"]
+            elif dia_offer:
+                best_image = dia_offer["image_url"]
+
+            results.append({
+                "unified_id": prod_id,
+                "ean": p["ean"],
+                "name": p["name"],
+                "brand": p["brand"],
+                "category": p["category"],
+                "min_price": min_price,       
+                "image_url": best_image,      
+                "unit_info": {
+                    "units_per_pack": p["units_per_pack"],
+                    "unit_type": p["unit_type"],
+                    "total_volume_weight": float(p["total_volume_weight"]) if p["total_volume_weight"] is not None else None
+                },
+                "distance": 0.0,
+                "available_at_stores": offers
+            })
+        return results
+    except Exception as e:
+        logger.error(f"Error en búsqueda por categoría: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
 if __name__ == "__main__":

@@ -5,6 +5,19 @@ import json
 from src.promotion_parser import PromoTransformer
 
 class SmartCartDB:
+    # Diccionario de normalización (Mapea categorías crudas de los supers a las tuyas maestras)
+    CATEGORY_MAP = {
+        "Leches": "Lácteos",
+        "Lácteos y Frescos": "Lácteos",
+        "Quesos": "Lácteos",
+        "Dulce de Leche": "Lácteos",
+        "Alfajores": "Golosinas",
+        "Golosinas y Chocolates": "Golosinas",
+        "Harinas": "Almacén",
+        "Aceites": "Almacén",
+        "Almacén": "Almacén"
+    }
+
     def __init__(self):
         self.conn_string = "host=localhost port=5432 dbname=smartcart user=smartuser password=smartpassword"
 
@@ -33,33 +46,41 @@ class SmartCartDB:
                                 prod['store_sku']
                             )
 
-                        # 3. Guardar el Producto Unificado
-                        cur.execute("""
-                            INSERT INTO unified_products (id, ean, name, brand, unit_type)
-                            VALUES (%s, %s, %s, %s, %s)
-                            ON CONFLICT (id) DO UPDATE SET
-                                name = EXCLUDED.name, brand = EXCLUDED.brand
-                        """, (unified_id, prod['ean'], prod['name'], prod['brand'], prod['unit_type']))
+                        # 2.5 TRANSFORMACIÓN: Normalizar la categoría del producto
+                        raw_category = prod.get('category', 'Sin Categoría')
+                        normalized_category = self.CATEGORY_MAP.get(raw_category, "Otros")
 
-                        # 4. Guardar la Instancia Comercial con el JSON de promos ya homogeneizado
+                        # 3. Guardar el Producto Unificado (Incluye la categoría normalizada)
+                        cur.execute("""
+                            INSERT INTO unified_products (id, ean, name, brand, unit_type, category)
+                            VALUES (%s, %s, %s, %s, %s, %s)
+                            ON CONFLICT (id) DO UPDATE SET
+                                name = EXCLUDED.name, 
+                                brand = EXCLUDED.brand,
+                                category = EXCLUDED.category
+                        """, (unified_id, prod['ean'], prod['name'], prod['brand'], prod['unit_type'], normalized_category))
+
+                        # 4. Guardar la Instancia Comercial con el JSON de promos y la IMAGEN
                         cur.execute("""
                             INSERT INTO store_products (
-                                unified_product_id, store_id, store_sku, product_url, base_price, in_stock, promotions_json
+                                unified_product_id, store_id, store_sku, product_url, base_price, in_stock, promotions_json, image_url
                             )
-                            VALUES (%s, %s, %s, %s, %s, %s, %s)
+                            VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
                             ON CONFLICT (store_id, store_sku) DO UPDATE SET
                                 base_price = EXCLUDED.base_price,
                                 in_stock = EXCLUDED.in_stock,
                                 promotions_json = EXCLUDED.promotions_json,
+                                image_url = EXCLUDED.image_url,
                                 last_updated = CURRENT_TIMESTAMP
                         """, (
                             unified_id,
                             store_id,
                             prod['store_sku'],
                             prod['url'],
-                            base_price,  # Guardamos el precio base limpio calculado
+                            base_price,  
                             prod['in_stock'],
-                            json.dumps(standardized_promos)  # Guardamos el formato unificado
+                            json.dumps(standardized_promos),  
+                            prod.get('image_url')  # <-- Guardamos la URL de la imagen extraída del scraper
                         ))
             print("[DB] Guardado exitoso.")
         except Exception as e:
@@ -67,7 +88,7 @@ class SmartCartDB:
     
     def get_market_prices_for_cart(self, unified_ids: list) -> list:
         """
-        Retorna la información de precios base, stock y promociones estructuradas
+        Retorna la información de precios base, stock, promociones y fotos
         de todas las tiendas disponibles para una lista de productos unificados.
         """
         if not unified_ids:
@@ -79,7 +100,8 @@ class SmartCartDB:
                 store_id,
                 base_price,
                 in_stock,
-                promotions_json
+                promotions_json,
+                image_url
             FROM store_products
             WHERE unified_product_id = ANY(%s) AND in_stock = TRUE;
         """
