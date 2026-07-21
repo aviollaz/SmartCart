@@ -1,3 +1,4 @@
+import re
 import logging
 from contextlib import asynccontextmanager
 from typing import List, Optional, Dict, Any
@@ -9,6 +10,7 @@ from psycopg.rows import dict_row
 from sentence_transformers import SentenceTransformer
 from src.database import SmartCartDB
 from src.optimizer import optimize_cart
+from src.flattener import flatten_cart_prices
 
 # Configuración de Logging
 logging.basicConfig(
@@ -237,6 +239,24 @@ def search_products(
         logger.error(f"Error interno durante la búsqueda semántica: {e}")
         raise HTTPException(status_code=500, detail=f"Error interno en el servidor: {e}")
 
+def extract_real_volume(name: str) -> tuple[float, str]:
+    """
+    Parsea el nombre del producto para extraer el volumen real usando Regex.
+    Normaliza todo a gramos (g) o mililitros (ml) para poder comparar magnitudes.
+    """
+    match = re.search(r'(\d+(?:[,.]\d+)?)\s*(kg|gr|grm|g|l|ltr|ml|cc)\b', name, re.IGNORECASE)
+    if match:
+        try:
+            val = float(match.group(1).replace(',', '.'))
+            u = match.group(2).lower()
+            if u in ['kg']: return val * 1000.0, 'g'
+            if u in ['l', 'ltr']: return val * 1000.0, 'ml'
+            if u in ['gr', 'grm', 'g']: return val, 'g'
+            if u in ['ml', 'cc']: return val, 'ml'
+        except ValueError:
+            pass
+    return 1.0, 'un' # Fallback si no encuentra patrón
+
 @app.post("/optimize")
 def optimize_shopping_cart(request: OptimizationRequest):
     """
@@ -246,7 +266,6 @@ def optimize_shopping_cart(request: OptimizationRequest):
     logger.info(f"Recibida solicitud de optimización para {len(request.cart)} productos.")
     
     try:
-        # Convertimos los objetos Pydantic a lista de dicts para el optimizer
         cart_data = [item.model_dump() for item in request.cart]
         
         result = optimize_cart(
@@ -255,12 +274,188 @@ def optimize_shopping_cart(request: OptimizationRequest):
             user_cards=request.user_cards,
             delivery_costs=request.delivery_costs
         )
+
+        if result.get("status") == "success":
+            try:
+                db = SmartCartDB()
+                flat_prices = flatten_cart_prices(cart_data, request.user_memberships)
+                stores = list(request.delivery_costs.keys()) if request.delivery_costs else ["coto_online", "dia_online"]
+                
+                bank_promos = {
+                    "coto_online": [{"card": "galicia", "discount_pct": 20, "cap": 5000}],
+                    "dia_online": [{"card": "macro", "discount_pct": 15, "cap": 3000}]
+                }
+
+                single_store_baselines = {}
+                replaced_items_info = {s: [] for s in stores}
+                suggestions = []
+                neighbor_candidates = []
+                uid_to_name = {}
+                
+                # UNIFICAMOS TODO BAJO UNA ÚNICA CONEXIÓN A LA BD
+                with psycopg.connect(db.conn_string, row_factory=dict_row) as conn:
+                    with conn.cursor() as cur:
+                        
+                        # --- 1. CÁLCULO DE BASELINE CON REEMPLAZOS ---
+                        for store in stores:
+                            store_subtotal = 0
+                            for item in request.cart:
+                                uid = item.unified_id
+                                qty = item.quantity
+                                
+                                if uid in flat_prices and store in flat_prices[uid]:
+                                    store_subtotal += flat_prices[uid][store]["total_cost"]
+                                else:
+                                    # Extraemos también la categoría para no sugerir locuras
+                                    cur.execute("SELECT name_embedding, name, category FROM unified_products WHERE id = %s", (uid,))
+                                    p = cur.fetchone()
+                                    
+                                    if p and p["name_embedding"]:
+                                        # Agregamos AND u.category = %s para forzar misma góndola
+                                        cur.execute("""
+                                            SELECT u.id, u.name
+                                            FROM unified_products u
+                                            JOIN store_products sp ON u.id = sp.unified_product_id
+                                            WHERE sp.store_id = %s AND sp.in_stock = TRUE AND u.name_embedding IS NOT NULL
+                                            AND u.category = %s
+                                            ORDER BY u.name_embedding <=> %s ASC
+                                            LIMIT 1
+                                        """, (store, p["category"], p["name_embedding"]))
+                                        fallback = cur.fetchone()
+                                        
+                                        if fallback:
+                                            fallback_uid = fallback["id"]
+                                            fallback_flat = flatten_cart_prices([{"unified_id": fallback_uid, "quantity": qty}], request.user_memberships)
+                                            
+                                            if fallback_uid in fallback_flat and store in fallback_flat[fallback_uid]:
+                                                store_subtotal += fallback_flat[fallback_uid][store]["total_cost"]
+                                                replaced_items_info[store].append({
+                                                    "original": p["name"],
+                                                    "replacement": fallback["name"]
+                                                })
+                            
+                            delivery = request.delivery_costs.get(store, 3000) if request.delivery_costs else 3000
+                            baseline_discount = 0
+                            best_promo = next((p for p in bank_promos.get(store, []) if p["card"] in request.user_cards), None)
+                            if best_promo:
+                                raw_disc = store_subtotal * (best_promo["discount_pct"] / 100.0)
+                                baseline_discount = min(raw_disc, best_promo["cap"])
+                            
+                            total_baseline = store_subtotal + delivery - baseline_discount
+                            single_store_baselines[store] = round(total_baseline, 2)
+                
+                        result["single_store_baselines"] = single_store_baselines
+                        result["baseline_replacements"] = replaced_items_info
+                        
+                        # --- 2. FEATURE: SUGERENCIAS SEMÁNTICAS DE AHORRO PROPORCIONAL ---
+                        for item in request.cart:
+                            cur.execute("SELECT name, name_embedding, category FROM unified_products WHERE id = %s", (item.unified_id,))
+                            p = cur.fetchone()
+                            if p and p["name_embedding"]:
+                                # Extraemos el peso usando nuestra Regex sobre el string del nombre
+                                real_weight, real_unit = extract_real_volume(p["name"])
+                                
+                                uid_to_name[item.unified_id] = {
+                                    "name": p["name"],
+                                    "weight": real_weight,
+                                    "unit": real_unit,
+                                    "category": p["category"]
+                                }
+                                
+                                cur.execute("""
+                                    SELECT id, name
+                                    FROM unified_products
+                                    WHERE id != %s AND name_embedding IS NOT NULL
+                                    AND category = %s
+                                    ORDER BY name_embedding <=> %s ASC
+                                    LIMIT 2
+                                """, (item.unified_id, p["category"], p["name_embedding"]))
+                                
+                                for n in cur.fetchall():
+                                    cand_weight, cand_unit = extract_real_volume(n["name"])
+                                    neighbor_candidates.append({
+                                        "original_uid": item.unified_id,
+                                        "suggested_uid": n["id"],
+                                        "suggested_name": n["name"],
+                                        "quantity": item.quantity,
+                                        "suggested_weight": cand_weight,
+                                        "suggested_unit": cand_unit
+                                    })
+                
+                if neighbor_candidates:
+                    items_to_flatten = [{"unified_id": c["suggested_uid"], "quantity": c["quantity"]} for c in neighbor_candidates]
+                    items_to_flatten.extend(cart_data)
+                    flat_prices = flatten_cart_prices(items_to_flatten, request.user_memberships)
+                    
+                    for cand in neighbor_candidates:
+                        orig_uid = cand["original_uid"]
+                        sugg_uid = cand["suggested_uid"]
+                        
+                        if orig_uid not in flat_prices or sugg_uid not in flat_prices: continue
+                        
+                        orig_min_cost = min([flat_prices[orig_uid][s]["total_cost"] for s in flat_prices[orig_uid]])
+                        sugg_min_cost = min([flat_prices[sugg_uid][s]["total_cost"] for s in flat_prices[sugg_uid]])
+                        
+                        orig_info = uid_to_name[orig_uid]
+                        orig_weight = orig_info["weight"]
+                        orig_unit = orig_info["unit"]
+                        sugg_weight = cand["suggested_weight"]
+                        sugg_unit = cand["suggested_unit"]
+
+                        # Solo calculamos si las unidades son lógicamente comparables
+                        if orig_unit == sugg_unit or (orig_unit in ['g', 'ml'] and sugg_unit in ['g', 'ml']):
+                            
+                            # Filtro léxico anti-locuras: Si el original tiene "polvo", la sugerencia debe tener "polvo"
+                            # Esto mata el caso extremo del Dulce de Leche si la matemática llegara a fallar.
+                            if "polvo" in orig_info["name"].lower() and "polvo" not in cand["suggested_name"].lower():
+                                continue
+                            
+                            sugg_cost_per_unit = sugg_min_cost / sugg_weight
+                            sugg_proportional_cost = sugg_cost_per_unit * orig_weight
+                            
+                            savings_proportional = orig_min_cost - sugg_proportional_cost
+                            
+                            # Formateo de UI para volver a Litros o Kilos si es grande
+                            display_weight = orig_weight
+                            display_unit = orig_unit
+                            if display_unit == 'g' and display_weight >= 1000:
+                                display_weight /= 1000
+                                display_unit = 'Kg'
+                            elif display_unit == 'ml' and display_weight >= 1000:
+                                display_weight /= 1000
+                                display_unit = 'L'
+                            
+                            # Subimos el umbral a 15% para limpiar ruido
+                            if savings_proportional > (orig_min_cost * 0.15): 
+                                suggestions.append({
+                                    "original_product": orig_info["name"],
+                                    "suggested_product": cand["suggested_name"],
+                                    "savings": round(savings_proportional, 2),
+                                    "suggested_uid": sugg_uid,
+                                    "metric_info": f"a igual cantidad de {display_weight} {display_unit.upper()}"
+                                })
+                    
+                    suggestions = sorted(suggestions, key=lambda x: x["savings"], reverse=True)
+                    unique_suggestions = []
+                    seen_sugg = set()
+                    for s in suggestions:
+                        if s["suggested_uid"] not in seen_sugg:
+                            unique_suggestions.append(s)
+                            seen_sugg.add(s["suggested_uid"])
+                            if len(unique_suggestions) >= 5: break
+                            
+                result["suggestions"] = unique_suggestions
+
+            except Exception as e:
+                logger.error(f"Error generando analíticas post-optimización: {e}")
+                result["suggestions"] = []
+                if "single_store_baselines" not in result:
+                    result["single_store_baselines"] = {}
+
     except Exception as e:
-        # Solo capturamos errores reales de código matemático o de servidor
         logger.error(f"Error en el motor de optimización: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
-    # FUERA del try/except: Manejo de reglas de negocio (mínimos no alcanzados)
     if result.get("status") == "infeasible":
         msg = result.get("message", "El carrito no alcanza los montos mínimos requeridos por las tiendas ($15.000 Coto / $12.000 Día). Agregá más productos.")
         raise HTTPException(status_code=400, detail=msg)

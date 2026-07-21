@@ -142,8 +142,46 @@ with tab2:
             
             if result and result.get("status") == "success":
                 st.success("¡Asignación óptima encontrada!")
-                st.metric("Gasto Total Neto Proyectado", f"${result['total_spent_net']:,.2f}")
                 
+               # --- MÉTRICAS COMPARATIVAS ---
+                col_metric1, col_metric2 = st.columns(2)
+                with col_metric1:
+                    st.metric("Gasto Total (SmartCart)", f"${result['total_spent_net']:,.2f}")
+                    
+                with col_metric2:
+                    baselines = result.get("single_store_baselines", {})
+                    if baselines:
+                        best_single_store = min(baselines, key=baselines.get)
+                        ahorro_vs_mejor = baselines[best_single_store] - result['total_spent_net']
+                        store_name_display = best_single_store.replace('_online', '').upper()
+                        
+                        # Armar texto dinámico para el tooltip
+                        replacements = result.get("baseline_replacements", {}).get(best_single_store, [])
+                        help_text = f"Si comprabas todo en {store_name_display} gastabas ${baselines[best_single_store]:,.2f}."
+                        if replacements:
+                            help_text += "\n\nSe usaron estos reemplazos equivalentes por falta de stock:"
+                            for r in replacements:
+                                help_text += f"\n- {r['original']} ➔ {r['replacement']}"
+                        
+                        st.metric(
+                            "Comprando todo en 1 Super", 
+                            f"${baselines[best_single_store]:,.2f}", 
+                            delta=f"-${ahorro_vs_mejor:,.2f} vs {store_name_display}",
+                            delta_color="inverse",
+                            help=help_text
+                        )
+                # -----------------------------
+
+                # --- NUEVAS SUGERENCIAS DE AHORRO ---
+                sugerencias = result.get("suggestions", [])
+                if sugerencias:
+                    st.info("💡 **Smart Replacements recomendados para tu chango:**")
+                    for s in sugerencias:
+                        # Extraemos el texto de la métrica que armamos en el backend
+                        metric_txt = s.get('metric_info', 'proporcional al peso')
+                        st.write(f"Cambiar _{s['original_product']}_ por **{s['suggested_product']}** te ahorra **${s['savings']:,.2f}** extra ({metric_txt}).")
+                    st.divider()
+                # ------------------------------------
                 st.subheader("📦 Desglose por Supermercado")
                 split_data = result.get("split", {})
                 

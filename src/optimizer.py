@@ -34,19 +34,16 @@ def optimize_cart(cart_items, user_memberships=None, user_cards=None, min_spend_
         costs = [x[i, j] * int(round(flat_prices[i][j]["total_cost"] * 100)) for i in products if (i, j) in x]
         if costs: model.Add(sum(costs) >= y[j] * int(min_spend_limits[j] * 100))
 
-    # Diccionarios para almacenar las variables de cada tienda
     subtotal_vars = {}
     discount_vars = {}
     store_final_costs_cents = {}
     applied_bank_discounts_info = {}
 
     for j in stores:
-        # 1. Definir subtotal de productos
         subtotal_vars[j] = model.NewIntVar(0, 99999999, f'subtotal_{j}')
         costs = [x[i, j] * int(round(flat_prices[i][j]["total_cost"] * 100)) for i in products if (i, j) in x]
         model.Add(subtotal_vars[j] == sum(costs))
 
-        # 2. Definir descuento bancario
         discount_vars[j] = model.NewIntVar(0, 99999999, f'discount_{j}')
         best_promo = next((p for p in bank_promos.get(j, []) if p["card"] in user_cards), None)
         
@@ -60,7 +57,6 @@ def optimize_cart(cart_items, user_memberships=None, user_cards=None, min_spend_
         else:
             model.Add(discount_vars[j] == 0)
 
-        # 3. Definir costo final de la tienda
         final_cost = model.NewIntVar(0, 99999999, f'final_cost_{j}')
         model.Add(final_cost == subtotal_vars[j] + (y[j] * int(delivery_costs[j] * 100)) - discount_vars[j])
         store_final_costs_cents[j] = final_cost
@@ -87,5 +83,11 @@ def optimize_cart(cart_items, user_memberships=None, user_cards=None, min_spend_
                     "bank_discount": {"card": applied_bank_discounts_info[j]["card"], "amount": round(disc, 2)} if j in applied_bank_discounts_info else None,
                     "store_total": round(total, 2)
                 }
-        return {"status": "success", "total_spent_net": round(total_spent, 2), "split": assigned_cart}
+
+        return {
+            "status": "success", 
+            "total_spent_net": round(total_spent, 2), 
+            "split": assigned_cart
+        }
+    
     return {"status": "infeasible", "message": "No se encontró una asignación que cumpla los mínimos requeridos."}
