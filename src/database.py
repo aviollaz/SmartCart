@@ -52,13 +52,21 @@ class SmartCartDB:
 
                         # 3. Guardar el Producto Unificado (Incluye la categoría normalizada)
                         cur.execute("""
-                            INSERT INTO unified_products (id, ean, name, brand, unit_type, category)
-                            VALUES (%s, %s, %s, %s, %s, %s)
+                            INSERT INTO unified_products (id, ean, name, brand, unit_type, category, total_volume_weight)
+                            VALUES (%s, %s, %s, %s, %s, %s, %s)
                             ON CONFLICT (id) DO UPDATE SET
                                 name = EXCLUDED.name, 
                                 brand = EXCLUDED.brand,
-                                category = EXCLUDED.category
-                        """, (unified_id, prod['ean'], prod['name'], prod['brand'], prod['unit_type'], normalized_category))
+                                category = EXCLUDED.category,
+                                total_volume_weight = EXCLUDED.total_volume_weight
+                        """, (
+                            unified_id,
+                            prod['ean'],
+                            prod['name'],
+                            prod['brand'],
+                            prod['unit_type'],
+                            normalized_category,
+                            prod['total_volume_weight']))
 
                         # 4. Guardar la Instancia Comercial con el JSON de promos y la IMAGEN
                         cur.execute("""

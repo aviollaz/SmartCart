@@ -59,16 +59,31 @@ class CotoScraper:
                     prod_data = item.get("data", {})
                     
                     base_price = 0.0
+                    format_price = 0.0
+                    
                     prices_list = prod_data.get("price", [])
                     
                     if isinstance(prices_list, list):
                         for p_store in prices_list:
                             if p_store.get("store") == "200":
                                 base_price = float(p_store.get("listPrice", 0))
+                                format_price = float(p_store.get("formatPrice", 0))
                                 break
                     
                     if base_price == 0.0:
                         base_price = float(prod_data.get("product_list_price", 0))
+                    
+                    total_volume_weight = base_price / format_price if format_price > 0 else 1.0
+                    unit_type = prod_data.get("product_unit_of_measure", "un")
+
+                    # calculate total volume weight and adjust unit type if necessary
+                    if base_price > 0 and format_price > 0:
+                        total_volume_weight = round(base_price / format_price, 3)
+                        if total_volume_weight < 1.0:
+                            total_volume_weight = total_volume_weight * 1000
+                            unit_type = "g"
+                        else:
+                            unit_type = "kg"
                     
                     product = {
                         "store_sku": prod_data.get("sku_id"),
@@ -81,7 +96,8 @@ class CotoScraper:
                         "base_price": base_price,
                         "in_stock": prod_data.get("in_stock", True),
                         "is_weighable": bool(prod_data.get("product_weighable", 0)),
-                        "unit_type": prod_data.get("product_unit_of_measure"), 
+                        "total_volume_weight": total_volume_weight,
+                        "unit_type": unit_type,
                         "raw_promos": prod_data.get("discounts", [])
                     }
                     all_products.append(product)

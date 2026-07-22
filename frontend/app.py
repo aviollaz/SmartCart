@@ -205,6 +205,14 @@ with tab2:
                             st.success(f"💳 {desc}: -${amount:,.2f}")
                         
                         st.write(f"### Total Tienda: ${checkout['store_total']:,.2f}")
+
+                        # --- NUEVO: BOTÓN DE MAGIC LINK ---
+                        checkout_url = checkout.get("checkout_url")
+                        if checkout_url:
+                            st.link_button("🛒 Comprar carrito en Día", checkout_url, type="primary", use_container_width=True)
+                        elif store_id == "coto_online":
+                            st.info("Para Coto, los productos deben agregarse manualmente.")
+                        # ----------------------------------
                         
                         # Lista de productos a comprar acá
                         with st.expander("Ver lista para esta tienda"):

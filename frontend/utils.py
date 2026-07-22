@@ -4,6 +4,7 @@ import streamlit as st
 
 API_URL = "http://localhost:8000"
 
+@st.cache_data(ttl=300)
 def search_products(query: str, limit: int = 20):
     """Llama al endpoint GET /search de FastAPI."""
     try:
@@ -36,6 +37,7 @@ def optimize_cart(cart_items: list, memberships: list, cards: list, delivery_cos
         st.error(f"Error conectando al backend (Optimizador): {e}")
         return None
 
+@st.cache_data(ttl=3600)
 def get_categories():
     """Llama al endpoint GET /categories."""
     try:
@@ -45,6 +47,7 @@ def get_categories():
     except requests.exceptions.RequestException:
         return []
 
+@st.cache_data(ttl=300)
 def search_by_category(category_name: str):
     """Llama al endpoint GET /category/{category_name}."""
     try:

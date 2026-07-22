@@ -96,7 +96,6 @@ class PromoTransformer:
                 "requires_membership": None
             })
             # El precio base real del producto para las fórmulas pasa a ser el rebajado
-            base_price = selling_price
 
         # B. Procesar teasers de volumen (3x2, 2x1, 2do al 50%)
         teasers = raw_commertial_offer.get("teasers", [])

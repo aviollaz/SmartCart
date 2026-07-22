@@ -257,6 +257,35 @@ def extract_real_volume(name: str) -> tuple[float, str]:
             pass
     return 1.0, 'un' # Fallback si no encuentra patrón
 
+def generate_vtex_magic_link(store_domain: str, products: list, sales_channel: int = 1, seller_id: int = 1) -> str:
+    """
+    Genera un link de inyección directa de carrito para arquitecturas VTEX.
+    
+    :param store_domain: Dominio base (ej: 'diaonline.supermercadosdia.com.ar')
+    :param products: Lista de diccionarios con el formato [{"store_sku": "12345", "quantity": 2}, ...]
+    :param sales_channel: Canal de ventas de VTEX (suele ser 1)
+    :param seller_id: ID del seller (1 para productos propios del super)
+    :return: URL string o cadena vacía si no hay productos
+    """
+    if not products:
+        return ""
+
+    base_url = f"https://{store_domain}/checkout/cart/add?sc={sales_channel}"
+    params = []
+    
+    for item in products:
+        sku = item.get("store_sku")
+        qty = item.get("quantity", 1)
+        
+        if sku:
+            params.append(f"sku={sku}&qty={qty}&seller={seller_id}")
+
+    if not params:
+        return ""
+
+    # Unimos todos los parámetros con un '&'
+    return f"{base_url}&{'&'.join(params)}"
+
 @app.post("/optimize")
 def optimize_shopping_cart(request: OptimizationRequest):
     """
@@ -349,21 +378,22 @@ def optimize_shopping_cart(request: OptimizationRequest):
                         
                         # --- 2. FEATURE: SUGERENCIAS SEMÁNTICAS DE AHORRO PROPORCIONAL ---
                         for item in request.cart:
-                            cur.execute("SELECT name, name_embedding, category FROM unified_products WHERE id = %s", (item.unified_id,))
+                            # 1. Agregamos las columnas de peso y unidad al SELECT original
+                            cur.execute("SELECT name, name_embedding, category, total_volume_weight, unit_type FROM unified_products WHERE id = %s", (item.unified_id,))
                             p = cur.fetchone()
+                            
                             if p and p["name_embedding"]:
-                                # Extraemos el peso usando nuestra Regex sobre el string del nombre
-                                real_weight, real_unit = extract_real_volume(p["name"])
-                                
+                                # 2. Usamos los datos directos de la BD con un fallback de seguridad
                                 uid_to_name[item.unified_id] = {
                                     "name": p["name"],
-                                    "weight": real_weight,
-                                    "unit": real_unit,
+                                    "weight": float(p["total_volume_weight"]) if p["total_volume_weight"] else 1.0,
+                                    "unit": p["unit_type"] or "un",
                                     "category": p["category"]
                                 }
                                 
+                                # 3. Agregamos las columnas de peso y unidad al SELECT de los vecinos
                                 cur.execute("""
-                                    SELECT id, name
+                                    SELECT id, name, total_volume_weight, unit_type
                                     FROM unified_products
                                     WHERE id != %s AND name_embedding IS NOT NULL
                                     AND category = %s
@@ -372,16 +402,46 @@ def optimize_shopping_cart(request: OptimizationRequest):
                                 """, (item.unified_id, p["category"], p["name_embedding"]))
                                 
                                 for n in cur.fetchall():
-                                    cand_weight, cand_unit = extract_real_volume(n["name"])
+                                    # 4. Asignamos directo desde el resultado SQL del vecino
                                     neighbor_candidates.append({
                                         "original_uid": item.unified_id,
                                         "suggested_uid": n["id"],
                                         "suggested_name": n["name"],
                                         "quantity": item.quantity,
-                                        "suggested_weight": cand_weight,
-                                        "suggested_unit": cand_unit
+                                        "suggested_weight": float(n["total_volume_weight"]) if n["total_volume_weight"] else 1.0,
+                                        "suggested_unit": n["unit_type"] or "un"
                                     })
-                
+                        
+                        # --- 3. FEATURE: MAGIC LINK PARA DÍA ONLINE ---
+                        if "dia_online" in result.get("split", {}):
+                            dia_products = result["split"]["dia_online"]["products"]
+                            uids_dia = [p["unified_id"] for p in dia_products]
+                            
+                            if uids_dia:
+                                cur.execute("""
+                                    SELECT unified_product_id, store_sku 
+                                    FROM store_products 
+                                    WHERE store_id = 'dia_online' AND unified_product_id = ANY(%s)
+                                """, (uids_dia,))
+                                
+                                sku_map = {row["unified_product_id"]: row["store_sku"] for row in cur.fetchall()}
+                                
+                                link_payload = []
+                                for p in dia_products:
+                                    if p["unified_id"] in sku_map:
+                                        link_payload.append({
+                                            "store_sku": sku_map[p["unified_id"]],
+                                            "quantity": p["quantity"]
+                                        })
+                                
+                                if link_payload:
+                                    magic_link = generate_vtex_magic_link(
+                                        store_domain="diaonline.supermercadosdia.com.ar",
+                                        products=link_payload
+                                    )
+                                    result["split"]["dia_online"]["checkout_url"] = magic_link
+                                    
+                # --- PROCESAMIENTO FINAL DE SUGERENCIAS SEMÁNTICAS (Fuera del cursor) ---
                 if neighbor_candidates:
                     items_to_flatten = [{"unified_id": c["suggested_uid"], "quantity": c["quantity"]} for c in neighbor_candidates]
                     items_to_flatten.extend(cart_data)
@@ -405,11 +465,6 @@ def optimize_shopping_cart(request: OptimizationRequest):
                         # Solo calculamos si las unidades son lógicamente comparables
                         if orig_unit == sugg_unit or (orig_unit in ['g', 'ml'] and sugg_unit in ['g', 'ml']):
                             
-                            # Filtro léxico anti-locuras: Si el original tiene "polvo", la sugerencia debe tener "polvo"
-                            # Esto mata el caso extremo del Dulce de Leche si la matemática llegara a fallar.
-                            if "polvo" in orig_info["name"].lower() and "polvo" not in cand["suggested_name"].lower():
-                                continue
-                            
                             sugg_cost_per_unit = sugg_min_cost / sugg_weight
                             sugg_proportional_cost = sugg_cost_per_unit * orig_weight
                             
@@ -425,8 +480,8 @@ def optimize_shopping_cart(request: OptimizationRequest):
                                 display_weight /= 1000
                                 display_unit = 'L'
                             
-                            # Subimos el umbral a 15% para limpiar ruido
-                            if savings_proportional > (orig_min_cost * 0.15): 
+                            # Subimos el umbral a 20% para limpiar ruido
+                            if savings_proportional > (orig_min_cost * 0.2): 
                                 suggestions.append({
                                     "original_product": orig_info["name"],
                                     "suggested_product": cand["suggested_name"],

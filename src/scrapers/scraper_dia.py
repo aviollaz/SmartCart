@@ -78,10 +78,34 @@ class DiaScraper:
                 
             first_item = items[0]
             sellers = first_item.get("sellers", [])
-            price = 0.0
             if sellers:
                 comm_comm = sellers[0].get("commertialOffer", {})
-                price = float(comm_comm.get("Price", 0.0))
+                base_price = float(comm_comm.get("ListPrice", 0.0))
+
+            precio_por_und = None
+            unidad_medida = "un"
+
+            # Buscar las properties en el JSON de VTEX
+            for prop in p.get("properties", []):
+                if prop["name"] == "PrecioPorUnd":
+                    precio_por_und = float(prop["values"][0])
+                if prop["name"] == "UnidaddeMedida":
+                    unidad_medida = prop["values"][0].lower()
+
+            total_volume_weight = 1.0
+            if base_price > 0 and precio_por_und is not None and precio_por_und > 0:
+                total_volume_weight = round(base_price / precio_por_und, 3)
+                
+                if "lt" in unidad_medida or "l" in unidad_medida:
+                    if total_volume_weight < 1.0:
+                        total_volume_weight = total_volume_weight * 1000
+                        unidad_medida = "ml"
+                elif "kg" in unidad_medida:
+                    if total_volume_weight < 1.0:
+                        total_volume_weight = total_volume_weight * 1000
+                        unidad_medida = "g"
+                        
+            unit_type = unidad_medida
 
             # --- EXTRACCIÓN Y NORMALIZACIÓN DE CATEGORÍA ---
             raw_categories = p.get("categories", [])
@@ -107,13 +131,14 @@ class DiaScraper:
                 "ean": first_item.get("ean"),
                 "name": p.get("productName"),
                 "brand": p.get("brand"),
-                "category": category_name,  # <-- Se inyecta la categoría extraída
+                "category": category_name,
                 "url": p.get("link"),
                 "image_url": image_url,
-                "base_price": price,
+                "base_price": base_price,
                 "in_stock": True,
                 "is_weighable": False,
-                "unit_type": first_item.get("measurementUnit", "un"),
+                "total_volume_weight": total_volume_weight,
+                "unit_type": unit_type,
                 "raw_promos": sellers[0].get("commertialOffer", {}) if sellers else []
             }
             parsed_products.append(product)
