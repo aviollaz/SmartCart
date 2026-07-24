@@ -37,6 +37,33 @@ Para mantener la experiencia fluida y evitar sobrecargar la matriz del solver co
 
 ---
 
+## 2.1. Árbol de Categorías Real (Mega-Menú)
+
+Además de `GET /categories` (lista plana de las 4 categorías normalizadas que existen en `unified_products.category`: Lácteos, Golosinas, Almacén, Otros), la API expone `GET /categories/tree`, que devuelve la taxonomía real de 2-3 niveles combinando las categorías ya scrapeadas de Coto y Día (`src/scrapers/coto_categories.json` y `dia_categories.json`), pensada para alimentar un mega-menú de navegación tipo e-commerce.
+
+El árbol se construye una sola vez al arrancar la API (`src/category_tree.py`, cacheado en memoria) mergeando las categorías de ambas tiendas en capas: texto normalizado, contención de tokens significativos, similaridad semántica (reutilizando el modelo `all-MiniLM-L6-v2` ya cargado para `/search`) y una tabla chica de alias manuales para los casos puntuales que ninguna de las anteriores resuelve.
+
+```json
+{
+  "Almacén": {
+    "label": "Almacén",
+    "has_direct_category_match": true,
+    "subcategories": {
+      "Golosinas": { "label": "Golosinas", "leaves": ["Alfajores", "Chocolates", "..."] }
+    }
+  },
+  "Bebidas": {
+    "label": "Bebidas",
+    "has_direct_category_match": false,
+    "subcategories": { "...": "..." }
+  }
+}
+```
+
+**Regla de ruteo para el frontend:** `has_direct_category_match` indica si ese top-level existe literalmente como valor de `unified_products.category` (hoy solo Lácteos, Golosinas y Almacén). Un click en esos top-levels debe resolverse vía `GET /category/{label}`. Cualquier otro click (subcategoría, leaf, o un top-level sin match directo — la mayoría, dado que el catálogo cargado hoy es acotado) debe resolverse vía `GET /search?q=<label>`, reutilizando la búsqueda semántica existente en lugar de requerir un match exacto de categoría.
+
+---
+
 ## 3. Modelo de Datos Unificado (JSON Maestro de Producción)
 
 Este formato consolidado representa la estructura limpia y corregida que se consume en la etapa de pre-procesamiento del optimizador:

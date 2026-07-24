@@ -1,0 +1,38 @@
+@import "tailwindcss";
+
+@theme {
+  /* Paleta Despegar: violetas corporativos + acento rojo/naranja para CTAs */
+  --color-brand-violet-900: #38006b;
+  --color-brand-violet-700: #6814af;
+  --color-brand-violet-500: #8b3fd1;
+  --color-brand-violet-100: #f2e9fb;
+
+  --color-brand-accent: #ff4c29;
+  --color-brand-accent-dark: #e63e1c;
+
+  --color-surface: #ffffff;
+  --color-surface-muted: #f5f5f7;
+  --color-line: #e4e4e7;
+
+  --color-ink: #1a1a1a;
+  --color-ink-muted: #6b7280;
+
+  --color-state-success: #16a34a;
+  --color-state-warning: #d97706;
+  --color-state-promo: #dc2626;
+
+  --font-display: "Poppins", ui-sans-serif, system-ui, sans-serif;
+  --font-sans: "Inter", ui-sans-serif, system-ui, sans-serif;
+}
+
+body {
+  margin: 0;
+  background-color: var(--color-surface-muted);
+  color: var(--color-ink);
+}
+
+#root {
+  min-height: 100svh;
+  display: flex;
+  flex-direction: column;
+}

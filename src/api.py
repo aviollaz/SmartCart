@@ -11,6 +11,7 @@ from sentence_transformers import SentenceTransformer
 from src.database import SmartCartDB
 from src.optimizer import optimize_cart
 from src.flattener import flatten_cart_prices
+from src.category_tree import build_category_tree
 
 # Configuración de Logging
 logging.basicConfig(
@@ -58,6 +59,20 @@ class ProductResponse(BaseModel):
     distance: float = Field(..., description="Distancia de coseno con respecto a la búsqueda (menor es más similar)")
     available_at_stores: List[StoreOffer] = []
 
+class CategorySubcategoryResponse(BaseModel):
+    label: str
+    leaves: List[str] = []
+
+class CategoryTopLevelResponse(BaseModel):
+    label: str
+    has_direct_category_match: bool = Field(
+        ...,
+        description="True si este top-level existe literalmente en unified_products.category "
+                    "(Lácteos/Golosinas/Almacén), permitiendo resolverlo vía GET /category/{label}. "
+                    "Si es False, el frontend debe resolver el click vía GET /search?q=<label>."
+    )
+    subcategories: Dict[str, CategorySubcategoryResponse] = {}
+
 class CartItem(BaseModel):
     unified_id: str
     quantity: int
@@ -78,7 +93,14 @@ async def lifespan(app: FastAPI):
     logger.info("Cargando modelo SentenceTransformer 'all-MiniLM-L6-v2'...")
     ml_models["model"] = SentenceTransformer("all-MiniLM-L6-v2")
     logger.info("Modelo SentenceTransformer cargado exitosamente.")
-    
+
+    # Construcción del árbol de categorías (Coto+Día) para el mega-menú.
+    # Se calcula una sola vez acá (no en cada request) reutilizando el mismo
+    # modelo ya cargado arriba para el merge semántico de subcategorías.
+    logger.info("Construyendo árbol de categorías (Coto+Día)...")
+    ml_models["category_tree"] = build_category_tree(ml_models["model"])
+    logger.info(f"Árbol de categorías listo: {len(ml_models['category_tree'])} categorías de nivel superior.")
+
     # Inicialización de la base de datos para validar conexión
     try:
         db = SmartCartDB()
@@ -239,23 +261,23 @@ def search_products(
         logger.error(f"Error interno durante la búsqueda semántica: {e}")
         raise HTTPException(status_code=500, detail=f"Error interno en el servidor: {e}")
 
-def extract_real_volume(name: str) -> tuple[float, str]:
-    """
-    Parsea el nombre del producto para extraer el volumen real usando Regex.
-    Normaliza todo a gramos (g) o mililitros (ml) para poder comparar magnitudes.
-    """
-    match = re.search(r'(\d+(?:[,.]\d+)?)\s*(kg|gr|grm|g|l|ltr|ml|cc)\b', name, re.IGNORECASE)
-    if match:
-        try:
-            val = float(match.group(1).replace(',', '.'))
-            u = match.group(2).lower()
-            if u in ['kg']: return val * 1000.0, 'g'
-            if u in ['l', 'ltr']: return val * 1000.0, 'ml'
-            if u in ['gr', 'grm', 'g']: return val, 'g'
-            if u in ['ml', 'cc']: return val, 'ml'
-        except ValueError:
-            pass
-    return 1.0, 'un' # Fallback si no encuentra patrón
+# def extract_real_volume(name: str) -> tuple[float, str]:
+#     """
+#     Parsea el nombre del producto para extraer el volumen real usando Regex.
+#     Normaliza todo a gramos (g) o mililitros (ml) para poder comparar magnitudes.
+#     """
+#     match = re.search(r'(\d+(?:[,.]\d+)?)\s*(kg|gr|grm|g|l|ltr|ml|cc)\b', name, re.IGNORECASE)
+#     if match:
+#         try:
+#             val = float(match.group(1).replace(',', '.'))
+#             u = match.group(2).lower()
+#             if u in ['kg']: return val * 1000.0, 'g'
+#             if u in ['l', 'ltr']: return val * 1000.0, 'ml'
+#             if u in ['gr', 'grm', 'g']: return val, 'g'
+#             if u in ['ml', 'cc']: return val, 'ml'
+#         except ValueError:
+#             pass
+#     return 1.0, 'un' # Fallback si no encuentra patrón
 
 def generate_vtex_magic_link(store_domain: str, products: list, sales_channel: int = 1, seller_id: int = 1) -> str:
     """
@@ -516,6 +538,21 @@ def optimize_shopping_cart(request: OptimizationRequest):
         raise HTTPException(status_code=400, detail=msg)
         
     return result
+
+@app.get("/categories/tree", response_model=Dict[str, CategoryTopLevelResponse])
+def get_categories_tree():
+    """
+    Devuelve el árbol de categorías reales de Coto+Día (top-level -> subcategoría
+    -> leaves), mergeado por texto normalizado, contención de tokens y
+    similaridad semántica (ver src/category_tree.py). Pensado para alimentar
+    el mega-menú del frontend.
+
+    Regla de ruteo esperada en el frontend: un click en un top-level con
+    has_direct_category_match=True (Lácteos/Golosinas/Almacén) debe resolverse
+    vía GET /category/{label}; cualquier otro click (subcategoría, leaf, o un
+    top-level sin match directo) debe resolverse vía GET /search?q=<label>.
+    """
+    return ml_models.get("category_tree", {})
 
 @app.get("/categories")
 def get_categories():
