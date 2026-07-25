@@ -186,13 +186,13 @@ def search_products(
                 product_ids = [p["id"] for p in nearest_products]
                 
                 cur.execute("""
-                    SELECT unified_product_id, store_id, product_url, base_price, in_stock, promotions_json, last_updated
+                    SELECT unified_product_id, store_id, product_url, base_price, in_stock, promotions_json, image_url, last_updated
                     FROM store_products
                     WHERE unified_product_id = ANY(%s)
                 """, (product_ids,))
-                
+
                 store_products = cur.fetchall()
-                
+
         # 4. Agrupar ofertas por unified_product_id
         offers_by_product: Dict[str, List[Dict[str, Any]]] = {}
         for sp in store_products:
@@ -233,9 +233,10 @@ def search_products(
                 "base_price": float(sp["base_price"]) if sp["base_price"] is not None else 0.0,
                 "in_stock": bool(sp["in_stock"]),
                 "last_updated": sp["last_updated"].isoformat() if sp["last_updated"] else None,
+                "image_url": sp.get("image_url"),
                 "promotions": promotions
             })
-            
+
         # 5. Estructurar la respuesta final de búsqueda
         results = []
         for p in nearest_products:
@@ -260,24 +261,6 @@ def search_products(
     except Exception as e:
         logger.error(f"Error interno durante la búsqueda semántica: {e}")
         raise HTTPException(status_code=500, detail=f"Error interno en el servidor: {e}")
-
-# def extract_real_volume(name: str) -> tuple[float, str]:
-#     """
-#     Parsea el nombre del producto para extraer el volumen real usando Regex.
-#     Normaliza todo a gramos (g) o mililitros (ml) para poder comparar magnitudes.
-#     """
-#     match = re.search(r'(\d+(?:[,.]\d+)?)\s*(kg|gr|grm|g|l|ltr|ml|cc)\b', name, re.IGNORECASE)
-#     if match:
-#         try:
-#             val = float(match.group(1).replace(',', '.'))
-#             u = match.group(2).lower()
-#             if u in ['kg']: return val * 1000.0, 'g'
-#             if u in ['l', 'ltr']: return val * 1000.0, 'ml'
-#             if u in ['gr', 'grm', 'g']: return val, 'g'
-#             if u in ['ml', 'cc']: return val, 'ml'
-#         except ValueError:
-#             pass
-#     return 1.0, 'un' # Fallback si no encuentra patrón
 
 def generate_vtex_magic_link(store_domain: str, products: list, sales_channel: int = 1, seller_id: int = 1) -> str:
     """
@@ -434,7 +417,27 @@ def optimize_shopping_cart(request: OptimizationRequest):
                                         "suggested_unit": n["unit_type"] or "un"
                                     })
                         
-                        # --- 3. FEATURE: MAGIC LINK PARA DÍA ONLINE ---
+                        # --- 3. FEATURE: LINK DE PRODUCTO POR ÍTEM, PARA TODAS LAS TIENDAS ---
+                        # Día tiene además un magic link de carrito completo (más abajo); para
+                        # el resto (ej. Coto, que no expone un endpoint de carrito por URL) esto
+                        # permite al usuario abrir cada producto individualmente.
+                        for store_id, store_result in result.get("split", {}).items():
+                            store_products = store_result["products"]
+                            uids = [p["unified_id"] for p in store_products]
+                            if not uids:
+                                continue
+
+                            cur.execute("""
+                                SELECT unified_product_id, product_url
+                                FROM store_products
+                                WHERE store_id = %s AND unified_product_id = ANY(%s)
+                            """, (store_id, uids))
+
+                            url_map = {row["unified_product_id"]: row["product_url"] for row in cur.fetchall()}
+                            for p in store_products:
+                                p["product_url"] = url_map.get(p["unified_id"])
+
+                        # --- 4. FEATURE: MAGIC LINK PARA DÍA ONLINE ---
                         if "dia_online" in result.get("split", {}):
                             dia_products = result["split"]["dia_online"]["products"]
                             uids_dia = [p["unified_id"] for p in dia_products]

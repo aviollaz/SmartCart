@@ -5,7 +5,6 @@ const CartContext = createContext(null);
 
 const STORAGE_KEY = "smartcart_cart_v1";
 
-// Espeja 1:1 la forma de st.session_state.cart en el Streamlit viejo:
 // { [unified_id]: { name, quantity } } — sin precio (ver decisión de paridad
 // del plan: el carrito no muestra subtotal antes de optimizar).
 export function CartProvider({ children }) {

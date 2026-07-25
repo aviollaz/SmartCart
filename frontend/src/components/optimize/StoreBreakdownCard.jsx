@@ -12,6 +12,13 @@ function readBankDiscount(bankDiscount) {
 
 export function StoreBreakdownCard({ storeId, checkout, cartItems }) {
   const bankDiscount = readBankDiscount(checkout.bank_discount);
+  const productLinks = checkout.products.filter((item) => item.product_url);
+
+  const openAllProducts = () => {
+    for (const item of productLinks) {
+      window.open(item.product_url, "_blank", "noopener,noreferrer");
+    }
+  };
 
   return (
     <div className="rounded-lg border border-line bg-surface p-4">
@@ -48,8 +55,15 @@ export function StoreBreakdownCard({ storeId, checkout, cartItems }) {
           <ExternalLink size={14} />
         </a>
       ) : (
-        storeId === "coto_online" && (
-          <p className="mt-3 text-xs text-ink-muted">Para Coto, los productos deben agregarse manualmente.</p>
+        productLinks.length > 0 && (
+          <button
+            type="button"
+            onClick={openAllProducts}
+            className="mt-3 flex items-center justify-center gap-2 rounded-md bg-brand-accent px-4 py-2 text-sm font-semibold text-white hover:bg-brand-accent-dark"
+          >
+            Abrir productos de {storeLabel(storeId)}
+            <ExternalLink size={14} />
+          </button>
         )
       )}
 
@@ -58,7 +72,14 @@ export function StoreBreakdownCard({ storeId, checkout, cartItems }) {
         <ul className="mt-1 list-inside list-disc">
           {checkout.products.map((item) => (
             <li key={item.unified_id}>
-              {cartItems[item.unified_id]?.name || item.unified_id} (x{item.quantity})
+              {item.product_url ? (
+                <a href={item.product_url} target="_blank" rel="noreferrer" className="underline hover:text-brand-violet-700">
+                  {cartItems[item.unified_id]?.name || item.unified_id}
+                </a>
+              ) : (
+                cartItems[item.unified_id]?.name || item.unified_id
+              )}{" "}
+              (x{item.quantity})
             </li>
           ))}
         </ul>

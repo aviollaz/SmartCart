@@ -42,3 +42,20 @@ export function resolveDisplayPrice(product) {
     .filter((price) => typeof price === "number" && price > 0);
   return offerPrices.length > 0 ? Math.min(...offerPrices) : null;
 }
+
+/**
+ * GET /search no calcula un image_url a nivel de producto (mismo gap que
+ * min_price, ver resolveDisplayPrice), aunque sí trae image_url por oferta en
+ * available_at_stores. Como paliativo, si no vino resuelto se busca la
+ * primera imagen disponible priorizando Coto sobre Día (mismo criterio que
+ * ya usa el backend en GET /category).
+ */
+export function resolveDisplayImage(product) {
+  if (product.image_url) return product.image_url;
+  const offers = product.available_at_stores || [];
+  const cotoOffer = offers.find((offer) => offer.store_id === "coto_online" && offer.image_url);
+  if (cotoOffer) return cotoOffer.image_url;
+  const diaOffer = offers.find((offer) => offer.store_id === "dia_online" && offer.image_url);
+  if (diaOffer) return diaOffer.image_url;
+  return null;
+}

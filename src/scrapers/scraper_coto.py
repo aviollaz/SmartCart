@@ -2,6 +2,8 @@ import httpx
 import time
 import random
 
+from src.size_parser import extract_real_volume
+
 class CotoScraper:
     def __init__(self):
         self.headers = {
@@ -73,18 +75,21 @@ class CotoScraper:
                     if base_price == 0.0:
                         base_price = float(prod_data.get("product_list_price", 0))
                     
-                    total_volume_weight = base_price / format_price if format_price > 0 else 1.0
-                    unit_type = prod_data.get("product_unit_of_measure", "un")
+                    # Fuente primaria: parsear el tamaño real del nombre del producto
+                    # (ej. "250 Ml", "400 Gr") - la metadata de la tienda
+                    # (product_unit_of_measure) casi siempre viene genérica ("UNI").
+                    total_volume_weight, unit_type = extract_real_volume(item.get("value"))
 
-                    # calculate total volume weight and adjust unit type if necessary
-                    if base_price > 0 and format_price > 0:
+                    # Fallback: productos pesables sin tamaño en el nombre (ej. "Tomate x Kg"),
+                    # estimado a partir del precio por formato de venta.
+                    if unit_type == "un" and base_price > 0 and format_price > 0:
                         total_volume_weight = round(base_price / format_price, 3)
                         if total_volume_weight < 1.0:
                             total_volume_weight = total_volume_weight * 1000
                             unit_type = "g"
                         else:
                             unit_type = "kg"
-                    
+
                     product = {
                         "store_sku": prod_data.get("sku_id"),
                         "ean": str(prod_data.get("product_main_ean")) if prod_data.get("product_main_ean") else None,

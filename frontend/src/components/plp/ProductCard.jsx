@@ -1,6 +1,6 @@
 import { ShoppingCart } from "lucide-react";
 import { useCart } from "../../context/CartContext";
-import { formatPrice, formatUnitPrice, resolveDisplayPrice, storeLabel } from "../../utils/formatters";
+import { formatPrice, formatUnitPrice, resolveDisplayImage, resolveDisplayPrice, storeLabel } from "../../utils/formatters";
 import { QuantityStepper } from "./QuantityStepper";
 
 function PromoBadges({ product }) {
@@ -45,13 +45,14 @@ export function ProductCard({ product }) {
   const cartEntry = items[product.unified_id];
   const displayPrice = resolveDisplayPrice(product);
   const unitPriceLabel = formatUnitPrice({ ...product, min_price: displayPrice });
+  const displayImage = resolveDisplayImage(product);
 
   return (
     <div className="flex flex-col rounded-lg border border-line bg-surface p-4">
       <div className="mb-3 flex h-36 items-center justify-center">
-        {product.image_url ? (
+        {displayImage ? (
           <img
-            src={product.image_url}
+            src={displayImage}
             alt={product.name}
             className="h-full w-full object-contain"
             loading="lazy"

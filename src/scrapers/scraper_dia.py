@@ -5,6 +5,8 @@ import random
 import sys
 import os
 
+from src.size_parser import extract_real_volume
+
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 from database import SmartCartDB
 
@@ -92,10 +94,15 @@ class DiaScraper:
                 if prop["name"] == "UnidaddeMedida":
                     unidad_medida = prop["values"][0].lower()
 
-            total_volume_weight = 1.0
-            if base_price > 0 and precio_por_und is not None and precio_por_und > 0:
+            # Fuente primaria: parsear el tamaño real del nombre del producto
+            # (ej. "250 Ml", "400 Gr") - la property VTEX "UnidaddeMedida" no
+            # siempre viene informada y cae al genérico "un".
+            total_volume_weight, unit_type = extract_real_volume(p.get("productName"))
+
+            # Fallback: usar el precio por unidad de VTEX cuando el nombre no trae talla.
+            if unit_type == "un" and base_price > 0 and precio_por_und is not None and precio_por_und > 0:
                 total_volume_weight = round(base_price / precio_por_und, 3)
-                
+
                 if "lt" in unidad_medida or "l" in unidad_medida:
                     if total_volume_weight < 1.0:
                         total_volume_weight = total_volume_weight * 1000
@@ -104,8 +111,8 @@ class DiaScraper:
                     if total_volume_weight < 1.0:
                         total_volume_weight = total_volume_weight * 1000
                         unidad_medida = "g"
-                        
-            unit_type = unidad_medida
+
+                unit_type = unidad_medida
 
             # --- EXTRACCIÓN Y NORMALIZACIÓN DE CATEGORÍA ---
             raw_categories = p.get("categories", [])
