@@ -12,6 +12,30 @@ from src.database import SmartCartDB
 from src.optimizer import optimize_cart
 from src.flattener import flatten_cart_prices
 from src.category_tree import build_category_tree
+from src.category_tags import filter_tags
+
+
+def _same_aisle_filter(product_row: dict, alias: str = "") -> tuple[str, Any]:
+    """
+    Cláusula SQL que restringe los candidatos a sustituto a la misma góndola
+    que el producto original, más su parámetro.
+
+    Prefiere los tags de taxonomía (estrictos: la mayonesa cuelga de
+    "almacén -> aceites y aderezos" y la carne de "frescos -> carnes", así que
+    no pueden matchear). Cae a `category` cuando el producto todavía no tiene
+    tags, que es el caso de toda fila no re-scrapeada: sin ese fallback las
+    sugerencias se romperían en silencio durante la transición.
+
+    Se usa `&&` (solapamiento) y no `@>` (containment) porque las tiendas
+    anidan a distinta profundidad; ver src/category_tags.filter_tags().
+    """
+    prefix = f"{alias}." if alias else ""
+    tags = filter_tags(product_row.get("tags"))
+
+    if tags:
+        return f"AND {prefix}tags && %s::text[]", tags
+    return f"AND {prefix}category = %s", product_row.get("category")
+
 
 # Configuración de Logging
 logging.basicConfig(
@@ -340,21 +364,22 @@ def optimize_shopping_cart(request: OptimizationRequest):
                                 if uid in flat_prices and store in flat_prices[uid]:
                                     store_subtotal += flat_prices[uid][store]["total_cost"]
                                 else:
-                                    # Extraemos también la categoría para no sugerir locuras
-                                    cur.execute("SELECT name_embedding, name, category FROM unified_products WHERE id = %s", (uid,))
+                                    # Extraemos también los tags/categoría para no sugerir locuras
+                                    cur.execute("SELECT name_embedding, name, category, tags FROM unified_products WHERE id = %s", (uid,))
                                     p = cur.fetchone()
-                                    
+
                                     if p and p["name_embedding"]:
-                                        # Agregamos AND u.category = %s para forzar misma góndola
-                                        cur.execute("""
+                                        # Forzamos misma góndola vía tags de taxonomía
+                                        aisle_clause, aisle_param = _same_aisle_filter(p, alias="u")
+                                        cur.execute(f"""
                                             SELECT u.id, u.name
                                             FROM unified_products u
                                             JOIN store_products sp ON u.id = sp.unified_product_id
                                             WHERE sp.store_id = %s AND sp.in_stock = TRUE AND u.name_embedding IS NOT NULL
-                                            AND u.category = %s
+                                            {aisle_clause}
                                             ORDER BY u.name_embedding <=> %s ASC
                                             LIMIT 1
-                                        """, (store, p["category"], p["name_embedding"]))
+                                        """, (store, aisle_param, p["name_embedding"]))
                                         fallback = cur.fetchone()
                                         
                                         if fallback:
@@ -384,7 +409,7 @@ def optimize_shopping_cart(request: OptimizationRequest):
                         # --- 2. FEATURE: SUGERENCIAS SEMÁNTICAS DE AHORRO PROPORCIONAL ---
                         for item in request.cart:
                             # 1. Agregamos las columnas de peso y unidad al SELECT original
-                            cur.execute("SELECT name, name_embedding, category, total_volume_weight, unit_type FROM unified_products WHERE id = %s", (item.unified_id,))
+                            cur.execute("SELECT name, name_embedding, category, tags, total_volume_weight, unit_type FROM unified_products WHERE id = %s", (item.unified_id,))
                             p = cur.fetchone()
                             
                             if p and p["name_embedding"]:
@@ -397,14 +422,15 @@ def optimize_shopping_cart(request: OptimizationRequest):
                                 }
                                 
                                 # 3. Agregamos las columnas de peso y unidad al SELECT de los vecinos
-                                cur.execute("""
+                                aisle_clause, aisle_param = _same_aisle_filter(p)
+                                cur.execute(f"""
                                     SELECT id, name, total_volume_weight, unit_type
                                     FROM unified_products
                                     WHERE id != %s AND name_embedding IS NOT NULL
-                                    AND category = %s
+                                    {aisle_clause}
                                     ORDER BY name_embedding <=> %s ASC
                                     LIMIT 2
-                                """, (item.unified_id, p["category"], p["name_embedding"]))
+                                """, (item.unified_id, aisle_param, p["name_embedding"]))
                                 
                                 for n in cur.fetchall():
                                     # 4. Asignamos directo desde el resultado SQL del vecino

@@ -19,10 +19,11 @@ capas, de más barata a más costosa:
 """
 import json
 import os
-import unicodedata
 from functools import lru_cache
 
 import numpy as np
+
+from src.text_utils import normalize_label
 
 _BASE_DIR = os.path.dirname(__file__)
 _COTO_CATEGORIES_PATH = os.path.join(_BASE_DIR, "scrapers", "coto_categories.json")
@@ -62,11 +63,9 @@ MANUAL_SUBCATEGORY_ALIASES = {
 }
 
 
-def _normalize(label: str) -> str:
-    """Casefold + sin acentos/diacríticos + espacios colapsados, solo para matchear."""
-    decomposed = unicodedata.normalize("NFKD", label)
-    without_accents = "".join(ch for ch in decomposed if not unicodedata.combining(ch))
-    return " ".join(without_accents.casefold().split())
+# Compartido con src/category_tags.py, que slugifica los mismos segmentos de
+# categoría para guardarlos como tags: ambos tienen que normalizar igual.
+_normalize = normalize_label
 
 
 def _significant_tokens(label: str) -> set:

@@ -2,6 +2,16 @@
 from ortools.sat.python import cp_model
 from src.flattener import flatten_cart_prices
 
+# Cotas de los dominios enteros del modelo, en centavos.
+#
+# Se derivan de una sola constante en vez de hardcodearse por separado: la cota
+# de `subtotal * pct` tiene que ser 100 veces la del subtotal, y tenerlas
+# desacopladas hacía que un carrito grande diera "infeasible" por dominio y no
+# por economía. Con el 20% de Galicia el corte caía en ~$500.000, un carrito
+# perfectamente plausible, y el mensaje de error culpaba a los mínimos de compra.
+MAX_SUBTOTAL_CENTS = 10**10  # $100.000.000
+MAX_PCT = 100
+
 def optimize_cart(cart_items, user_memberships=None, user_cards=None, min_spend_limits=None, delivery_costs=None):
     if user_memberships is None: user_memberships = []
     if user_cards is None: user_cards = []
@@ -40,24 +50,25 @@ def optimize_cart(cart_items, user_memberships=None, user_cards=None, min_spend_
     applied_bank_discounts_info = {}
 
     for j in stores:
-        subtotal_vars[j] = model.NewIntVar(0, 99999999, f'subtotal_{j}')
+        subtotal_vars[j] = model.NewIntVar(0, MAX_SUBTOTAL_CENTS, f'subtotal_{j}')
         costs = [x[i, j] * int(round(flat_prices[i][j]["total_cost"] * 100)) for i in products if (i, j) in x]
         model.Add(subtotal_vars[j] == sum(costs))
 
-        discount_vars[j] = model.NewIntVar(0, 99999999, f'discount_{j}')
+        discount_vars[j] = model.NewIntVar(0, MAX_SUBTOTAL_CENTS, f'discount_{j}')
         best_promo = next((p for p in bank_promos.get(j, []) if p["card"] in user_cards), None)
-        
+
         if best_promo:
-            subtotal_times_pct = model.NewIntVar(0, 999999999, f'subtotal_times_pct_{j}')
+            subtotal_times_pct = model.NewIntVar(0, MAX_SUBTOTAL_CENTS * MAX_PCT, f'subtotal_times_pct_{j}')
             model.Add(subtotal_times_pct == subtotal_vars[j] * best_promo["discount_pct"])
-            raw_discount = model.NewIntVar(0, 99999999, f'raw_discount_{j}')
+            raw_discount = model.NewIntVar(0, MAX_SUBTOTAL_CENTS, f'raw_discount_{j}')
             model.AddDivisionEquality(raw_discount, subtotal_times_pct, 100)
             model.AddMinEquality(discount_vars[j], [raw_discount, model.NewConstant(int(best_promo["cap"] * 100))])
             applied_bank_discounts_info[j] = best_promo
         else:
             model.Add(discount_vars[j] == 0)
 
-        final_cost = model.NewIntVar(0, 99999999, f'final_cost_{j}')
+        # x2 porque al subtotal se le suma el envío antes de restar el descuento.
+        final_cost = model.NewIntVar(0, MAX_SUBTOTAL_CENTS * 2, f'final_cost_{j}')
         model.Add(final_cost == subtotal_vars[j] + (y[j] * int(delivery_costs[j] * 100)) - discount_vars[j])
         store_final_costs_cents[j] = final_cost
 

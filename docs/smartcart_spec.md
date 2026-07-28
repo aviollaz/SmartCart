@@ -116,3 +116,39 @@ Este formato consolidado representa la estructura limpia y corregida que se cons
   ]
 }
 ```
+
+### 3.1. Tags estrictos de góndola
+
+Además de `category` (los 4 buckets gruesos de `SmartCartDB.CATEGORY_MAP`), `unified_products` guarda `tags TEXT[]`: la ruta jerárquica completa de la categoría, slugificada.
+
+```
+"Almacén -> Golosinas -> Alfajores"  ->  ["almacen", "golosinas", "alfajores"]
+```
+
+La ruta sale del dump de taxonomía de cada tienda (`src/scrapers/*_categories.json`), que está indexado por la misma clave que los scrapers ya iteran: el `category_id` de Coto y el slug de Día. No hay requests extra ni heurísticas sobre el nombre del producto.
+
+El motivo es que `category` no sirve como guarda de "misma góndola": mapea etiquetas hoja a través de un dict de 9 claves, así que sobre el catálogo completo el 98 % de las categorías reales cae en `Otros`, mezclando mayonesa con condimentos para carne. Los tags, en cambio, vienen de ramas distintas de la taxonomía y no pueden colisionar.
+
+`api.py` compara góndolas con el operador de **solapamiento** de Postgres (`&&`, índice GIN) sobre los segmentos **no top-level** (`category_tags.filter_tags()`), no con containment ni prefijo de rama. La razón es que las tiendas anidan a distinta profundidad:
+
+| | `tags` | segmentos de comparación |
+|---|---|---|
+| Leche Coto | `[frescos, lacteos, leches]` | `[lacteos, leches]` |
+| Leche Día | `[frescos, leches]` | `[leches]` |
+
+Solapan en `leches` y son sustituibles; un filtro por prefijo de rama fallaría acá. Descartar el top-level es lo que evita que `almacen` matchee contra medio catálogo. Cuando un producto todavía no tiene tags, la comparación cae al filtro por `category` anterior.
+
+### 3.2. Atributos dietarios
+
+`unified_products` expone dos booleanos, poblados por los scrapers vía `src/dietary_parser.py`:
+
+- `is_gluten_free` — `sin tacc`, `sin t.a.c.c`, `libre de gluten`, `sin gluten`, `gluten free`.
+- `is_vegan` — `vegano`/`vegana`, `plant based`, `100% vegetal`.
+
+**`FALSE` significa "sin evidencia explícita", no "contiene gluten" ni "no es vegano".** Un flag solo se pone en `TRUE` cuando aparece una frase completa en el texto disponible; nunca se infiere a partir de la categoría, porque un falso positivo acá tiene consecuencias reales para alguien celíaco. Los tokens sueltos `gluten` y `vegetal` están excluidos a propósito (darían positivo en "contiene gluten" y en "Sémola Vegetales Vitina Luchetti").
+
+La evidencia se busca **solo en texto que describe a ese producto**: nombre, marca, ruta de categoría y los campos estructurados que la tienda le asigna (del lado de Día, `properties` —la property `Otros` suele traer `"Sin Tacc"`— y `clusterHighlights`, leídos de forma defensiva porque la query es persisted y pueden no venir).
+
+**Las descripciones de marketing (`description`, `metaTagDescription`) están excluidas a propósito.** Enumeran productos hermanos de la misma línea: la del *Ketchup Hellmann's Regular* incluye `"...mayonesa hellmann's light, clásica, suave, vegana, oliva..."` y hacía que el ketchup se marcara como vegano. Ninguna regla de frases evita ese caso —el reclamo es legítimo, pero es sobre otro producto—, así que la única defensa es no mirar ese texto. Medido sobre 196 productos de Día, el texto libre aportaba +5 detecciones de gluten y 1 sola de vegano, que era precisamente ese falso positivo; los campos estructurados aportan el 92 % de la señal.
+
+Los flags se **pisan** en cada scrapeo (`EXCLUDED`), no se acumulan con `OR`. Acumular preservaría la evidencia de ambas tiendas, pero volvería los flags monotónicos: un falso positivo no se podría corregir nunca, ni siquiera arreglando el parser. La asimetría de riesgo decide: un `FALSE` de más solo significa "sin evidencia", mientras que un `TRUE` de más es el error que hace daño.
