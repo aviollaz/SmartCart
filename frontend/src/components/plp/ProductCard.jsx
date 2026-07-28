@@ -1,5 +1,7 @@
+import { useState } from "react";
 import { ShoppingCart } from "lucide-react";
 import { useCart } from "../../context/CartContext";
+import { useFlattenedPrice } from "../../hooks/useFlattenedPrice";
 import { formatPrice, formatUnitPrice, resolveDisplayImage, resolveDisplayPrice, storeLabel } from "../../utils/formatters";
 import { QuantityStepper } from "./QuantityStepper";
 
@@ -18,6 +20,28 @@ function PromoBadges({ product }) {
       {badges.map(({ key, storeId, promo }) => (
         <li key={key} className="text-xs font-semibold text-state-promo">
           {storeLabel(storeId)}: {promo.description}
+        </li>
+      ))}
+    </ul>
+  );
+}
+
+// Solo se muestran en afirmativo: la ausencia del flag significa que el parser
+// no encontró una declaración explícita, no que el producto tenga gluten.
+function DietaryBadges({ product }) {
+  const labels = [];
+  if (product.is_gluten_free) labels.push("Sin TACC");
+  if (product.is_vegan) labels.push("Vegano");
+  if (labels.length === 0) return null;
+
+  return (
+    <ul className="mb-2 flex flex-wrap gap-1">
+      {labels.map((label) => (
+        <li
+          key={label}
+          className="rounded-full border border-line px-2 py-0.5 text-[11px] font-semibold text-ink-muted"
+        >
+          {label}
         </li>
       ))}
     </ul>
@@ -47,6 +71,18 @@ export function ProductCard({ product }) {
   const unitPriceLabel = formatUnitPrice({ ...product, min_price: displayPrice });
   const displayImage = resolveDisplayImage(product);
 
+  // Cantidad "en borrador" para los productos que todavía no están en el carrito:
+  // permite ver el efecto de una promo de volumen antes de agregar nada.
+  const [draftQuantity, setDraftQuantity] = useState(1);
+  const quantity = cartEntry ? cartEntry.quantity : draftQuantity;
+
+  const { data: flattened, loading: pricing } = useFlattenedPrice(product.unified_id, quantity);
+
+  // Solo se pisa el precio de la card si el aplanado es efectivamente más barato;
+  // si la promo no aplica a esta cantidad, la card queda igual que siempre.
+  const hasBetterPrice =
+    flattened && typeof displayPrice === "number" && flattened.unitPrice < displayPrice - 0.01;
+
   return (
     <div className="flex flex-col rounded-lg border border-line bg-surface p-4">
       <div className="mb-3 flex h-36 items-center justify-center">
@@ -64,10 +100,29 @@ export function ProductCard({ product }) {
         )}
       </div>
 
+      <DietaryBadges product={product} />
       <PromoBadges product={product} />
 
-      {displayPrice != null && (
-        <p className="text-lg font-bold text-brand-violet-700">{formatPrice(displayPrice)}</p>
+      {hasBetterPrice ? (
+        <>
+          <p className="text-lg font-bold text-brand-violet-700">
+            {formatPrice(flattened.unitPrice)}
+            <span className="ml-2 text-sm font-normal text-ink-muted line-through">
+              {formatPrice(displayPrice)}
+            </span>
+          </p>
+          <p className="mb-1 text-xs font-semibold text-state-promo">
+            c/u llevando {quantity} en {storeLabel(flattened.storeId)}
+            {flattened.promoDescription ? ` · ${flattened.promoDescription}` : ""}
+          </p>
+        </>
+      ) : (
+        <>
+          {displayPrice != null && (
+            <p className="text-lg font-bold text-brand-violet-700">{formatPrice(displayPrice)}</p>
+          )}
+          {pricing && <p className="mb-1 text-xs text-ink-muted">Calculando precio por cantidad…</p>}
+        </>
       )}
       {unitPriceLabel && <p className="mb-1 text-xs text-ink-muted">{unitPriceLabel}</p>}
 
@@ -78,7 +133,7 @@ export function ProductCard({ product }) {
       </p>
       {product.brand && <p className="mb-3 -mt-2 text-xs text-ink-muted">{product.brand}</p>}
 
-      <div className="flex items-center justify-end">
+      <div className="flex items-center justify-end gap-2">
         {cartEntry ? (
           <QuantityStepper
             quantity={cartEntry.quantity}
@@ -86,14 +141,22 @@ export function ProductCard({ product }) {
             onDecrement={() => decrementItem(product.unified_id)}
           />
         ) : (
-          <button
-            type="button"
-            onClick={() => addItem(product.unified_id, product.name)}
-            aria-label="Agregar al carrito"
-            className="flex items-center justify-center rounded-md bg-brand-accent p-2.5 text-white hover:bg-brand-accent-dark"
-          >
-            <ShoppingCart size={18} />
-          </button>
+          <>
+            <QuantityStepper
+              quantity={draftQuantity}
+              onIncrement={() => setDraftQuantity((q) => q + 1)}
+              onDecrement={() => setDraftQuantity((q) => Math.max(1, q - 1))}
+              size="sm"
+            />
+            <button
+              type="button"
+              onClick={() => addItem(product.unified_id, product.name, draftQuantity)}
+              aria-label="Agregar al carrito"
+              className="flex items-center justify-center rounded-md bg-brand-accent p-2.5 text-white hover:bg-brand-accent-dark"
+            >
+              <ShoppingCart size={18} />
+            </button>
+          </>
         )}
       </div>
     </div>
