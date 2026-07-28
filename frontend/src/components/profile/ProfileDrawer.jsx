@@ -1,4 +1,5 @@
 import { useProfile } from "../../context/ProfileContext";
+import { AddressField } from "./AddressField";
 import { MultiSelectField } from "./MultiSelectField";
 import { ZoneSelect } from "./ZoneSelect";
 
@@ -15,6 +16,7 @@ export function ProfileDrawer() {
     <section className="rounded-lg border border-line bg-surface p-5">
       <h2 className="mb-4 font-display text-lg font-bold text-ink">Tu perfil</h2>
       <div className="flex flex-col gap-4">
+        <AddressField />
         <MultiSelectField label="Tarjetas bancarias" options={CARD_OPTIONS} selected={cards} onChange={setCards} />
         <MultiSelectField
           label="Membresías de supermercados"
@@ -22,6 +24,8 @@ export function ProfileDrawer() {
           selected={memberships}
           onChange={setMemberships}
         />
+        {/* La zona quedó como fallback: sólo se usa para Día, y para Coto
+            cuando no hay dirección geocodificada o su sitio no responde. */}
         <ZoneSelect zone={zone} onChange={setZone} />
       </div>
     </section>

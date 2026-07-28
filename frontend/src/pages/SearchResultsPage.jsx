@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from "react";
 import { useParams, useSearchParams } from "react-router-dom";
 import { searchProducts, getProductsByCategory } from "../api/products";
 import { useProductFilters } from "../hooks/useProductFilters";
+import { storeLabel } from "../utils/formatters";
 import { FiltersSidebar } from "../components/plp/FiltersSidebar";
 import { SortDropdown } from "../components/plp/SortDropdown";
 import { ProductGrid } from "../components/plp/ProductGrid";
@@ -61,6 +62,9 @@ export function SearchResultsPage() {
   const filters = useProductFilters(results);
 
   const title = mode === "category" ? bucket : `Resultados para "${query}"`;
+  // Sin este aviso, la grilla filtrada por cobertura se ve simplemente más
+  // chica y parece que faltan productos.
+  const excludedLabel = filters.unavailableStores.map(storeLabel).join(" y ");
   const anyDietaryActive = dietary.glutenFree || dietary.vegan;
   const emptyMessage = anyDietaryActive
     ? `No encontramos productos para "${term}" con los filtros de dieta aplicados.`
@@ -69,6 +73,12 @@ export function SearchResultsPage() {
   return (
     <div className="mx-auto w-full max-w-7xl px-4 py-6">
       <h1 className="mb-4 font-display text-xl font-bold text-ink">{title}</h1>
+
+      {excludedLabel && (
+        <p className="mb-4 rounded-md border border-state-warning/40 bg-state-warning/10 px-3 py-2 text-sm text-ink-muted">
+          No mostramos productos de <strong className="text-ink">{excludedLabel}</strong>: no entregan en tu dirección.
+        </p>
+      )}
 
       {error ? (
         <p className="text-sm text-state-warning">

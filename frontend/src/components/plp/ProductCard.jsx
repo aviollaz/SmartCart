@@ -1,6 +1,6 @@
-import { useState } from "react";
 import { ShoppingCart } from "lucide-react";
 import { useCart } from "../../context/CartContext";
+import { useProfile } from "../../context/ProfileContext";
 import { useFlattenedPrice } from "../../hooks/useFlattenedPrice";
 import { formatPrice, formatUnitPrice, resolveDisplayImage, resolveDisplayPrice, storeLabel } from "../../utils/formatters";
 import { QuantityStepper } from "./QuantityStepper";
@@ -66,17 +66,21 @@ function StoreBreakdown({ product }) {
 
 export function ProductCard({ product }) {
   const { items, addItem, incrementItem, decrementItem } = useCart();
+  const { unavailableStores } = useProfile();
   const cartEntry = items[product.unified_id];
   const displayPrice = resolveDisplayPrice(product);
   const unitPriceLabel = formatUnitPrice({ ...product, min_price: displayPrice });
   const displayImage = resolveDisplayImage(product);
 
-  // Cantidad "en borrador" para los productos que todavía no están en el carrito:
-  // permite ver el efecto de una promo de volumen antes de agregar nada.
-  const [draftQuantity, setDraftQuantity] = useState(1);
-  const quantity = cartEntry ? cartEntry.quantity : draftQuantity;
+  // La cantidad sale del carrito: antes existía un borrador local que dejaba el
+  // stepper en 3 o 4 unidades sin que el producto estuviera agregado.
+  const quantity = cartEntry ? cartEntry.quantity : 1;
 
-  const { data: flattened, loading: pricing } = useFlattenedPrice(product.unified_id, quantity);
+  const { data: flattened, loading: pricing } = useFlattenedPrice(
+    product.unified_id,
+    quantity,
+    unavailableStores
+  );
 
   // Solo se pisa el precio de la card si el aplanado es efectivamente más barato;
   // si la promo no aplica a esta cantidad, la card queda igual que siempre.
@@ -133,6 +137,9 @@ export function ProductCard({ product }) {
       </p>
       {product.brand && <p className="mb-3 -mt-2 text-xs text-ink-muted">{product.brand}</p>}
 
+      {/* Patrón e-commerce estándar: hasta que el producto no está en el carrito
+          hay un solo botón "Agregar"; el selector de unidades aparece recién
+          después. Bajar a 0 elimina el ítem y la card vuelve sola al botón. */}
       <div className="flex items-center justify-end gap-2">
         {cartEntry ? (
           <QuantityStepper
@@ -141,22 +148,14 @@ export function ProductCard({ product }) {
             onDecrement={() => decrementItem(product.unified_id)}
           />
         ) : (
-          <>
-            <QuantityStepper
-              quantity={draftQuantity}
-              onIncrement={() => setDraftQuantity((q) => q + 1)}
-              onDecrement={() => setDraftQuantity((q) => Math.max(1, q - 1))}
-              size="sm"
-            />
-            <button
-              type="button"
-              onClick={() => addItem(product.unified_id, product.name, draftQuantity)}
-              aria-label="Agregar al carrito"
-              className="flex items-center justify-center rounded-md bg-brand-accent p-2.5 text-white hover:bg-brand-accent-dark"
-            >
-              <ShoppingCart size={18} />
-            </button>
-          </>
+          <button
+            type="button"
+            onClick={() => addItem(product.unified_id, product.name, 1)}
+            className="flex w-full items-center justify-center gap-2 rounded-md bg-brand-accent px-4 py-2 text-sm font-semibold text-white hover:bg-brand-accent-dark"
+          >
+            <ShoppingCart size={16} />
+            Agregar
+          </button>
         )}
       </div>
     </div>
