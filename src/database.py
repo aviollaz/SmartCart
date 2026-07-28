@@ -20,6 +20,32 @@ class SmartCartDB:
 
     def __init__(self):
         self.conn_string = "host=localhost port=5432 dbname=smartcart user=smartuser password=smartpassword"
+        self._schema_ready = False
+
+    def _ensure_schema(self, conn):
+        """
+        Agrega de forma idempotente las columnas de tags y atributos dietarios.
+        Mismo patrón ad-hoc que usa EmbeddingPipeline para name_embedding: el
+        esquema base se creó a mano y no hay migraciones en el proyecto.
+        """
+        if self._schema_ready:
+            return
+
+        with conn.cursor() as cur:
+            cur.execute("""
+                ALTER TABLE unified_products
+                    ADD COLUMN IF NOT EXISTS tags TEXT[],
+                    ADD COLUMN IF NOT EXISTS is_gluten_free BOOLEAN DEFAULT FALSE,
+                    ADD COLUMN IF NOT EXISTS is_vegan BOOLEAN DEFAULT FALSE;
+            """)
+            # GIN es el índice que soporta el operador de solapamiento (&&)
+            # con el que api.py filtra "misma góndola".
+            cur.execute("""
+                CREATE INDEX IF NOT EXISTS idx_unified_products_tags
+                ON unified_products USING gin (tags);
+            """)
+
+        self._schema_ready = True
 
     def save_store_products(self, products: list, store_id: str):
         if not products:
@@ -28,6 +54,7 @@ class SmartCartDB:
         print(f"[DB] Estandarizando y guardando {len(products)} productos en '{store_id}'...")
         try:
             with psycopg.connect(self.conn_string) as conn:
+                self._ensure_schema(conn)
                 with conn.cursor() as cur:
                     for prod in products:
                         # 1. Resolver identificador único
@@ -51,14 +78,29 @@ class SmartCartDB:
                         normalized_category = self.CATEGORY_MAP.get(raw_category, "Otros")
 
                         # 3. Guardar el Producto Unificado (Incluye la categoría normalizada)
+                        # Los flags dietarios se PISAN en cada scrapeo en vez de
+                        # acumularse con OR. Acumular preservaba la evidencia de
+                        # ambas tiendas, pero volvía los flags monotónicos: un
+                        # falso positivo no se podía corregir nunca, ni siquiera
+                        # arreglando el parser. Para un campo del que depende
+                        # alguien celíaco eso es inaceptable, y la asimetría
+                        # juega a favor de pisar: un FALSE de más solo significa
+                        # "sin evidencia" (seguro), mientras que un TRUE de más
+                        # es el error peligroso.
                         cur.execute("""
-                            INSERT INTO unified_products (id, ean, name, brand, unit_type, category, total_volume_weight)
-                            VALUES (%s, %s, %s, %s, %s, %s, %s)
+                            INSERT INTO unified_products (
+                                id, ean, name, brand, unit_type, category, total_volume_weight,
+                                tags, is_gluten_free, is_vegan
+                            )
+                            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
                             ON CONFLICT (id) DO UPDATE SET
-                                name = EXCLUDED.name, 
+                                name = EXCLUDED.name,
                                 brand = EXCLUDED.brand,
                                 category = EXCLUDED.category,
-                                total_volume_weight = EXCLUDED.total_volume_weight
+                                total_volume_weight = EXCLUDED.total_volume_weight,
+                                tags = EXCLUDED.tags,
+                                is_gluten_free = EXCLUDED.is_gluten_free,
+                                is_vegan = EXCLUDED.is_vegan
                         """, (
                             unified_id,
                             prod['ean'],
@@ -66,7 +108,10 @@ class SmartCartDB:
                             prod['brand'],
                             prod['unit_type'],
                             normalized_category,
-                            prod['total_volume_weight']))
+                            prod['total_volume_weight'],
+                            prod.get('tags') or None,
+                            bool(prod.get('is_gluten_free', False)),
+                            bool(prod.get('is_vegan', False))))
 
                         # 4. Guardar la Instancia Comercial con el JSON de promos y la IMAGEN
                         cur.execute("""
@@ -75,6 +120,7 @@ class SmartCartDB:
                             )
                             VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
                             ON CONFLICT (store_id, store_sku) DO UPDATE SET
+                                product_url = EXCLUDED.product_url,
                                 base_price = EXCLUDED.base_price,
                                 in_stock = EXCLUDED.in_stock,
                                 promotions_json = EXCLUDED.promotions_json,

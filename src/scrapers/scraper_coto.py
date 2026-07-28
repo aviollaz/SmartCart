@@ -1,8 +1,64 @@
 import httpx
+import re
 import time
 import random
 
+from src.category_tags import category_label, tags_for_category
+from src.dietary_parser import detect_dietary_flags
 from src.size_parser import extract_real_volume
+
+
+# Categorías del MVP. El catálogo es deliberadamente angosto; ampliar esta
+# lista es la forma de scrapear más góndolas (los ids salen de coto_categories.json).
+MVP_CATEGORIES = [
+    "catv00001412",  # Almacén -> Harinas -> Harina de Trigo
+    "catv00003266",  # Frescos -> Lácteos -> Leches
+    "catv00001413",  # Almacén -> Harinas -> Sémola
+    "catv00003250",  # Frescos -> Lácteos -> Dulce de Leche
+    "catv00003596",  # Almacén -> Golosinas -> Alfajores
+]
+
+
+def build_coto_url(value: str, product_id: str) -> str | None:
+    """
+    Arma la URL pública de una ficha de producto de Coto.
+
+    El campo `url` que devuelve la API es un fragmento relativo sin barra
+    inicial ("_/R-00539894-00539894-200"), así que concatenarlo al dominio
+    producía links rotos del tipo "https://www.cotodigital.com.ar_/R-...".
+
+    Formato real: el slug es decorativo y lo que resuelve la página es el
+    código R-. Ej. ("Paleta Cocida Feteada Paladini Xkg", "00307037") ->
+    https://www.coto.com.ar/productos/paleta-cocida-feteada-paladini-xkg-/_/R-00307037-00307037-200
+    """
+    if not value or not product_id:
+        return None
+
+    slug = value.lower().replace(" ", "-") + "-"
+    return f"https://www.coto.com.ar/productos/{slug}/_/R-{product_id}-{product_id}-200"
+
+
+def resolve_coto_product_id(item: dict, prod_data: dict) -> str | None:
+    """
+    Obtiene el id numérico que va en el código R- de la URL.
+
+    Se resuelve en cascada porque no hay un fixture del payload de Coto en el
+    repo para confirmar dónde vive el `id`. Los tres caminos rinden el mismo
+    número: el sku_id es el id con el prefijo "sku" (sku00539894 -> 00539894),
+    y el `url` viejo ya traía el código R- armado.
+    """
+    raw_id = item.get("id")
+    if raw_id:
+        return str(raw_id)
+
+    sku_id = prod_data.get("sku_id")
+    if sku_id:
+        return str(sku_id).removeprefix("sku")
+
+    legacy_url = prod_data.get("url") or ""
+    match = re.search(r"R-(\d+)-", legacy_url)
+    return match.group(1) if match else None
+
 
 class CotoScraper:
     def __init__(self):
@@ -22,7 +78,13 @@ class CotoScraper:
     def scrape_category(self, category_id: str):
         page = 1
         all_products = []
-        
+
+        # La ruta jerárquica de esta categoría ya está en el dump de taxonomía,
+        # indexada por el mismo id que recibimos acá: se resuelve una sola vez
+        # y se adjunta a cada producto como tags estrictos de góndola.
+        category_tags = tags_for_category("coto", category_id)
+        taxonomy_label = category_label("coto", category_id)
+
         while True:
             url = (
                 f"https://api.coto.com.ar/api/v1/ms-digital-sitio-bff-web/api/v1/products/categories/{category_id}"
@@ -44,11 +106,14 @@ class CotoScraper:
                 data = response.json()
                 
                 # --- EXTRACCIÓN DE CATEGORÍA ---
-                # Extraemos el nombre de la categoría del primer grupo disponible
-                category_name = "Sin Categoría"
-                groups = data.get("response", {}).get("groups", [])
-                if groups:
-                    category_name = groups[0].get("display_name", "Sin Categoría")
+                # Preferimos la hoja de la taxonomía (estable y consistente con
+                # los tags); el display_name de la respuesta queda de fallback
+                # para ids que no estén en el dump.
+                category_name = taxonomy_label or "Sin Categoría"
+                if not taxonomy_label:
+                    groups = data.get("response", {}).get("groups", [])
+                    if groups:
+                        category_name = groups[0].get("display_name", "Sin Categoría")
                 # -------------------------------
 
                 results = data.get("response", {}).get("results", [])
@@ -90,19 +155,30 @@ class CotoScraper:
                         else:
                             unit_type = "kg"
 
+                    name = item.get("value")
+                    brand = prod_data.get("product_brand")
+
+                    # Coto no expone descripción ni atributos en este payload,
+                    # así que la evidencia dietaria disponible es el nombre,
+                    # la marca y la ruta de categoría.
+                    is_gluten_free, is_vegan = detect_dietary_flags(name, brand, category_tags)
+
                     product = {
                         "store_sku": prod_data.get("sku_id"),
                         "ean": str(prod_data.get("product_main_ean")) if prod_data.get("product_main_ean") else None,
-                        "name": item.get("value"),
-                        "brand": prod_data.get("product_brand"),
-                        "category": category_name,  
-                        "url": f"https://www.cotodigital.com.ar{prod_data.get('url')}" if prod_data.get('url') else None,
+                        "name": name,
+                        "brand": brand,
+                        "category": category_name,
+                        "tags": category_tags,
+                        "url": build_coto_url(name, resolve_coto_product_id(item, prod_data)),
                         "image_url": prod_data.get("image_url"),
                         "base_price": base_price,
                         "in_stock": prod_data.get("in_stock", True),
                         "is_weighable": bool(prod_data.get("product_weighable", 0)),
                         "total_volume_weight": total_volume_weight,
                         "unit_type": unit_type,
+                        "is_gluten_free": is_gluten_free,
+                        "is_vegan": is_vegan,
                         "raw_promos": prod_data.get("discounts", [])
                     }
                     all_products.append(product)
@@ -117,19 +193,14 @@ class CotoScraper:
         return all_products
 
 if __name__ == "__main__":
-    import sys
-    import os
-    sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
-    from database import SmartCartDB
-    
+    from src.database import SmartCartDB
+
     scraper = CotoScraper()
     db = SmartCartDB()
     
-    categorias_mvp = ["catv00001412", "catv00003266", "catv00001413", "catv00003250", "catv00003596"]
-    
     print("\n--- INICIANDO PROCESO GLOBAL SMARTCART ---")
-    
-    for cat_id in categorias_mvp:
+
+    for cat_id in MVP_CATEGORIES:
         productos_recolectados = scraper.scrape_category(cat_id)
         
         if productos_recolectados:

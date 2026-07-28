@@ -1,14 +1,21 @@
 import httpx
-import json
 import time
 import random
-import sys
-import os
 
+from src.category_tags import category_label, tags_for_category
+from src.database import SmartCartDB
+from src.dietary_parser import detect_dietary_flags
 from src.size_parser import extract_real_volume
 
-sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
-from database import SmartCartDB
+# Categorías del MVP. El catálogo es deliberadamente angosto; ampliar esta
+# lista es la forma de scrapear más góndolas (los slugs salen de dia_categories.json).
+MVP_CATEGORIES = [
+    "almacen/harinas/harinas-de-trigo",
+    "frescos/leches",
+    "almacen/aceites-y-aderezos",
+    "desayuno/para-untar/dulces-de-leche",
+    "almacen/golosinas-y-alfajores/alfajores",
+]
 
 class DiaScraper:
     def __init__(self):
@@ -66,13 +73,14 @@ class DiaScraper:
             print(f"[DÍA] Excepción en request POST: {e}")
             return None
 
-    def process_products(self, response_json):
+    def process_products(self, response_json, category_tags: list[str] | None = None, taxonomy_label: str | None = None):
         if not response_json:
             return []
-            
+
+        category_tags = category_tags or []
         products_data = response_json.get("data", {}).get("productSearch", {}).get("products", [])
         parsed_products = []
-        
+
         for p in products_data:
             items = p.get("items", [])
             if not items:
@@ -115,23 +123,47 @@ class DiaScraper:
                 unit_type = unidad_medida
 
             # --- EXTRACCIÓN Y NORMALIZACIÓN DE CATEGORÍA ---
-            raw_categories = p.get("categories", [])
-            category_name = "Sin Categoría"
-            
-            if raw_categories:
-                # VTEX envía rutas como "/Frescos/Leches/Leches descremadas/"
-                # Tomamos la primera ruta, eliminamos las barras de los extremos y separamos por "/"
-                path_parts = [part for part in raw_categories[0].strip("/").split("/") if part]
-                
-                # Intentamos agarrar el segundo nivel (ej: "Leches"), si no existe, agarramos el primero
-                if len(path_parts) >= 2:
-                    category_name = path_parts[1]
-                elif len(path_parts) == 1:
-                    category_name = path_parts[0]
+            # Preferimos la hoja del dump de taxonomía (misma fuente que los
+            # tags); si el slug no está ahí, caemos al path que manda VTEX.
+            category_name = taxonomy_label or "Sin Categoría"
+
+            if not taxonomy_label:
+                raw_categories = p.get("categories", [])
+                if raw_categories:
+                    # VTEX envía rutas como "/Frescos/Leches/Leches descremadas/"
+                    # Tomamos la primera ruta, eliminamos las barras de los extremos y separamos por "/"
+                    path_parts = [part for part in raw_categories[0].strip("/").split("/") if part]
+
+                    # Intentamos agarrar el segundo nivel (ej: "Leches"), si no existe, agarramos el primero
+                    if len(path_parts) >= 2:
+                        category_name = path_parts[1]
+                    elif len(path_parts) == 1:
+                        category_name = path_parts[0]
             # -----------------------------------------------
 
             images = first_item.get("images", [])
             image_url = images[0].get("imageUrl") if images else None
+
+            # Solo fuentes que describen ESTE producto: nombre, marca, ruta de
+            # categoría y los campos estructurados que la tienda le asigna
+            # (property "Otros" suele traer "Sin Tacc"). `clusterHighlights` y
+            # `properties` pueden no venir —la query es persisted, con hash
+            # fijo— así que se leen de forma defensiva.
+            #
+            # `description`/`metaTagDescription` quedan EXCLUIDOS a propósito:
+            # son copy de marketing de la marca y enumeran productos hermanos.
+            # El "Ketchup Hellmann's Regular" traía "...mayonesa hellmann's
+            # light, clásica, suave, vegana, oliva..." y se marcaba como vegano.
+            # Medido sobre 196 productos, el texto libre aportaba +5 detecciones
+            # de gluten y 1 sola de vegano, que era justamente ese falso positivo.
+            dietary_sources = [
+                p.get("productName"),
+                p.get("brand"),
+                category_tags,
+                p.get("clusterHighlights"),
+                [prop.get("values") for prop in p.get("properties", [])],
+            ]
+            is_gluten_free, is_vegan = detect_dietary_flags(*dietary_sources)
 
             product = {
                 "store_sku": p.get("productId"),
@@ -139,6 +171,7 @@ class DiaScraper:
                 "name": p.get("productName"),
                 "brand": p.get("brand"),
                 "category": category_name,
+                "tags": category_tags,
                 "url": p.get("link"),
                 "image_url": image_url,
                 "base_price": base_price,
@@ -146,6 +179,8 @@ class DiaScraper:
                 "is_weighable": False,
                 "total_volume_weight": total_volume_weight,
                 "unit_type": unit_type,
+                "is_gluten_free": is_gluten_free,
+                "is_vegan": is_vegan,
                 "raw_promos": sellers[0].get("commertialOffer", {}) if sellers else []
             }
             parsed_products.append(product)
@@ -162,10 +197,15 @@ class DiaScraper:
         to_idx = step - 1
         all_category_products = []
 
+        # El dump de taxonomía está indexado por el mismo slug que recibimos
+        # acá, así que la ruta jerárquica se resuelve una sola vez por categoría.
+        category_tags = tags_for_category("dia", category_query)
+        taxonomy_label = category_label("dia", category_query)
+
         while True:
             print(f"[DÍA] Recopilando {category_query} - Índices {from_idx} a {to_idx}...")
             raw_data = self.scrape_category_slice(category_query, from_idx, to_idx)
-            products = self.process_products(raw_data)
+            products = self.process_products(raw_data, category_tags, taxonomy_label)
 
             if not products:
                 print(f"[DÍA] Final de la categoría '{category_query}' alcanzado.")
@@ -183,17 +223,9 @@ if __name__ == "__main__":
     scraper = DiaScraper()
     db = SmartCartDB()
     
-    categorias_dia_mvp = [
-        "almacen/harinas/harinas-de-trigo",       # Harina de Trigo (bien específico)
-        "frescos/leches",                         # Leche
-        "almacen/aceites-y-aderezos",             # Aceite (Trae aceites de girasol, oliva, blend, etc.)
-        "desayuno/para-untar/dulces-de-leche",    # Dulce de Leche
-        "almacen/golosinas-y-alfajores/alfajores" # Alfajores
-    ]
-    
     print("\n--- INICIANDO PROCESO GLOBAL SMARTCART (DÍA ONLINE) ---")
-    
-    for cat_query in categorias_dia_mvp:
+
+    for cat_query in MVP_CATEGORIES:
         print(f"\n=== ARRANCANDO BARRIDO DE CATEGORÍA: {cat_query} ===")
         productos_dia = scraper.scrape_entire_category(cat_query)
         
