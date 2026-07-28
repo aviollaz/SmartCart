@@ -1,10 +1,12 @@
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { useParams, useSearchParams } from "react-router-dom";
 import { searchProducts, getProductsByCategory } from "../api/products";
 import { useProductFilters } from "../hooks/useProductFilters";
 import { FiltersSidebar } from "../components/plp/FiltersSidebar";
 import { SortDropdown } from "../components/plp/SortDropdown";
 import { ProductGrid } from "../components/plp/ProductGrid";
+
+const NO_DIETARY_FILTERS = { glutenFree: false, vegan: false };
 
 export function SearchResultsPage() {
   const { bucket } = useParams();
@@ -14,10 +16,18 @@ export function SearchResultsPage() {
   const [results, setResults] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
+  const [dietary, setDietary] = useState(NO_DIETARY_FILTERS);
 
   const mode = bucket ? "category" : "search";
   const term = bucket || query;
 
+  const toggleDietary = useCallback((key) => {
+    setDietary((prev) => ({ ...prev, [key]: !prev[key] }));
+  }, []);
+
+  // Los dietarios están en las deps porque se resuelven en SQL: cambiarlos
+  // implica volver a pedir. El flag `cancelled` evita que una respuesta lenta
+  // de un toggle anterior pise a la del toggle actual.
   useEffect(() => {
     if (!term) {
       setResults([]);
@@ -28,7 +38,10 @@ export function SearchResultsPage() {
     setLoading(true);
     setError(null);
 
-    const request = mode === "category" ? getProductsByCategory(term) : searchProducts(term);
+    const request =
+      mode === "category"
+        ? getProductsByCategory(term, undefined, dietary)
+        : searchProducts(term, undefined, dietary);
     request
       .then((data) => {
         if (!cancelled) setResults(data);
@@ -43,39 +56,39 @@ export function SearchResultsPage() {
     return () => {
       cancelled = true;
     };
-  }, [mode, term]);
+  }, [mode, term, dietary]);
 
   const filters = useProductFilters(results);
 
   const title = mode === "category" ? bucket : `Resultados para "${query}"`;
+  const anyDietaryActive = dietary.glutenFree || dietary.vegan;
+  const emptyMessage = anyDietaryActive
+    ? `No encontramos productos para "${term}" con los filtros de dieta aplicados.`
+    : `No encontramos productos para "${term}" todavía.`;
 
   return (
     <div className="mx-auto w-full max-w-7xl px-4 py-6">
       <h1 className="mb-4 font-display text-xl font-bold text-ink">{title}</h1>
 
-      {loading && <p className="text-sm text-ink-muted">Buscando productos…</p>}
-
-      {error && (
+      {error ? (
         <p className="text-sm text-state-warning">
           No pudimos cargar los resultados. Probá de nuevo en un momento.
         </p>
-      )}
-
-      {!loading && !error && (
+      ) : (
+        // La sidebar se mantiene montada durante el loading: si se desmontara,
+        // tildar un filtro dietario haría desaparecer el checkbox recién tocado.
         <div className="flex flex-col gap-6 lg:flex-row">
-          <FiltersSidebar filters={filters} />
+          <FiltersSidebar filters={filters} dietary={dietary} onToggleDietary={toggleDietary} />
           <div className="flex-1">
             <div className="mb-4 flex items-center justify-between">
               <p className="text-sm text-ink-muted">
-                {filters.filteredResults.length} producto
-                {filters.filteredResults.length === 1 ? "" : "s"}
+                {loading
+                  ? "Buscando productos…"
+                  : `${filters.filteredResults.length} producto${filters.filteredResults.length === 1 ? "" : "s"}`}
               </p>
               <SortDropdown sortBy={filters.sortBy} onChange={filters.setSortBy} options={filters.SORT_OPTIONS} />
             </div>
-            <ProductGrid
-              products={filters.filteredResults}
-              emptyMessage={`No encontramos productos para "${term}" todavía.`}
-            />
+            {!loading && <ProductGrid products={filters.filteredResults} emptyMessage={emptyMessage} />}
           </div>
         </div>
       )}

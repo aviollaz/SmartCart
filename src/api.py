@@ -37,6 +37,24 @@ def _same_aisle_filter(product_row: dict, alias: str = "") -> tuple[str, Any]:
     return f"AND {prefix}category = %s", product_row.get("category")
 
 
+def _dietary_filter_clause(gluten_free: bool, vegan: bool, alias: str = "") -> str:
+    """
+    Cláusula SQL para los filtros dietarios. No lleva parámetros: los flags son
+    booleanos ya validados por FastAPI, así que se interpolan como literales.
+
+    Solo se emite el caso afirmativo. `is_gluten_free = FALSE` significa "el
+    parser no encontró una declaración explícita", no "contiene gluten" (ver
+    src/dietary_parser.py), así que un filtro "con TACC" sería una mentira.
+    """
+    prefix = f"{alias}." if alias else ""
+    clauses = []
+    if gluten_free:
+        clauses.append(f"AND {prefix}is_gluten_free = TRUE")
+    if vegan:
+        clauses.append(f"AND {prefix}is_vegan = TRUE")
+    return "\n                    ".join(clauses)
+
+
 # Configuración de Logging
 logging.basicConfig(
     level=logging.INFO,
@@ -79,6 +97,11 @@ class ProductResponse(BaseModel):
     category: Optional[str] = Field(None, example="congelados_hamburguesas")
     image_url: Optional[str] = None
     min_price: Optional[float] = None
+    # OJO con la semántica: False significa "sin evidencia", NO "contiene gluten"
+    # / "no es vegano". Ver src/dietary_parser.py — los flags solo se setean ante
+    # una frase explícita del producto, así que solo el caso True es afirmable.
+    is_gluten_free: bool = False
+    is_vegan: bool = False
     unit_info: UnitInfo
     distance: float = Field(..., description="Distancia de coseno con respecto a la búsqueda (menor es más similar)")
     available_at_stores: List[StoreOffer] = []
@@ -107,6 +130,10 @@ class OptimizationRequest(BaseModel):
     user_cards: Optional[List[str]] = []
     # En el futuro la dirección determinará los costos, ahora los pasamos opcionales
     delivery_costs: Optional[Dict[str, float]] = None
+
+class PricePreviewRequest(BaseModel):
+    items: List[CartItem]
+    user_memberships: Optional[List[str]] = []
 
 # Estado global para mantener el modelo cargado en memoria
 ml_models = {}
@@ -169,7 +196,9 @@ def read_root():
 @app.get("/search", response_model=List[ProductResponse])
 def search_products(
     q: str = Query(..., description="Texto de búsqueda libre (ej. 'Puré de papas')", min_length=1),
-    limit: int = Query(20, description="Cantidad máxima de resultados (entre 1 y 50)", ge=1, le=50)
+    limit: int = Query(20, description="Cantidad máxima de resultados (entre 1 y 50)", ge=1, le=50),
+    gluten_free: bool = Query(False, description="Devolver solo productos con declaración explícita 'sin TACC'"),
+    vegan: bool = Query(False, description="Devolver solo productos con declaración explícita 'vegano'")
 ):
     """
     Realiza una búsqueda semántica en tiempo real sobre el catálogo de productos unificados.
@@ -186,16 +215,24 @@ def search_products(
         vector_str = f"[{','.join(map(str, query_embedding))}]"
         
         db = SmartCartDB()
-        
+
+        # Los filtros dietarios se resuelven en SQL y no en el cliente: el frontend
+        # solo ve los `limit` vecinos más cercanos, así que filtrar ahí devolvería
+        # un puñado de productos en vez de `limit` productos que cumplan el filtro.
+        # Solo se filtra por TRUE — un FALSE en estas columnas es "sin evidencia".
+        dietary_clause = _dietary_filter_clause(gluten_free, vegan)
+
         # 2. Consultar vecinos más cercanos en PostgreSQL usando la distancia de coseno (<=>)
         # Traemos también los detalles del producto unificado
         with psycopg.connect(db.conn_string, row_factory=dict_row) as conn:
             with conn.cursor() as cur:
-                cur.execute("""
+                cur.execute(f"""
                     SELECT id, ean, name, brand, category, units_per_pack, unit_type, total_volume_weight,
+                           is_gluten_free, is_vegan,
                            name_embedding <=> %s AS distance
                     FROM unified_products
                     WHERE name_embedding IS NOT NULL
+                    {dietary_clause}
                     ORDER BY distance ASC
                     LIMIT %s
                 """, (vector_str, limit))
@@ -271,6 +308,8 @@ def search_products(
                 "name": p["name"],
                 "brand": p["brand"],
                 "category": p["category"],
+                "is_gluten_free": bool(p["is_gluten_free"]),
+                "is_vegan": bool(p["is_vegan"]),
                 "unit_info": {
                     "units_per_pack": p["units_per_pack"],
                     "unit_type": p["unit_type"],
@@ -315,6 +354,31 @@ def generate_vtex_magic_link(store_domain: str, products: list, sales_channel: i
     # Unimos todos los parámetros con un '&'
     return f"{base_url}&{'&'.join(params)}"
 
+@app.post("/price-preview")
+def preview_prices(request: PricePreviewRequest):
+    """
+    Devuelve el costo neto y el precio unitario aplanado de cada producto para una
+    cantidad dada, por tienda, aplicando las promociones vigentes.
+
+    Existe para que el frontend pueda mostrar "si llevás 2, te sale X c/u" sin
+    replicar en JavaScript la lógica de promociones de src/flattener.py. Esa
+    función es la única fuente de verdad de precios en el proyecto (la usa también
+    el optimizador) y duplicarla en el cliente garantizaría que las dos versiones
+    se separen apenas aparezca un tipo de promo nuevo.
+
+    Los productos sin oferta en stock simplemente no aparecen como clave en la
+    respuesta; el llamador tiene que contemplar ese caso.
+    """
+    if not request.items:
+        return {}
+
+    try:
+        items = [item.model_dump() for item in request.items]
+        return flatten_cart_prices(items, request.user_memberships)
+    except Exception as e:
+        logger.error(f"Error calculando el preview de precios: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
 @app.post("/optimize")
 def optimize_shopping_cart(request: OptimizationRequest):
     """
@@ -347,6 +411,12 @@ def optimize_shopping_cart(request: OptimizationRequest):
                 single_store_baselines = {}
                 replaced_items_info = {s: [] for s in stores}
                 suggestions = []
+                # Se inicializa acá y no dentro del `if neighbor_candidates:` de más
+                # abajo: se lee incondicionalmente al armar la respuesta, así que un
+                # carrito sin vecinos en la misma góndola tiraba NameError, que el
+                # except ancho se comía llevándose puesto single_store_baselines.
+                # El orden de inserción del dict es el de ahorro descendente.
+                grouped_suggestions = {}
                 neighbor_candidates = []
                 uid_to_name = {}
                 
@@ -429,7 +499,7 @@ def optimize_shopping_cart(request: OptimizationRequest):
                                     WHERE id != %s AND name_embedding IS NOT NULL
                                     {aisle_clause}
                                     ORDER BY name_embedding <=> %s ASC
-                                    LIMIT 2
+                                    LIMIT 3
                                 """, (item.unified_id, aisle_param, p["name_embedding"]))
                                 
                                 for n in cur.fetchall():
@@ -462,6 +532,17 @@ def optimize_shopping_cart(request: OptimizationRequest):
                             url_map = {row["unified_product_id"]: row["product_url"] for row in cur.fetchall()}
                             for p in store_products:
                                 p["product_url"] = url_map.get(p["unified_id"])
+
+                                # Promo efectivamente aplicada a esta línea, para que el
+                                # desglose del frontend pueda explicar de dónde sale el
+                                # total_cost en vez de mostrar un número sin justificar.
+                                # `flat_prices` es el flatten del carrito calculado arriba
+                                # (todavía no fue rebindeado con los candidatos a sugerencia).
+                                line_flat = flat_prices.get(p["unified_id"], {}).get(store_id)
+                                if line_flat:
+                                    p["applied_promo_id"] = line_flat["applied_promo_id"]
+                                    p["promo_description"] = line_flat["promo_description"]
+                                    p["effective_unit_price"] = line_flat["effective_unit_price"]
 
                         # --- 4. FEATURE: MAGIC LINK PARA DÍA ONLINE ---
                         if "dia_online" in result.get("split", {}):
@@ -532,25 +613,50 @@ def optimize_shopping_cart(request: OptimizationRequest):
                                 display_unit = 'L'
                             
                             # Subimos el umbral a 20% para limpiar ruido
-                            if savings_proportional > (orig_min_cost * 0.2): 
+                            if savings_proportional > (orig_min_cost * 0.2):
+                                sugg_min_unit_price = min(
+                                    flat_prices[sugg_uid][s]["effective_unit_price"]
+                                    for s in flat_prices[sugg_uid]
+                                )
                                 suggestions.append({
+                                    "original_uid": orig_uid,
                                     "original_product": orig_info["name"],
                                     "suggested_product": cand["suggested_name"],
                                     "savings": round(savings_proportional, 2),
                                     "suggested_uid": sugg_uid,
+                                    "effective_unit_price": sugg_min_unit_price,
                                     "metric_info": f"a igual cantidad de {display_weight} {display_unit.upper()}"
                                 })
-                    
+
+                    # Agrupamos por producto original en vez de devolver una lista plana.
+                    # El dedupe global por suggested_uid con tope de 5 que había antes
+                    # recortaba alternativas de forma impredecible: un producto podía
+                    # quedarse sin ninguna porque otro se había llevado el cupo.
                     suggestions = sorted(suggestions, key=lambda x: x["savings"], reverse=True)
-                    unique_suggestions = []
-                    seen_sugg = set()
                     for s in suggestions:
-                        if s["suggested_uid"] not in seen_sugg:
-                            unique_suggestions.append(s)
-                            seen_sugg.add(s["suggested_uid"])
-                            if len(unique_suggestions) >= 5: break
-                            
-                result["suggestions"] = unique_suggestions
+                        group = grouped_suggestions.get(s["original_uid"])
+                        if group is None:
+                            group = {
+                                "original_uid": s["original_uid"],
+                                "original_product": s["original_product"],
+                                "alternatives": []
+                            }
+                            grouped_suggestions[s["original_uid"]] = group
+
+                        if len(group["alternatives"]) >= 3:
+                            continue
+                        if any(a["suggested_uid"] == s["suggested_uid"] for a in group["alternatives"]):
+                            continue
+
+                        group["alternatives"].append({
+                            "suggested_uid": s["suggested_uid"],
+                            "suggested_product": s["suggested_product"],
+                            "savings": s["savings"],
+                            "effective_unit_price": s["effective_unit_price"],
+                            "metric_info": s["metric_info"]
+                        })
+
+                result["suggestions"] = list(grouped_suggestions.values())
 
             except Exception as e:
                 logger.error(f"Error generando analíticas post-optimización: {e}")
@@ -597,17 +703,25 @@ def get_categories():
         return []
 
 @app.get("/category/{category_name}", response_model=List[ProductResponse])
-def get_products_by_category(category_name: str, limit: int = 50):
+def get_products_by_category(
+    category_name: str,
+    limit: int = 50,
+    gluten_free: bool = Query(False, description="Devolver solo productos con declaración explícita 'sin TACC'"),
+    vegan: bool = Query(False, description="Devolver solo productos con declaración explícita 'vegano'")
+):
     """Devuelve productos filtrados por una categoría exacta."""
     try:
         db = SmartCartDB()
+        dietary_clause = _dietary_filter_clause(gluten_free, vegan)
         with psycopg.connect(db.conn_string, row_factory=dict_row) as conn:
             with conn.cursor() as cur:
-                cur.execute("""
+                cur.execute(f"""
                     SELECT id, ean, name, brand, category, units_per_pack, unit_type, total_volume_weight,
+                           is_gluten_free, is_vegan,
                            0.0 AS distance
                     FROM unified_products
                     WHERE category = %s
+                    {dietary_clause}
                     LIMIT %s
                 """, (category_name, limit))
                 nearest_products = cur.fetchall()
@@ -686,8 +800,10 @@ def get_products_by_category(category_name: str, limit: int = 50):
                 "name": p["name"],
                 "brand": p["brand"],
                 "category": p["category"],
-                "min_price": min_price,       
-                "image_url": best_image,      
+                "min_price": min_price,
+                "image_url": best_image,
+                "is_gluten_free": bool(p["is_gluten_free"]),
+                "is_vegan": bool(p["is_vegan"]),
                 "unit_info": {
                     "units_per_pack": p["units_per_pack"],
                     "unit_type": p["unit_type"],

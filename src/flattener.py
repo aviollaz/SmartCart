@@ -32,21 +32,31 @@ def flatten_cart_prices(cart_items: list, user_memberships: list = None) -> dict
         base_price = float(row["base_price"])
         q = quantity_map[unified_id]
         
-        # Deserializar promociones guardadas en la base de datos
-        promotions = []
-        if row["promotions_json"]:
+        # Deserializar promociones guardadas en la base de datos.
+        #
+        # store_products.promotions_json es de tipo jsonb, así que psycopg ya
+        # devuelve una lista de Python: pasarla por json.loads() tiraba TypeError
+        # y el except lo convertía en "este producto no tiene promociones". El
+        # efecto era que NINGUNA promoción se aplicaba en ningún lado (optimizador,
+        # baselines y sugerencias incluidos), en silencio. Se sigue tolerando el
+        # str por si alguna fila vieja quedó guardada como texto, igual que hace
+        # el mapeo de promos en src/api.py.
+        raw_promos = row["promotions_json"]
+        if isinstance(raw_promos, str):
             try:
-                promotions = json.loads(row["promotions_json"])
-                if isinstance(promotions, str):
-                    promotions = json.loads(promotions)
+                raw_promos = json.loads(raw_promos)
+                if isinstance(raw_promos, str):
+                    raw_promos = json.loads(raw_promos)
             except Exception:
-                promotions = []
+                raw_promos = []
+        promotions = raw_promos if isinstance(raw_promos, list) else []
 
         # --- LÓGICA DE EVALUACIÓN DE DESCUENTO ---
         # Escenario por defecto: precio regular
         best_total_cost = base_price * q
         applied_promo_id = None
         promo_description = "Precio base sin promociones"
+        applied_promo_type = None
 
         for promo in promotions:
             # Validar si el usuario posee la membresía/tarjeta necesaria para la promo
@@ -64,13 +74,26 @@ def flatten_cart_prices(cart_items: list, user_memberships: list = None) -> dict
                     current_promo_cost = discount_price * q
 
             # Caso B: Descuento condicionado por volumen fijo (ej. Llevando 2, te queda c/u a X)
+            #
+            # `discount_price_per_unit` de Coto NO es "cada unidad sale X": es el
+            # promedio por unidad llevando exactamente `required_quantity`. Para
+            # "50% 2da Llevando 2" sobre una base de 7240, Coto manda 5430, que es
+            # (7240 + 3620) / 2. Multiplicarlo linealmente por q regalaba el
+            # descuento a las unidades sueltas: q=3 daba 16290 en vez de 18100 y el
+            # unitario se congelaba en 5430 para siempre. Se razona por grupos y el
+            # resto va a precio de lista, igual que los otros dos condicionales.
             elif promo_type == "conditional_discount_flat":
                 req_qty = promo.get("required_quantity", 1)
                 discount_price = promo.get("discount_price_per_unit")
                 regular_price = promo.get("regular_price") or base_price
-                
-                if q >= req_qty and discount_price:
-                    current_promo_cost = discount_price * q
+
+                if q >= req_qty and discount_price and req_qty > 0:
+                    num_groups = q // req_qty
+                    remainder = q % req_qty
+                    current_promo_cost = (
+                        (num_groups * discount_price * req_qty) +
+                        (remainder * regular_price)
+                    )
                 else:
                     current_promo_cost = regular_price * q
 
@@ -105,6 +128,7 @@ def flatten_cart_prices(cart_items: list, user_memberships: list = None) -> dict
                 best_total_cost = current_promo_cost
                 applied_promo_id = promo.get("promo_id") or promo.get("id")
                 promo_description = promo.get("description", "Promoción aplicada")
+                applied_promo_type = promo_type
 
         effective_unit_price = best_total_cost / q if q > 0 else base_price
 
@@ -115,7 +139,18 @@ def flatten_cart_prices(cart_items: list, user_memberships: list = None) -> dict
             "total_cost": round(best_total_cost, 2),
             "effective_unit_price": round(effective_unit_price, 2),
             "applied_promo_id": applied_promo_id,
-            "promo_description": promo_description
+            "promo_description": promo_description,
+            # Precio de lista DE ESTA tienda. Va en la respuesta para que el
+            # frontend pueda tachar el precio previo sin tener que elegirlo él:
+            # comparaba contra el mínimo de base_price entre todas las tiendas y
+            # podía terminar mostrando el precio de una al lado del de otra.
+            "base_unit_price": round(base_price, 2),
+            "base_total_cost": round(base_price * q, 2),
+            # Permite distinguir una promo que depende de la cantidad de una que
+            # no: un direct_discount rige desde la primera unidad, así que
+            # anunciarlo como "c/u llevando N" es engañoso.
+            "applied_promo_type": applied_promo_type,
+            "quantity": q
         }
 
     return flat_matrix

@@ -1,13 +1,13 @@
 import { ExternalLink } from "lucide-react";
 import { formatPrice, storeLabel } from "../../utils/formatters";
+import { PromoTransparency } from "./PromoTransparency";
 
 function readBankDiscount(bankDiscount) {
   if (!bankDiscount) return null;
-  const description =
-    bankDiscount.promo_description || bankDiscount.description || bankDiscount.name || "Descuento bancario aplicado";
-  const amount =
-    bankDiscount.discount_amount ?? bankDiscount.amount ?? bankDiscount.discount_total ?? bankDiscount.value ?? 0;
-  return { description, amount };
+  return {
+    description: bankDiscount.description || "Descuento bancario aplicado",
+    amount: bankDiscount.amount ?? 0,
+  };
 }
 
 export function StoreBreakdownCard({ storeId, checkout, cartItems }) {
@@ -84,6 +84,8 @@ export function StoreBreakdownCard({ storeId, checkout, cartItems }) {
           ))}
         </ul>
       </details>
+
+      <PromoTransparency checkout={checkout} cartItems={cartItems} />
     </div>
   );
 }

@@ -91,7 +91,14 @@ def optimize_cart(cart_items, user_memberships=None, user_cards=None, min_spend_
                                   "total_cost": flat_prices[i][j]["total_cost"]} for i in products if (i, j) in x and solver.Value(x[i, j]) == 1],
                     "subtotal_products": round(sub, 2),
                     "delivery_cost": delivery_costs[j],
-                    "bank_discount": {"card": applied_bank_discounts_info[j]["card"], "amount": round(disc, 2)} if j in applied_bank_discounts_info else None,
+                    # La `description` viaja hasta el frontend: sin ella el desglose
+                    # solo puede mostrar un genérico "Descuento bancario aplicado",
+                    # sin decir qué tarjeta se usó ni cuál era el tope.
+                    "bank_discount": {
+                        "card": applied_bank_discounts_info[j]["card"],
+                        "amount": round(disc, 2),
+                        "description": applied_bank_discounts_info[j].get("description")
+                    } if j in applied_bank_discounts_info else None,
                     "store_total": round(total, 2)
                 }
 

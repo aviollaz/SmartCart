@@ -10,13 +10,14 @@ const STORAGE_KEY = "smartcart_cart_v1";
 export function CartProvider({ children }) {
   const [items, setItems] = useLocalStorage(STORAGE_KEY, {});
 
+  // `quantity` tiene default 1 para no romper a los llamadores que agregan de a uno.
   const addItem = useCallback(
-    (unifiedId, name) => {
+    (unifiedId, name, quantity = 1) => {
       setItems((prev) => {
         const existing = prev[unifiedId];
         return {
           ...prev,
-          [unifiedId]: { name, quantity: existing ? existing.quantity + 1 : 1 },
+          [unifiedId]: { name, quantity: existing ? existing.quantity + quantity : quantity },
         };
       });
     },
@@ -61,6 +62,28 @@ export function CartProvider({ children }) {
     [setItems]
   );
 
+  // Swap in-place para las sugerencias del optimizador: conserva la cantidad
+  // porque la sugerencia se calculó justamente para esa cantidad.
+  const replaceItem = useCallback(
+    (oldUnifiedId, newUnifiedId, newName) => {
+      setItems((prev) => {
+        const existing = prev[oldUnifiedId];
+        if (!existing) return prev;
+
+        const { [oldUnifiedId]: _removed, ...rest } = prev;
+        const alreadyThere = rest[newUnifiedId];
+        return {
+          ...rest,
+          [newUnifiedId]: {
+            name: newName,
+            quantity: (alreadyThere?.quantity || 0) + existing.quantity,
+          },
+        };
+      });
+    },
+    [setItems]
+  );
+
   const clear = useCallback(() => setItems({}), [setItems]);
 
   const itemCount = useMemo(
@@ -69,8 +92,8 @@ export function CartProvider({ children }) {
   );
 
   const value = useMemo(
-    () => ({ items, addItem, incrementItem, decrementItem, removeItem, clear, itemCount }),
-    [items, addItem, incrementItem, decrementItem, removeItem, clear, itemCount]
+    () => ({ items, addItem, incrementItem, decrementItem, removeItem, replaceItem, clear, itemCount }),
+    [items, addItem, incrementItem, decrementItem, removeItem, replaceItem, clear, itemCount]
   );
 
   return <CartContext.Provider value={value}>{children}</CartContext.Provider>;

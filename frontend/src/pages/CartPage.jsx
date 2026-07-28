@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useCart } from "../context/CartContext";
 import { useProfile } from "../context/ProfileContext";
 import { optimizeCart } from "../api/optimize";
@@ -9,36 +9,67 @@ import { InfeasibleNotice } from "../components/optimize/InfeasibleNotice";
 import { OptimizeResultsPanel } from "../components/optimize/OptimizeResultsPanel";
 
 export function CartPage() {
-  const { items, incrementItem, decrementItem, removeItem } = useCart();
+  const { items, incrementItem, decrementItem, removeItem, replaceItem } = useCart();
   const { cards, memberships, deliveryCosts } = useProfile();
   const entries = Object.entries(items);
 
-  const [optimizeStatus, setOptimizeStatus] = useState("idle"); // idle | loading | success | infeasible
+  const [optimizeStatus, setOptimizeStatus] = useState("idle"); // idle | loading | success | infeasible | error
   const [optimizeResult, setOptimizeResult] = useState(null);
   const [infeasibleDetail, setInfeasibleDetail] = useState(null);
 
-  async function handleOptimize() {
+  // Se levanta al aceptar una sugerencia para que el efecto de abajo distinga
+  // "el carrito cambió por un swap, hay que recalcular" de "el usuario tocó una
+  // cantidad", que no debería disparar una optimización sola.
+  const reoptimizeRef = useRef(false);
+
+  const runOptimize = useCallback(async () => {
     setOptimizeStatus("loading");
-    const cartPayload = entries.map(([unifiedId, item]) => ({
+    const cartPayload = Object.entries(items).map(([unifiedId, item]) => ({
       unified_id: unifiedId,
       quantity: item.quantity,
     }));
 
-    const response = await optimizeCart({
-      cart: cartPayload,
-      userMemberships: memberships,
-      userCards: cards,
-      deliveryCosts,
-    });
+    try {
+      const response = await optimizeCart({
+        cart: cartPayload,
+        userMemberships: memberships,
+        userCards: cards,
+        deliveryCosts,
+      });
 
-    if (response.ok) {
-      setOptimizeResult(response.data);
-      setOptimizeStatus("success");
-    } else {
-      setInfeasibleDetail(response.detail);
-      setOptimizeStatus("infeasible");
+      if (response.ok) {
+        setOptimizeResult(response.data);
+        setOptimizeStatus("success");
+      } else {
+        setInfeasibleDetail(response.detail);
+        setOptimizeStatus("infeasible");
+      }
+    } catch {
+      // Sin este catch, cualquier fallo que no sea el 400 de "carrito inviable"
+      // dejaba el estado clavado en "loading" y el botón deshabilitado para siempre.
+      setOptimizeResult(null);
+      setOptimizeStatus("error");
     }
-  }
+  }, [items, memberships, cards, deliveryCosts]);
+
+  useEffect(() => {
+    if (reoptimizeRef.current) {
+      reoptimizeRef.current = false;
+      runOptimize();
+      return;
+    }
+    // El resultado describe un carrito que ya no existe: mostrarlo sería mentir.
+    setOptimizeStatus((prev) => (prev === "success" || prev === "infeasible" ? "idle" : prev));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [items]);
+
+  const handleAcceptSuggestion = useCallback(
+    (originalUid, alternative) => {
+      reoptimizeRef.current = true;
+      replaceItem(originalUid, alternative.suggested_uid, alternative.suggested_product);
+    },
+    [replaceItem]
+  );
 
   return (
     <div className="mx-auto w-full max-w-4xl px-4 py-6">
@@ -69,10 +100,17 @@ export function CartPage() {
 
         <ProfileDrawer />
 
-        <OptimizeButton onClick={handleOptimize} disabled={entries.length === 0} loading={optimizeStatus === "loading"} />
+        <OptimizeButton onClick={runOptimize} disabled={entries.length === 0} loading={optimizeStatus === "loading"} />
 
         {optimizeStatus === "infeasible" && <InfeasibleNotice detail={infeasibleDetail} />}
-        {optimizeStatus === "success" && optimizeResult && <OptimizeResultsPanel result={optimizeResult} />}
+        {optimizeStatus === "error" && (
+          <p className="text-sm text-state-warning">
+            No pudimos calcular la optimización. Probá de nuevo en un momento.
+          </p>
+        )}
+        {optimizeStatus === "success" && optimizeResult && (
+          <OptimizeResultsPanel result={optimizeResult} onAcceptSuggestion={handleAcceptSuggestion} />
+        )}
       </div>
     </div>
   );
