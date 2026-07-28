@@ -14,10 +14,17 @@ const DEBOUNCE_MS = 300;
  * cuando el usuario sube el stepper, que es cuando el dato cambia algo.
  *
  * Devuelve el mínimo entre tiendas, mismo criterio que resolveDisplayPrice().
+ *
+ * `excludeStores` saca del mínimo a las tiendas que no entregan en la dirección
+ * del usuario: la respuesta de previewPrices trae todas, y sin esto la card
+ * podría anunciar una promo de una tienda cuyas ofertas ya no se listan.
  */
-export function useFlattenedPrice(unifiedId, quantity) {
+export function useFlattenedPrice(unifiedId, quantity, excludeStores = []) {
   const [state, setState] = useState({ data: null, loading: false });
   const cacheRef = useRef(new Map());
+  // Las tiendas excluidas entran como string para poder usarlas de dependencia
+  // del efecto sin depender de la identidad del array.
+  const excludeKey = excludeStores.join(",");
 
   useEffect(() => {
     if (!unifiedId || quantity <= 1) {
@@ -25,7 +32,8 @@ export function useFlattenedPrice(unifiedId, quantity) {
       return;
     }
 
-    const cacheKey = `${unifiedId}:${quantity}`;
+    const excluded = excludeKey ? excludeKey.split(",") : [];
+    const cacheKey = `${unifiedId}:${quantity}:${excludeKey}`;
     if (cacheRef.current.has(cacheKey)) {
       setState({ data: cacheRef.current.get(cacheKey), loading: false });
       return;
@@ -37,7 +45,7 @@ export function useFlattenedPrice(unifiedId, quantity) {
     const timer = setTimeout(() => {
       previewPrices([{ unified_id: unifiedId, quantity }])
         .then((matrix) => {
-          const best = pickCheapestStore(matrix?.[unifiedId]);
+          const best = pickCheapestStore(matrix?.[unifiedId], excluded);
           cacheRef.current.set(cacheKey, best);
           if (!cancelled) setState({ data: best, loading: false });
         })
@@ -51,16 +59,17 @@ export function useFlattenedPrice(unifiedId, quantity) {
       cancelled = true;
       clearTimeout(timer);
     };
-  }, [unifiedId, quantity]);
+  }, [unifiedId, quantity, excludeKey]);
 
   return state;
 }
 
-function pickCheapestStore(byStore) {
+function pickCheapestStore(byStore, excludeStores = []) {
   if (!byStore) return null;
 
   let best = null;
   for (const [storeId, entry] of Object.entries(byStore)) {
+    if (excludeStores.includes(storeId)) continue;
     if (typeof entry?.effective_unit_price !== "number") continue;
     if (!best || entry.effective_unit_price < best.unitPrice) {
       best = {

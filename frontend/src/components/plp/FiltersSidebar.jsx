@@ -11,8 +11,17 @@ import { StoreAvailabilityToggle } from "./StoreAvailabilityToggle";
 // props aparte de `filters` en vez de salir de useProductFilters: la distinción
 // entre "vista sobre lo ya traído" y "cambia qué filas existen" tiene que verse.
 export function FiltersSidebar({ filters, dietary, onToggleDietary }) {
-  const { brandOptions, selectedBrands, toggleBrand, priceBounds, priceRange, setPriceRange, storeFilter, toggleStore } =
-    filters;
+  const {
+    brandOptions,
+    selectedBrands,
+    toggleBrand,
+    priceBounds,
+    priceRange,
+    setPriceRange,
+    storeFilter,
+    toggleStore,
+    unavailableStores,
+  } = filters;
 
   return (
     <aside className="w-full shrink-0 lg:w-64">
@@ -20,7 +29,11 @@ export function FiltersSidebar({ filters, dietary, onToggleDietary }) {
       <DietaryFacet dietary={dietary} onToggle={onToggleDietary} />
       <BrandFacet brandOptions={brandOptions} selectedBrands={selectedBrands} onToggle={toggleBrand} />
       <PriceRangeSlider bounds={priceBounds} value={priceRange} onChange={setPriceRange} />
-      <StoreAvailabilityToggle storeFilter={storeFilter} onToggle={toggleStore} />
+      <StoreAvailabilityToggle
+        storeFilter={storeFilter}
+        onToggle={toggleStore}
+        unavailableStores={unavailableStores}
+      />
     </aside>
   );
 }

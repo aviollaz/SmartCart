@@ -12,11 +12,19 @@ from src.flattener import flatten_cart_prices
 MAX_SUBTOTAL_CENTS = 10**10  # $100.000.000
 MAX_PCT = 100
 
-def optimize_cart(cart_items, user_memberships=None, user_cards=None, min_spend_limits=None, delivery_costs=None):
+# Valores por defecto cuando el llamador no los provee. Son constantes de módulo
+# y no literales enterrados en la firma porque src/api.py necesita partir de
+# ellos para pisar el envío de Coto con el valor real cuando el request no trae
+# la tabla por zona del frontend.
+DEFAULT_MIN_SPEND_LIMITS = {"coto_online": 15000, "dia_online": 12000}
+DEFAULT_DELIVERY_COSTS = {"coto_online": 3000, "dia_online": 3000}
+
+def optimize_cart(cart_items, user_memberships=None, user_cards=None, min_spend_limits=None, delivery_costs=None, excluded_stores=None):
     if user_memberships is None: user_memberships = []
     if user_cards is None: user_cards = []
-    if min_spend_limits is None: min_spend_limits = {"coto_online": 15000, "dia_online": 12000}
-    if delivery_costs is None: delivery_costs = {"coto_online": 3000, "dia_online": 3000}
+    if min_spend_limits is None: min_spend_limits = dict(DEFAULT_MIN_SPEND_LIMITS)
+    if delivery_costs is None: delivery_costs = dict(DEFAULT_DELIVERY_COSTS)
+    if excluded_stores is None: excluded_stores = []
 
     bank_promos = {
         "coto_online": [{"card": "galicia", "discount_pct": 20, "cap": 5000, "description": "20% de ahorro con Galicia (Tope $5000)"}],
@@ -25,7 +33,38 @@ def optimize_cart(cart_items, user_memberships=None, user_cards=None, min_spend_
 
     flat_prices = flatten_cart_prices(cart_items, user_memberships)
     products = list(flat_prices.keys())
-    stores = list(min_spend_limits.keys())
+
+    # Las tiendas excluidas (ej. Coto cuando no tiene cobertura en la dirección
+    # del usuario) se sacan del modelo en vez de encarecerse: no es que salgan
+    # caras, es que no pueden entregar.
+    excluded_stores = [s for s in excluded_stores if s in min_spend_limits]
+    stores = [s for s in min_spend_limits if s not in excluded_stores]
+
+    # Un producto que sólo existía en la tienda excluida se queda sin ninguna
+    # variable, y su restricción de asignación pasa a ser `sum([]) == 1`. Eso da
+    # infeasible con el mensaje genérico de "no alcanzás el mínimo de compra",
+    # que es falso y manda al usuario a agregar productos que no van a arreglar
+    # nada. Se detecta antes de armar el modelo para poder explicar el motivo real.
+    unavailable = [i for i in products if not any(j in flat_prices[i] for j in stores)]
+    if unavailable:
+        # El motivo sólo se puede atribuir a la entrega si efectivamente se
+        # excluyó alguna tienda; si no, el producto quedó sin ofertas por otra
+        # razón y culpar a la dirección sería inventar una explicación.
+        if excluded_stores:
+            motivo = (
+                f"sólo están disponibles en {', '.join(excluded_stores)}, que no puede "
+                f"entregar en tu dirección. Sacalos del carrito o elegí otra dirección "
+                f"de entrega."
+            )
+        else:
+            motivo = "no están disponibles en ninguna de las tiendas consultadas."
+
+        return {
+            "status": "infeasible",
+            "message": f"{len(unavailable)} producto(s) del carrito {motivo}",
+            "unavailable_products": unavailable,
+            "excluded_stores": excluded_stores,
+        }
 
     model = cp_model.CpModel()
 
@@ -103,9 +142,14 @@ def optimize_cart(cart_items, user_memberships=None, user_cards=None, min_spend_
                 }
 
         return {
-            "status": "success", 
-            "total_spent_net": round(total_spent, 2), 
-            "split": assigned_cart
+            "status": "success",
+            "total_spent_net": round(total_spent, 2),
+            "split": assigned_cart,
+            "excluded_stores": excluded_stores
         }
-    
-    return {"status": "infeasible", "message": "No se encontró una asignación que cumpla los mínimos requeridos."}
+
+    return {
+        "status": "infeasible",
+        "message": "No se encontró una asignación que cumpla los mínimos requeridos.",
+        "excluded_stores": excluded_stores
+    }

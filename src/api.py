@@ -9,10 +9,11 @@ import psycopg
 from psycopg.rows import dict_row
 from sentence_transformers import SentenceTransformer
 from src.database import SmartCartDB
-from src.optimizer import optimize_cart
+from src.optimizer import optimize_cart, DEFAULT_DELIVERY_COSTS
 from src.flattener import flatten_cart_prices
 from src.category_tree import build_category_tree
 from src.category_tags import filter_tags
+from src.coto_logistics import check_coverage, resolve_coto_logistics
 
 
 def _same_aisle_filter(product_row: dict, alias: str = "") -> tuple[str, Any]:
@@ -128,8 +129,15 @@ class OptimizationRequest(BaseModel):
     cart: List[CartItem]
     user_memberships: Optional[List[str]] = []
     user_cards: Optional[List[str]] = []
-    # En el futuro la dirección determinará los costos, ahora los pasamos opcionales
+    # Costos por zona que manda el frontend (frontend/src/utils/deliveryCosts.js).
+    # Siguen siendo la fuente para Día y el fallback de Coto; cuando llegan
+    # coordenadas, el envío de Coto se pisa con el valor real (ver más abajo).
     delivery_costs: Optional[Dict[str, float]] = None
+    # Coordenadas del domicilio de entrega, geocodificadas en el frontend.
+    # Opcionales: el usuario puede saltear el onboarding de dirección, y en ese
+    # caso se cae al comportamiento por zona de siempre.
+    lat: Optional[float] = None
+    lng: Optional[float] = None
 
 class PricePreviewRequest(BaseModel):
     items: List[CartItem]
@@ -386,23 +394,47 @@ def optimize_shopping_cart(request: OptimizationRequest):
     considerando mínimos de compra, envíos y descuentos bancarios.
     """
     logger.info(f"Recibida solicitud de optimización para {len(request.cart)} productos.")
-    
+
     try:
         cart_data = [item.model_dump() for item in request.cart]
-        
+
+        # --- ETAPA DE LOGÍSTICA: cobertura y envío real de Coto ---
+        # Va antes del solver porque cambia dos de sus entradas: qué tiendas
+        # participan y cuánto cuesta el envío de Coto. Nunca lanza (fail-open:
+        # ver src/coto_logistics.py), así que un problema con el sitio de Coto
+        # no puede tumbar la optimización entera.
+        delivery_costs = dict(request.delivery_costs) if request.delivery_costs else dict(DEFAULT_DELIVERY_COSTS)
+        excluded_stores = []
+
+        coto_logistics = resolve_coto_logistics(
+            request.lat,
+            request.lng,
+            fallback_delivery_cost=delivery_costs.get("coto_online"),
+        )
+
+        if not coto_logistics["covered"]:
+            excluded_stores.append("coto_online")
+            logger.info(f"Coto excluido por falta de cobertura en ({request.lat}, {request.lng}).")
+        elif coto_logistics["delivery_cost"] is not None:
+            delivery_costs["coto_online"] = float(coto_logistics["delivery_cost"])
+
         result = optimize_cart(
             cart_items=cart_data,
             user_memberships=request.user_memberships,
             user_cards=request.user_cards,
-            delivery_costs=request.delivery_costs
+            delivery_costs=delivery_costs,
+            excluded_stores=excluded_stores
         )
+        result["logistics"] = {"coto": coto_logistics}
 
         if result.get("status") == "success":
             try:
                 db = SmartCartDB()
                 flat_prices = flatten_cart_prices(cart_data, request.user_memberships)
-                stores = list(request.delivery_costs.keys()) if request.delivery_costs else ["coto_online", "dia_online"]
-                
+                # Un baseline de una tienda que no entrega en la dirección sería
+                # una comparación contra una compra imposible.
+                stores = [s for s in delivery_costs if s not in excluded_stores]
+
                 bank_promos = {
                     "coto_online": [{"card": "galicia", "discount_pct": 20, "cap": 5000}],
                     "dia_online": [{"card": "macro", "discount_pct": 15, "cap": 3000}]
@@ -463,7 +495,7 @@ def optimize_shopping_cart(request: OptimizationRequest):
                                                     "replacement": fallback["name"]
                                                 })
                             
-                            delivery = request.delivery_costs.get(store, 3000) if request.delivery_costs else 3000
+                            delivery = delivery_costs.get(store, 3000)
                             baseline_discount = 0
                             best_promo = next((p for p in bank_promos.get(store, []) if p["card"] in request.user_cards), None)
                             if best_promo:
@@ -673,6 +705,24 @@ def optimize_shopping_cart(request: OptimizationRequest):
         raise HTTPException(status_code=400, detail=msg)
         
     return result
+
+@app.get("/logistics/coto/coverage")
+def get_coto_coverage(
+    lat: float = Query(..., description="Latitud del domicilio de entrega"),
+    lng: float = Query(..., description="Longitud del domicilio de entrega")
+):
+    """
+    Indica si Coto entrega en una coordenada dada.
+
+    Existe para que el onboarding de dirección pueda avisar en el momento que
+    Coto no llega, en vez de que el usuario lo descubra recién al optimizar un
+    carrito ya armado.
+
+    `ok=False` significa "no se pudo determinar" (Coto no respondió), y el
+    frontend debe tratarlo como "sin novedad", no como falta de cobertura: la
+    política es fail-open, sólo un veredicto afirmativo excluye la tienda.
+    """
+    return check_coverage(lat, lng)
 
 @app.get("/categories/tree", response_model=Dict[str, CategoryTopLevelResponse])
 def get_categories_tree():

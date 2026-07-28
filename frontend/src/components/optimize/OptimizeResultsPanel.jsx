@@ -1,5 +1,6 @@
 import { useCart } from "../../context/CartContext";
 import { BaselineComparison } from "./BaselineComparison";
+import { LogisticsNotice } from "./LogisticsNotice";
 import { SuggestionsList } from "./SuggestionsList";
 import { StoreBreakdownCard } from "./StoreBreakdownCard";
 
@@ -10,6 +11,7 @@ export function OptimizeResultsPanel({ result, onAcceptSuggestion }) {
   return (
     <div className="flex flex-col gap-4">
       <BaselineComparison result={result} />
+      <LogisticsNotice result={result} />
       <SuggestionsList suggestions={result.suggestions} onAccept={onAcceptSuggestion} />
 
       <div>

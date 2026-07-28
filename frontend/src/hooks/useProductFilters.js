@@ -1,5 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
+import { useProfile } from "../context/ProfileContext";
 import { resolveDisplayPrice } from "../utils/formatters";
+import { stripUnavailableStores } from "../utils/storeAvailability";
 
 const SORT_OPTIONS = {
   RELEVANCE: "relevance",
@@ -19,12 +21,22 @@ function computePriceBounds(results) {
  * ProductResponse[] — sin fabricar campos que el backend no provee.
  */
 export function useProductFilters(results) {
+  const { unavailableStores } = useProfile();
   const [selectedBrands, setSelectedBrands] = useState(() => new Set());
   const [priceRange, setPriceRange] = useState(null);
   const [storeFilter, setStoreFilter] = useState({ coto_online: false, dia_online: false });
   const [sortBy, setSortBy] = useState(SORT_OPTIONS.RELEVANCE);
 
-  const priceBounds = useMemo(() => computePriceBounds(results), [results]);
+  // El saneo va acá arriba y no dentro del predicado de filteredResults: los
+  // límites de precio, los conteos por marca y el contador "N productos" salen
+  // todos de esta misma lista, y si siguieran mirando `results` contarían
+  // productos que la grilla ya no muestra.
+  const usableResults = useMemo(
+    () => stripUnavailableStores(results, unavailableStores),
+    [results, unavailableStores]
+  );
+
+  const priceBounds = useMemo(() => computePriceBounds(usableResults), [usableResults]);
 
   // Clampeado en cada render (no solo vía el useEffect de abajo): cuando
   // llegan resultados nuevos, priceBounds cambia sincrónicamente en este
@@ -47,18 +59,18 @@ export function useProductFilters(results) {
     setStoreFilter({ coto_online: false, dia_online: false });
     setPriceRange(priceBounds);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [results]);
+  }, [usableResults]);
 
   const brandOptions = useMemo(() => {
     const counts = new Map();
-    for (const product of results) {
+    for (const product of usableResults) {
       const brand = product.brand || "Sin marca";
       counts.set(brand, (counts.get(brand) || 0) + 1);
     }
     return Array.from(counts.entries())
       .map(([brand, count]) => ({ brand, count }))
       .sort((a, b) => b.count - a.count);
-  }, [results]);
+  }, [usableResults]);
 
   function toggleBrand(brand) {
     setSelectedBrands((prev) => {
@@ -77,7 +89,7 @@ export function useProductFilters(results) {
     const [rangeMin, rangeMax] = effectivePriceRange;
     const anyStoreFilterActive = storeFilter.coto_online || storeFilter.dia_online;
 
-    let filtered = results.filter((product) => {
+    let filtered = usableResults.filter((product) => {
       const brand = product.brand || "Sin marca";
       if (selectedBrands.size > 0 && !selectedBrands.has(brand)) return false;
 
@@ -105,10 +117,11 @@ export function useProductFilters(results) {
     // SORT_OPTIONS.RELEVANCE: se preserva el orden devuelto por la API (distance asc.)
 
     return filtered;
-  }, [results, selectedBrands, effectivePriceRange, storeFilter, sortBy]);
+  }, [usableResults, selectedBrands, effectivePriceRange, storeFilter, sortBy]);
 
   return {
     filteredResults,
+    unavailableStores,
     brandOptions,
     selectedBrands,
     toggleBrand,

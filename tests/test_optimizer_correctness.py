@@ -324,6 +324,118 @@ def test_un_carrito_grande_con_tarjeta_no_se_vuelve_infeasible(fake_prices, mont
 
 
 # --------------------------------------------------------------------------
+# Tiendas excluidas (sin cobertura de entrega en la dirección del usuario)
+# --------------------------------------------------------------------------
+
+def test_una_tienda_excluida_no_recibe_productos(fake_prices):
+    """Coto es más barata en todo, pero no entrega en la dirección."""
+    fake_prices({
+        "prod_a": {COTO: 5000, DIA: 9000},
+        "prod_b": {COTO: 5000, DIA: 9000},
+    })
+
+    result = optimize_cart(
+        _cart("prod_a", "prod_b"),
+        min_spend_limits={COTO: 5000, DIA: 5000},
+        delivery_costs={COTO: 3000, DIA: 3000},
+        excluded_stores=[COTO],
+    )
+
+    assert result["status"] == "success"
+    assert set(result["split"]) == {DIA}
+    assert result["excluded_stores"] == [COTO]
+    # $9.000 + $9.000 + envío de $3.000
+    assert result["total_spent_net"] == pytest.approx(21000.0)
+
+
+def test_producto_solo_en_la_tienda_excluida_explica_el_motivo_real(fake_prices):
+    """
+    La trampa que motiva la detección previa: sin ella el modelo devuelve
+    infeasible y la API culpa a los mínimos de compra, mandando al usuario a
+    agregar productos que no pueden arreglar nada.
+    """
+    fake_prices({
+        "prod_a": {COTO: 9000, DIA: 9000},
+        "prod_b": {COTO: 8000},
+    })
+
+    result = optimize_cart(
+        _cart("prod_a", "prod_b"),
+        min_spend_limits={COTO: 5000, DIA: 5000},
+        delivery_costs={COTO: 3000, DIA: 3000},
+        excluded_stores=[COTO],
+    )
+
+    assert result["status"] == "infeasible"
+    assert result["unavailable_products"] == ["prod_b"]
+    assert "mínimo" not in result["message"]
+    assert "dirección" in result["message"]
+
+
+def test_sin_exclusiones_no_se_culpa_a_la_direccion(fake_prices):
+    """
+    Un producto sin ofertas en ninguna tienda configurada no tiene nada que ver
+    con la dirección de entrega; el mensaje no debe inventar esa explicación.
+    """
+    fake_prices({"prod_a": {"jumbo_online": 9000}})
+
+    result = optimize_cart(
+        _cart("prod_a"),
+        min_spend_limits={COTO: 5000, DIA: 5000},
+        delivery_costs={COTO: 3000, DIA: 3000},
+    )
+
+    assert result["status"] == "infeasible"
+    assert result["unavailable_products"] == ["prod_a"]
+    assert "dirección" not in result["message"]
+
+
+def test_excluir_una_tienda_sin_ofertas_no_cambia_nada(fake_prices):
+    """Excluir Coto cuando el carrito ya se resolvía en Día es un no-op."""
+    fake_prices({
+        "prod_a": {DIA: 9000},
+        "prod_b": {DIA: 9000},
+    })
+
+    result = optimize_cart(
+        _cart("prod_a", "prod_b"),
+        min_spend_limits={COTO: 5000, DIA: 5000},
+        delivery_costs={COTO: 3000, DIA: 3000},
+        excluded_stores=[COTO],
+    )
+
+    assert result["status"] == "success"
+    assert set(result["split"]) == {DIA}
+
+
+def test_sin_exclusiones_el_campo_viene_vacio(fake_prices):
+    fake_prices({"prod_a": {COTO: 10000, DIA: 12000}})
+
+    result = optimize_cart(
+        _cart("prod_a"),
+        min_spend_limits={COTO: 5000, DIA: 5000},
+        delivery_costs={COTO: 3000, DIA: 3000},
+    )
+
+    assert result["excluded_stores"] == []
+
+
+def test_una_tienda_desconocida_en_excluded_stores_se_ignora(fake_prices):
+    """Defensa contra un store_id que no está en min_spend_limits."""
+    fake_prices({"prod_a": {COTO: 10000, DIA: 12000}})
+
+    result = optimize_cart(
+        _cart("prod_a"),
+        min_spend_limits={COTO: 5000, DIA: 5000},
+        delivery_costs={COTO: 3000, DIA: 3000},
+        excluded_stores=["jumbo_online"],
+    )
+
+    assert result["status"] == "success"
+    assert result["excluded_stores"] == []
+
+
+# --------------------------------------------------------------------------
 # Invariantes estructurales
 # --------------------------------------------------------------------------
 

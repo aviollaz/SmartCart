@@ -10,7 +10,7 @@ import { OptimizeResultsPanel } from "../components/optimize/OptimizeResultsPane
 
 export function CartPage() {
   const { items, incrementItem, decrementItem, removeItem, replaceItem } = useCart();
-  const { cards, memberships, deliveryCosts } = useProfile();
+  const { cards, memberships, deliveryCosts, coordinates, setStoreCoverage } = useProfile();
   const entries = Object.entries(items);
 
   const [optimizeStatus, setOptimizeStatus] = useState("idle"); // idle | loading | success | infeasible | error
@@ -35,11 +35,24 @@ export function CartPage() {
         userMemberships: memberships,
         userCards: cards,
         deliveryCosts,
+        coordinates,
       });
 
       if (response.ok) {
         setOptimizeResult(response.data);
         setOptimizeStatus("success");
+
+        // El optimizador vuelve a consultar la cobertura con cada corrida, así
+        // que su veredicto es más fresco que el guardado en el onboarding. Solo
+        // se persiste un "no entrega" afirmativo: la respuesta sin coordenadas
+        // trae covered:true por fail-open, y guardarlo pisaría un "no" real.
+        const covered = response.data.logistics?.coto?.covered;
+        if (covered === false) {
+          setStoreCoverage("coto_online", {
+            covered: false,
+            message: response.data.logistics.coto.message,
+          });
+        }
       } else {
         setInfeasibleDetail(response.detail);
         setOptimizeStatus("infeasible");
@@ -50,7 +63,8 @@ export function CartPage() {
       setOptimizeResult(null);
       setOptimizeStatus("error");
     }
-  }, [items, memberships, cards, deliveryCosts]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [items, memberships, cards, deliveryCosts, coordinates]);
 
   useEffect(() => {
     if (reoptimizeRef.current) {
