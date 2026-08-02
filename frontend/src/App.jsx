@@ -10,12 +10,21 @@ import { CartPage } from "./pages/CartPage";
 
 function App() {
   const [isCartOpen, setCartOpen] = useState(false);
+  const [isLocationOpen, setLocationOpen] = useState(false);
   const { location } = useProfile();
+
+  // Sin dirección el modal es el onboarding y no se puede abandonar: se monta
+  // sin onClose. Con dirección ya elegida, el mismo modal se abre desde el
+  // Header para cambiarla y ahí sí es descartable. Un único dueño del estado,
+  // para que siga habiendo un solo lugar que sepa geocodificar.
+  const isOnboarding = !location;
 
   return (
     <div className="flex min-h-svh flex-col bg-surface-muted">
-      {!location && <LocationModal />}
-      <Header onOpenCart={() => setCartOpen(true)} />
+      {(isOnboarding || isLocationOpen) && (
+        <LocationModal onClose={isOnboarding ? undefined : () => setLocationOpen(false)} />
+      )}
+      <Header onOpenCart={() => setCartOpen(true)} onOpenLocation={() => setLocationOpen(true)} />
 
       <main className="flex-1">
         <Routes>

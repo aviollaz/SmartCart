@@ -3,6 +3,7 @@ import { useCart } from "../context/CartContext";
 import { useProfile } from "../context/ProfileContext";
 import { optimizeCart } from "../api/optimize";
 import { CartLineItem } from "../components/cart/CartLineItem";
+import { CoverageWarning } from "../components/cart/CoverageWarning";
 import { ProfileDrawer } from "../components/profile/ProfileDrawer";
 import { OptimizeButton } from "../components/optimize/OptimizeButton";
 import { InfeasibleNotice } from "../components/optimize/InfeasibleNotice";
@@ -90,6 +91,8 @@ export function CartPage() {
       <h1 className="mb-6 font-display text-xl font-bold text-ink">Mi carrito</h1>
 
       <div className="flex flex-col gap-6">
+        <CoverageWarning />
+
         <section className="rounded-lg border border-line bg-surface p-5">
           <h2 className="mb-2 font-display text-lg font-bold text-ink">Productos seleccionados</h2>
           {entries.length === 0 ? (

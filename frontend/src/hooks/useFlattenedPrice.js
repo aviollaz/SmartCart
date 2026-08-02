@@ -8,10 +8,12 @@ const DEBOUNCE_MS = 300;
  * promociones que recién se activan a partir de cierta cantidad (2da al 50%,
  * 3x2, "llevando 2 c/u a $X").
  *
- * Deliberadamente no pide nada con quantity <= 1: a una unidad casi ninguna
- * promo de volumen aplica, así que precargar la grilla entera sería una request
- * por producto para reproducir el precio base que la card ya tiene. Se pide solo
- * cuando el usuario sube el stepper, que es cuando el dato cambia algo.
+ * Deliberadamente no pide nada con quantity <= 1: el precio a una unidad ya
+ * viene resuelto en la respuesta del catálogo (`promo_unit_price` por oferta,
+ * calculado con este mismo evaluador en el backend), así que precargar la
+ * grilla sería una request por producto para reproducir un dato que la card ya
+ * tiene. Se pide solo cuando el usuario sube el stepper, que es cuando aparecen
+ * las promos por volumen y el dato realmente cambia.
  *
  * Devuelve el mínimo entre tiendas, mismo criterio que resolveDisplayPrice().
  *

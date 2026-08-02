@@ -7,10 +7,10 @@
  * descarta el producto entero únicamente si era exclusivo de esa tienda.
  *
  * `min_price` se anula a propósito. GET /category lo calcula en el backend
- * incluyendo a todas las tiendas, y resolveDisplayPrice() lo prioriza por sobre
- * available_at_stores: sin anularlo, la card seguiría mostrando como precio el
- * de una oferta que ya no está listada. En null, resolveDisplayPrice cae al
- * mínimo de las ofertas que quedaron, que es lo correcto.
+ * incluyendo a todas las tiendas, así que describe una oferta que ya no está
+ * listada. Hoy resolveDisplayPrice() solo lo usa de fallback (cuando no queda
+ * ninguna oferta con precio), pero anularlo sigue siendo lo correcto: es un
+ * dato falso para el producto recortado.
  */
 export function stripUnavailableStores(products, unavailableStores) {
   // Se devuelve el mismo array (misma referencia) cuando no hay nada que sacar:
