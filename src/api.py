@@ -464,6 +464,10 @@ def optimize_shopping_cart(request: OptimizationRequest):
                 # una comparación contra una compra imposible.
                 stores = [s for s in delivery_costs if s not in excluded_stores]
 
+                # Espejo del dict de src/optimizer.py: si divergen, el baseline
+                # de una tienda compara contra un descuento que el solver no
+                # aplicó. Carrefour no figura en ninguno de los dos (ver el
+                # comentario en optimize_cart).
                 bank_promos = {
                     "coto_online": [{"card": "galicia", "discount_pct": 20, "cap": 5000}],
                     "dia_online": [{"card": "macro", "discount_pct": 15, "cap": 3000}]
@@ -834,15 +838,14 @@ def get_products_by_category(
             # --- CALCULAR PRECIO MÍNIMO ---
             min_price = min([o["base_price"] for o in offers if o["base_price"] > 0], default=0.0)
             
-            # --- PRIORIZAR IMAGEN DE COTO ---
+            # --- PRIORIZAR IMAGEN DE COTO, LUEGO DÍA, LUEGO CARREFOUR ---
+            # Mismo orden que resolveDisplayImage() en el frontend.
             best_image = None
-            coto_offer = next((o for o in offers if o["store_id"] == "coto_online" and o.get("image_url")), None)
-            dia_offer = next((o for o in offers if o["store_id"] == "dia_online" and o.get("image_url")), None)
-            
-            if coto_offer:
-                best_image = coto_offer["image_url"]
-            elif dia_offer:
-                best_image = dia_offer["image_url"]
+            for preferido in ("coto_online", "dia_online", "carrefour_online"):
+                oferta = next((o for o in offers if o["store_id"] == preferido and o.get("image_url")), None)
+                if oferta:
+                    best_image = oferta["image_url"]
+                    break
 
             results.append({
                 "unified_id": prod_id,

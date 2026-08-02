@@ -2,14 +2,14 @@
 Corre todos los scrapers de punta a punta y deja la base lista para usar.
 
 Uso:
-    python -m src.scripts.run_scrapers                  # ambas tiendas + embeddings
+    python -m src.scripts.run_scrapers                  # las tres tiendas + embeddings
     python -m src.scripts.run_scrapers --store coto     # solo una tienda
     python -m src.scripts.run_scrapers --skip-embeddings
 
 El paso de embeddings no es opcional en la práctica: los productos nuevos no
 aparecen en GET /search hasta tener su name_embedding. Solo conviene saltearlo
-si se van a correr las dos tiendas por separado y generar los embeddings al
-final, para no cargar el modelo dos veces.
+si se van a correr las tiendas por separado y generar los embeddings al final,
+para no cargar el modelo tres veces.
 
 Requiere Postgres arriba (docker-compose up -d).
 """
@@ -19,7 +19,7 @@ import time
 import traceback
 
 from src.database import SmartCartDB
-from src.scrapers import scraper_coto, scraper_dia
+from src.scrapers import scraper_carrefour, scraper_coto, scraper_dia
 
 
 def run_coto(db: SmartCartDB) -> int:
@@ -56,6 +56,23 @@ def run_dia(db: SmartCartDB) -> int:
     return total
 
 
+def run_carrefour(db: SmartCartDB) -> int:
+    scraper = scraper_carrefour.CarrefourScraper()
+    total = 0
+
+    for category_query in scraper_carrefour.MVP_CATEGORIES:
+        print(f"\n=== [CARREFOUR] {category_query} ===")
+        products = scraper.scrape_entire_category(category_query)
+
+        if products:
+            db.save_store_products(products, "carrefour_online")
+            total += len(products)
+
+        time.sleep(3.5)
+
+    return total
+
+
 def main():
     # El scrapeo tarda varios minutos; sin esto Python bufferea la salida al
     # redirigirla a un archivo o un pipe y no se ve el progreso hasta el final.
@@ -64,7 +81,7 @@ def main():
     parser = argparse.ArgumentParser(description="Corre los scrapers de SmartCart.")
     parser.add_argument(
         "--store",
-        choices=["coto", "dia", "all"],
+        choices=["coto", "dia", "carrefour", "all"],
         default="all",
         help="Qué tienda scrapear (default: all).",
     )
@@ -76,7 +93,7 @@ def main():
     args = parser.parse_args()
 
     db = SmartCartDB()
-    runners = {"coto": run_coto, "dia": run_dia}
+    runners = {"coto": run_coto, "dia": run_dia, "carrefour": run_carrefour}
     selected = list(runners) if args.store == "all" else [args.store]
 
     started = time.time()

@@ -37,7 +37,12 @@ export function LocationModal({ onClose }) {
   // donde el usuario ya está, en vez de mandarlo de nuevo al centro de CABA.
   const [pendingPoint, setPendingPoint] = useState(() =>
     location && !location.skipped && typeof location.lat === "number"
-      ? { displayName: location.displayName, lat: location.lat, lng: location.lng }
+      ? {
+          displayName: location.displayName,
+          lat: location.lat,
+          lng: location.lng,
+          zone: location.zone ?? null,
+        }
       : null
   );
 
@@ -77,13 +82,15 @@ export function LocationModal({ onClose }) {
   // coordenadas, que son lo único que el backend realmente necesita.
   async function handleMapPick({ lat, lng }) {
     setCoverageWarning(null);
-    setPendingPoint({ displayName: null, lat, lng });
+    setPendingPoint({ displayName: null, lat, lng, zone: null });
 
-    const displayName = await reverseGeocode({ lat, lng });
-    if (!displayName) return;
+    const resolved = await reverseGeocode({ lat, lng });
+    if (!resolved) return;
     // Se descarta si el usuario ya movió el pin de nuevo mientras respondía.
     setPendingPoint((prev) =>
-      prev && prev.lat === lat && prev.lng === lng ? { ...prev, displayName } : prev
+      prev && prev.lat === lat && prev.lng === lng
+        ? { ...prev, displayName: resolved.displayName, zone: resolved.zone }
+        : prev
     );
   }
 
@@ -93,6 +100,9 @@ export function LocationModal({ onClose }) {
         displayName: point.displayName || formatCoords(point),
         lat: point.lat,
         lng: point.lng,
+        // Zona de envío derivada de la dirección (reemplazó al dropdown manual).
+        // Puede quedar en null: fuera del AMBA, o si el reverse geocoding falló.
+        zone: point.zone ?? null,
       },
       coverage ? { coto_online: coverage } : {}
     );
