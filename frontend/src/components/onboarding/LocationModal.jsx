@@ -1,5 +1,5 @@
-import { useState } from "react";
-import { MapPin, Search } from "lucide-react";
+import { useEffect, useState } from "react";
+import { MapPin, Search, X } from "lucide-react";
 import { geocodeAddress, reverseGeocode } from "../../api/geocoding";
 import { checkCotoCoverage } from "../../api/logistics";
 import { useProfile } from "../../context/ProfileContext";
@@ -18,16 +18,37 @@ import { LocationMap } from "./LocationMap";
  * El buscador y el mapa son dos formas de fijar el mismo punto: elegir un
  * candidato mueve el pin, y arrastrarlo o clickear el mapa corrige lo que el
  * geocoder haya errado. Recién el botón de confirmar consulta la cobertura.
+ *
+ * `onClose` es lo único que distingue el onboarding de un cambio de dirección
+ * desde el Header: cuando viene, el modal se puede abandonar (X, Escape o clic
+ * afuera) y la dirección vigente queda intacta. Sin la prop sigue siendo
+ * bloqueante, porque en el onboarding cerrar sin elegir dejaría a la app sin
+ * ninguno de los dos estados válidos (dirección o "seguir sin dirección").
  */
-export function LocationModal() {
-  const { setLocation, skipLocation } = useProfile();
+export function LocationModal({ onClose }) {
+  const { location, setLocation, skipLocation } = useProfile();
 
   const [query, setQuery] = useState("");
   const [candidates, setCandidates] = useState([]);
   const [status, setStatus] = useState("idle"); // idle | searching | empty | error | confirming
   const [coverageWarning, setCoverageWarning] = useState(null);
-  // Punto elegido pero todavía no confirmado: {displayName, lat, lng}.
-  const [pendingPoint, setPendingPoint] = useState(null);
+  // Punto elegido pero todavía no confirmado: {displayName, lat, lng}. Arranca
+  // en la dirección vigente (si hay) para que el mapa abra con el pin puesto
+  // donde el usuario ya está, en vez de mandarlo de nuevo al centro de CABA.
+  const [pendingPoint, setPendingPoint] = useState(() =>
+    location && !location.skipped && typeof location.lat === "number"
+      ? { displayName: location.displayName, lat: location.lat, lng: location.lng }
+      : null
+  );
+
+  useEffect(() => {
+    if (!onClose) return;
+    function onKeyDown(event) {
+      if (event.key === "Escape") onClose();
+    }
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [onClose]);
 
   async function handleSearch(event) {
     event.preventDefault();
@@ -75,6 +96,9 @@ export function LocationModal() {
       },
       coverage ? { coto_online: coverage } : {}
     );
+    // En el onboarding no hay nada que cerrar: el modal desaparece solo cuando
+    // App.jsx ve que ya hay location.
+    onClose?.();
   }
 
   async function handleConfirm() {
@@ -106,11 +130,24 @@ export function LocationModal() {
   }
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4"
+      onClick={onClose ? (event) => event.target === event.currentTarget && onClose() : undefined}
+    >
       <div className="max-h-[90vh] w-full max-w-lg overflow-y-auto rounded-lg border border-line bg-surface p-6 shadow-lg">
         <div className="mb-4 flex items-center gap-2">
           <MapPin className="text-brand-accent" size={20} />
           <h2 className="font-display text-lg font-bold text-ink">¿A dónde te llevamos el pedido?</h2>
+          {onClose && (
+            <button
+              type="button"
+              onClick={onClose}
+              aria-label="Cerrar"
+              className="ml-auto rounded-md p-1 text-ink-muted hover:bg-surface-muted hover:text-ink"
+            >
+              <X size={18} />
+            </button>
+          )}
         </div>
 
         <p className="mb-4 text-sm text-ink-muted">
@@ -213,7 +250,10 @@ export function LocationModal() {
 
         <button
           type="button"
-          onClick={skipLocation}
+          onClick={() => {
+            skipLocation();
+            onClose?.();
+          }}
           className="mt-3 w-full text-center text-xs text-ink-muted underline hover:text-ink"
         >
           Seguir sin dirección (usamos costos de envío estimados por zona)

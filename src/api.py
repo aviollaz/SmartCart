@@ -10,7 +10,7 @@ from psycopg.rows import dict_row
 from sentence_transformers import SentenceTransformer
 from src.database import SmartCartDB
 from src.optimizer import optimize_cart, DEFAULT_DELIVERY_COSTS
-from src.flattener import flatten_cart_prices
+from src.flattener import flatten_cart_prices, evaluate_best_promo, parse_promotions_json
 from src.category_tree import build_category_tree
 from src.category_tags import filter_tags
 from src.coto_logistics import check_coverage, resolve_coto_logistics
@@ -89,6 +89,14 @@ class StoreOffer(BaseModel):
     last_updated: Optional[str] = None
     image_url: Optional[str] = None
     promotions: List[StorePromotion] = []
+    # Precio neto por unidad llevando UNA sola, ya con la mejor promo aplicable.
+    # Va en None cuando ninguna promo mejora el precio a esa cantidad, que es lo
+    # que pasa con las condicionales ("Llevando 2", "3x2", "2da al 50%"): recién
+    # se activan cuando el usuario sube el selector, y ahí las calcula
+    # /price-preview. Existe para que la grilla pueda mostrar de entrada el
+    # precio con descuento directo en vez del de lista.
+    promo_unit_price: Optional[float] = Field(None, example=2248.95)
+    promo_description: Optional[str] = Field(None, example="50%Dto")
 
 class ProductResponse(BaseModel):
     unified_id: str = Field(..., example="prod_7790000000123")
@@ -201,6 +209,62 @@ def read_root():
         "model_loaded": "model" in ml_models
     }
 
+def _build_store_offer(sp: dict) -> dict:
+    """
+    Arma la oferta de una tienda tal como la devuelven /search y /category.
+
+    Estaba duplicado en los dos endpoints; se unificó al agregar el precio con
+    promoción, para que no quedara la mitad del catálogo mostrando el precio de
+    lista según por dónde entrara el usuario.
+
+    El precio neto se calcula con la MISMA función que usa el optimizador
+    (evaluate_best_promo, en src/flattener.py) sobre las promos crudas, no sobre
+    las mapeadas de abajo: el mapeo descarta discount_price_per_unit y
+    regular_price, que son justamente los campos que traen el precio con
+    descuento de Coto. Se evalúa con quantity=1, así que solo puede ganar una
+    promo que rija desde la primera unidad.
+
+    user_memberships va vacío a propósito: la grilla es anónima y una promo que
+    exige tarjeta o club no puede anunciarse como el precio por defecto.
+    """
+    base_price = float(sp["base_price"]) if sp["base_price"] is not None else 0.0
+    raw_promos = parse_promotions_json(sp["promotions_json"]) if sp["promotions_json"] else []
+
+    promotions = [
+        {
+            "promo_id": rp.get("promo_id") or rp.get("id"),
+            "type": rp.get("type") or rp.get("promo_type"),
+            "description": rp.get("description") or rp.get("name"),
+            "required_quantity": rp.get("required_quantity"),
+            "free_quantity": rp.get("free_quantity"),
+            "discount_percentage_on_next": rp.get("discount_percentage_on_next") or rp.get("discount"),
+            "requires_membership": rp.get("requires_membership"),
+            "valid_until": rp.get("valid_until"),
+        }
+        for rp in raw_promos
+    ]
+
+    promo_unit_price = None
+    promo_description = None
+    if base_price > 0 and raw_promos:
+        best = evaluate_best_promo(base_price, raw_promos, 1)
+        if best["applied_promo_id"] is not None and best["total_cost"] < base_price:
+            promo_unit_price = round(best["total_cost"], 2)
+            promo_description = best["promo_description"]
+
+    return {
+        "store_id": sp["store_id"],
+        "product_url": sp["product_url"],
+        "base_price": base_price,
+        "in_stock": bool(sp["in_stock"]),
+        "last_updated": sp["last_updated"].isoformat() if sp["last_updated"] else None,
+        "image_url": sp.get("image_url"),
+        "promotions": promotions,
+        "promo_unit_price": promo_unit_price,
+        "promo_description": promo_description,
+    }
+
+
 @app.get("/search", response_model=List[ProductResponse])
 def search_products(
     q: str = Query(..., description="Texto de búsqueda libre (ej. 'Puré de papas')", min_length=1),
@@ -268,43 +332,8 @@ def search_products(
             prod_id = sp["unified_product_id"]
             if prod_id not in offers_by_product:
                 offers_by_product[prod_id] = []
-                
-            # Parsear promociones JSON
-            promotions = []
-            if sp["promotions_json"]:
-                # psycopg puede devolver el json como dict/list directamente o como string.
-                # Aseguramos parseo tolerante a fallos.
-                raw_promos = sp["promotions_json"]
-                if isinstance(raw_promos, str):
-                    import json
-                    try:
-                        raw_promos = json.loads(raw_promos)
-                    except Exception:
-                        raw_promos = []
-                
-                if isinstance(raw_promos, list):
-                    for rp in raw_promos:
-                        # Mapear campos de la promo cruda al formato estandarizado de la spec
-                        promotions.append({
-                            "promo_id": rp.get("promo_id") or rp.get("id"),
-                            "type": rp.get("type") or rp.get("promo_type"),
-                            "description": rp.get("description") or rp.get("name"),
-                            "required_quantity": rp.get("required_quantity"),
-                            "free_quantity": rp.get("free_quantity"),
-                            "discount_percentage_on_next": rp.get("discount_percentage_on_next") or rp.get("discount"),
-                            "requires_membership": rp.get("requires_membership"),
-                            "valid_until": rp.get("valid_until")
-                        })
-            
-            offers_by_product[prod_id].append({
-                "store_id": sp["store_id"],
-                "product_url": sp["product_url"],
-                "base_price": float(sp["base_price"]) if sp["base_price"] is not None else 0.0,
-                "in_stock": bool(sp["in_stock"]),
-                "last_updated": sp["last_updated"].isoformat() if sp["last_updated"] else None,
-                "image_url": sp.get("image_url"),
-                "promotions": promotions
-            })
+
+            offers_by_product[prod_id].append(_build_store_offer(sp))
 
         # 5. Estructurar la respuesta final de búsqueda
         results = []
@@ -794,37 +823,8 @@ def get_products_by_category(
             prod_id = sp["unified_product_id"]
             if prod_id not in offers_by_product:
                 offers_by_product[prod_id] = []
-            
-            promotions = []
-            if sp["promotions_json"]:
-                raw_promos = sp["promotions_json"]
-                if isinstance(raw_promos, str):
-                    import json
-                    try: raw_promos = json.loads(raw_promos)
-                    except: raw_promos = []
-                
-                if isinstance(raw_promos, list):
-                    for rp in raw_promos:
-                        promotions.append({
-                            "promo_id": rp.get("promo_id") or rp.get("id"),
-                            "type": rp.get("type") or rp.get("promo_type"),
-                            "description": rp.get("description") or rp.get("name"),
-                            "required_quantity": rp.get("required_quantity"),
-                            "free_quantity": rp.get("free_quantity"),
-                            "discount_percentage_on_next": rp.get("discount_percentage_on_next") or rp.get("discount"),
-                            "requires_membership": rp.get("requires_membership"),
-                            "valid_until": rp.get("valid_until")
-                        })
-            
-            offers_by_product[prod_id].append({
-                "store_id": sp["store_id"],
-                "product_url": sp["product_url"],
-                "base_price": float(sp["base_price"]) if sp["base_price"] is not None else 0.0,
-                "in_stock": bool(sp["in_stock"]),
-                "last_updated": sp["last_updated"].isoformat() if sp["last_updated"] else None,
-                "image_url": sp.get("image_url"), # Extracción segura de la base de datos
-                "promotions": promotions
-            })
+
+            offers_by_product[prod_id].append(_build_store_offer(sp))
 
         results = []
         for p in nearest_products:

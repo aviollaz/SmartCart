@@ -164,3 +164,69 @@ def test_la_cantidad_viaja_en_la_respuesta(monkeypatch):
     flat = _flatten(monkeypatch, {"coto_online": (COTO_FLAT_BASE, COTO_FLAT_PROMO)}, 3)["coto_online"]
 
     assert flat["quantity"] == 3
+
+
+# --- Evaluación a q=1, la que usa la grilla del catálogo -------------------
+#
+# GET /search y GET /category llaman a evaluate_best_promo() con quantity=1 para
+# poder mostrar el precio ya descontado en la card, antes de que el producto
+# entre al carrito. La regla que tiene que cumplirse es una sola: a una unidad
+# solo puede ganar una promo que rija desde la primera. Si una condicional se
+# colara acá, la card anunciaría un precio que el usuario no va a pagar.
+
+
+def test_a_una_unidad_gana_el_descuento_directo():
+    best = flattener.evaluate_best_promo(COTO_DIRECT_BASE, COTO_DIRECT_PROMO, 1)
+
+    assert best["total_cost"] == 238.0
+    assert best["applied_promo_id"] == "coto_36642871"
+    assert best["applied_promo_type"] == "direct_discount"
+    assert best["promo_description"] == "50%Dto"
+
+
+@pytest.mark.parametrize("promociones", [
+    COTO_FLAT_PROMO,
+    [{
+        "type": "conditional_discount",
+        "promo_id": "dia_teaser_1",
+        "description": "50% de descuento en la 2da unidad",
+        "required_quantity": 2,
+        "discount_percentage_on_next": 50.0,
+    }],
+    [{
+        "type": "multi_buy",
+        "promo_id": "dia_teaser_2",
+        "description": "Llevando 3 pagás 2",
+        "required_quantity": 3,
+        "free_quantity": 1,
+    }],
+])
+def test_a_una_unidad_las_condicionales_no_aplican(promociones):
+    best = flattener.evaluate_best_promo(COTO_FLAT_BASE, promociones, 1)
+
+    assert best["total_cost"] == COTO_FLAT_BASE
+    assert best["applied_promo_id"] is None
+    assert best["applied_promo_type"] is None
+
+
+def test_una_promo_con_membresia_no_puede_ser_el_precio_de_la_grilla():
+    """
+    La grilla se pinta anónima (user_memberships vacío). Una promo que exige
+    tarjeta o club no puede anunciarse como el precio por defecto.
+    """
+    promo = [dict(COTO_DIRECT_PROMO[0], requires_membership="club_dia")]
+
+    anonimo = flattener.evaluate_best_promo(COTO_DIRECT_BASE, promo, 1)
+    assert anonimo["total_cost"] == COTO_DIRECT_BASE
+    assert anonimo["applied_promo_id"] is None
+
+    con_club = flattener.evaluate_best_promo(COTO_DIRECT_BASE, promo, 1, ["club_dia"])
+    assert con_club["total_cost"] == 238.0
+
+
+def test_sin_promociones_devuelve_precio_de_lista():
+    for promociones in ([], None):
+        best = flattener.evaluate_best_promo(1000.0, promociones, 1)
+        assert best["total_cost"] == 1000.0
+        assert best["applied_promo_id"] is None
+        assert best["promo_description"] == "Precio base sin promociones"

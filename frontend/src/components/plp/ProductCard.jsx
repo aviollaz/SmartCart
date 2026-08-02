@@ -2,14 +2,24 @@ import { ShoppingCart } from "lucide-react";
 import { useCart } from "../../context/CartContext";
 import { useProfile } from "../../context/ProfileContext";
 import { useFlattenedPrice } from "../../hooks/useFlattenedPrice";
-import { formatPrice, formatUnitPrice, resolveDisplayImage, resolveDisplayPrice, storeLabel } from "../../utils/formatters";
+import {
+  formatPrice,
+  formatUnitPrice,
+  resolveBestOffer,
+  resolveDisplayImage,
+  resolveDisplayPrice,
+  storeLabel,
+} from "../../utils/formatters";
 import { QuantityStepper } from "./QuantityStepper";
 
-function PromoBadges({ product }) {
+// `skipDescription` evita repetir como badge la promo que ya está explicada
+// debajo del precio.
+function PromoBadges({ product, skipDescription }) {
   const badges = [];
   for (const offer of product.available_at_stores || []) {
     for (const promo of offer.promotions || []) {
       if (!promo.description) continue;
+      if (skipDescription && promo.description === skipDescription) continue;
       badges.push({ key: `${offer.store_id}-${promo.promo_id || promo.description}`, storeId: offer.store_id, promo });
     }
   }
@@ -54,10 +64,12 @@ function StoreBreakdown({ product }) {
 
   return (
     <p className="mb-2 text-xs text-ink-muted">
+      {/* Se muestra el neto, no el de lista: con un descuento directo el
+          desglose contradecía al precio grande de arriba. */}
       {offers.map((offer, index) => (
         <span key={offer.store_id} className={offer.in_stock ? "" : "line-through opacity-60"}>
           {index > 0 && " · "}
-          {storeLabel(offer.store_id)} {formatPrice(offer.base_price)}
+          {storeLabel(offer.store_id)} {formatPrice(offer.promo_unit_price ?? offer.base_price)}
         </span>
       ))}
     </p>
@@ -71,6 +83,17 @@ export function ProductCard({ product }) {
   const displayPrice = resolveDisplayPrice(product);
   const unitPriceLabel = formatUnitPrice({ ...product, min_price: displayPrice });
   const displayImage = resolveDisplayImage(product);
+
+  // Promo que ya está aplicada en el precio de la card (descuento directo, el
+  // único tipo que rige desde la primera unidad). Las condicionales no entran
+  // acá: el backend manda promo_unit_price en null a cantidad 1.
+  //
+  // El precio tachado es el de lista DE ESTA oferta, no el mínimo entre
+  // tiendas: si Día lista más barato que Coto pero el descuento lo tiene Coto,
+  // tachar el de Día pondría el precio de una tienda al lado del de la otra.
+  const bestOffer = resolveBestOffer(product);
+  const catalogPromo =
+    bestOffer && bestOffer.offer.promo_unit_price != null ? bestOffer.offer : null;
 
   // La cantidad sale del carrito: antes existía un borrador local que dejaba el
   // stepper en 3 o 4 unidades sin que el producto estuviera agregado.
@@ -105,7 +128,7 @@ export function ProductCard({ product }) {
       </div>
 
       <DietaryBadges product={product} />
-      <PromoBadges product={product} />
+      <PromoBadges product={product} skipDescription={catalogPromo?.promo_description} />
 
       {hasBetterPrice ? (
         <>
@@ -123,7 +146,23 @@ export function ProductCard({ product }) {
       ) : (
         <>
           {displayPrice != null && (
-            <p className="text-lg font-bold text-brand-violet-700">{formatPrice(displayPrice)}</p>
+            <p className="text-lg font-bold text-brand-violet-700">
+              {formatPrice(displayPrice)}
+              {catalogPromo && (
+                <span className="ml-2 text-sm font-normal text-ink-muted line-through">
+                  {formatPrice(catalogPromo.base_price)}
+                </span>
+              )}
+            </p>
+          )}
+          {/* Un descuento directo ya rige a una unidad, así que se nombra la
+              promo a secas: decir "c/u llevando 1" daría a entender que hace
+              falta una cantidad mínima que no existe. */}
+          {catalogPromo && (
+            <p className="mb-1 text-xs font-semibold text-state-promo">
+              {storeLabel(catalogPromo.store_id)}
+              {catalogPromo.promo_description ? ` · ${catalogPromo.promo_description}` : ""}
+            </p>
           )}
           {pricing && <p className="mb-1 text-xs text-ink-muted">Calculando precio por cantidad…</p>}
         </>

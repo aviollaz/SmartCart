@@ -2,6 +2,7 @@ import { Link } from "react-router-dom";
 import { X } from "lucide-react";
 import { useCart } from "../../context/CartContext";
 import { CartLineItem } from "./CartLineItem";
+import { CoverageWarning } from "./CoverageWarning";
 
 export function CartDrawer({ open, onClose }) {
   const { items, incrementItem, decrementItem, removeItem } = useCart();
@@ -19,6 +20,8 @@ export function CartDrawer({ open, onClose }) {
             <X size={20} />
           </button>
         </div>
+
+        <CoverageWarning className="mb-4" />
 
         {entries.length === 0 ? (
           <p className="text-sm text-ink-muted">

@@ -5,20 +5,32 @@ import { SearchBar } from "./SearchBar";
 import { MegaMenu } from "../megamenu/MegaMenu";
 import { useCart } from "../../context/CartContext";
 import { useProfile } from "../../context/ProfileContext";
+import { formatShortAddress } from "../../utils/formatters";
 
-export function Header({ onOpenCart }) {
+export function Header({ onOpenCart, onOpenLocation }) {
   const [isMegaMenuOpen, setMegaMenuOpen] = useState(false);
   const { itemCount } = useCart();
-  const { zone } = useProfile();
+  const { location } = useProfile();
+
+  // Reemplaza al viejo "Envío a {zona}", que linkeaba al carrito: la zona es un
+  // dato secundario que se sigue editando en el perfil, mientras que la
+  // dirección decide qué tiendas entregan y hay que poder cambiarla desde
+  // cualquier página.
+  const shortAddress = formatShortAddress(location);
 
   return (
     <header className="sticky top-0 z-30">
       <div className="bg-brand-violet-900 text-white">
         <div className="mx-auto flex max-w-7xl items-center justify-between px-4 py-1.5 text-xs">
-          <Link to="/carrito" className="flex items-center gap-1.5 hover:underline">
+          <button
+            type="button"
+            onClick={onOpenLocation}
+            title={shortAddress ? location.displayName : "Ingresá tu dirección de entrega"}
+            className="flex items-center gap-1.5 hover:underline"
+          >
             <MapPin size={14} aria-hidden="true" />
-            Envío a {zone}
-          </Link>
+            {shortAddress ? `Envío a ${shortAddress}` : "Ingresar ubicación"}
+          </button>
         </div>
       </div>
 
