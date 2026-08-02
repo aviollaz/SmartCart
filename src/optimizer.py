@@ -16,8 +16,13 @@ MAX_PCT = 100
 # y no literales enterrados en la firma porque src/api.py necesita partir de
 # ellos para pisar el envío de Coto con el valor real cuando el request no trae
 # la tabla por zona del frontend.
-DEFAULT_MIN_SPEND_LIMITS = {"coto_online": 15000, "dia_online": 12000}
-DEFAULT_DELIVERY_COSTS = {"coto_online": 3000, "dia_online": 3000}
+#
+# Sumar una tienda acá NO es un cambio aislado: `stores` sale de las claves de
+# min_spend_limits y más abajo se indexa delivery_costs[j] sin default, así que
+# la tabla por zona del frontend (frontend/src/utils/deliveryCosts.js) tiene que
+# traer la clave nueva en el mismo commit o /optimize revienta con KeyError.
+DEFAULT_MIN_SPEND_LIMITS = {"coto_online": 15000, "dia_online": 12000, "carrefour_online": 20000}
+DEFAULT_DELIVERY_COSTS = {"coto_online": 3000, "dia_online": 3000, "carrefour_online": 3500}
 
 def optimize_cart(cart_items, user_memberships=None, user_cards=None, min_spend_limits=None, delivery_costs=None, excluded_stores=None):
     if user_memberships is None: user_memberships = []
@@ -26,6 +31,12 @@ def optimize_cart(cart_items, user_memberships=None, user_cards=None, min_spend_
     if delivery_costs is None: delivery_costs = dict(DEFAULT_DELIVERY_COSTS)
     if excluded_stores is None: excluded_stores = []
 
+    # Carrefour queda sin entrada a propósito, no por olvido: sus descuentos
+    # conocidos son de la Tarjeta Carrefour los fines de semana, y este modelo es
+    # un porcentaje con tope que se aplica siempre, sin noción de día. Cargarlo
+    # acá haría que el optimizador prometa un martes un ahorro que no existe y
+    # elija Carrefour por una razón falsa. `bank_promos.get(j, [])` ya devuelve []
+    # para las tiendas ausentes. Pendiente: relevar los términos reales.
     bank_promos = {
         "coto_online": [{"card": "galicia", "discount_pct": 20, "cap": 5000, "description": "20% de ahorro con Galicia (Tope $5000)"}],
         "dia_online": [{"card": "macro", "discount_pct": 15, "cap": 3000, "description": "15% de ahorro con Macro (Tope $3000)"}]

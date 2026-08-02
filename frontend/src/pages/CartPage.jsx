@@ -9,7 +9,7 @@ import { OptimizeButton } from "../components/optimize/OptimizeButton";
 import { InfeasibleNotice } from "../components/optimize/InfeasibleNotice";
 import { OptimizeResultsPanel } from "../components/optimize/OptimizeResultsPanel";
 
-export function CartPage() {
+export function CartPage({ onOpenLocation }) {
   const { items, incrementItem, decrementItem, removeItem, replaceItem } = useCart();
   const { cards, memberships, deliveryCosts, coordinates, setStoreCoverage } = useProfile();
   const entries = Object.entries(items);
@@ -115,7 +115,7 @@ export function CartPage() {
           )}
         </section>
 
-        <ProfileDrawer />
+        <ProfileDrawer onOpenLocation={onOpenLocation} />
 
         <OptimizeButton onClick={runOptimize} disabled={entries.length === 0} loading={optimizeStatus === "loading"} />
 

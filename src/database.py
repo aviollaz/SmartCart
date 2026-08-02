@@ -15,7 +15,14 @@ class SmartCartDB:
         "Golosinas y Chocolates": "Golosinas",
         "Harinas": "Almacén",
         "Aceites": "Almacén",
-        "Almacén": "Almacén"
+        "Almacén": "Almacén",
+        # Hojas tal como las escribe Carrefour. El match es exacto y sensible a
+        # mayúsculas, así que sin estas entradas ("Dulce de leche" no es el
+        # "Dulce de Leche" de arriba) sus productos caen a "Otros" y quedan
+        # fuera de GET /category/{name}.
+        "Dulce de leche": "Lácteos",
+        "Aceites y vinagres": "Almacén",
+        "Harinas comunes y leudantes": "Almacén"
     }
 
     def __init__(self):
@@ -69,7 +76,15 @@ class SmartCartDB:
                         elif store_id == "dia_online":
                             # Para día, raw_promos contiene el 'commertialOffer' crudo de VTEX
                             base_price, standardized_promos = PromoTransformer.dia(
-                                prod['raw_promos'], 
+                                prod['raw_promos'],
+                                prod['store_sku']
+                            )
+                        elif store_id == "carrefour_online":
+                            # Carrefour también es VTEX: mismo 'commertialOffer' crudo,
+                            # pero su hueco ListPrice/Price puede ser precio de socio
+                            # (ver PromoTransformer.carrefour).
+                            base_price, standardized_promos = PromoTransformer.carrefour(
+                                prod['raw_promos'],
                                 prod['store_sku']
                             )
 

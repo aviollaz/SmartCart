@@ -5,7 +5,7 @@ export function HomePage() {
   return (
     <div className="mx-auto w-full max-w-5xl px-4 py-16 text-center">
       <h1 className="mb-3 font-display text-3xl font-bold text-brand-violet-700 sm:text-4xl">
-        Comprá inteligente en Coto y Día
+        Comprá inteligente en Coto, Día y Carrefour
       </h1>
       <p className="mx-auto mb-8 max-w-xl text-ink-muted">
         Buscá productos, armá tu changuito y dejá que SmartCart encuentre la combinación de

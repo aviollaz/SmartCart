@@ -1,7 +1,4 @@
-const STORES = [
-  { id: "coto_online", label: "Disponible en Coto" },
-  { id: "dia_online", label: "Disponible en Día" },
-];
+import { STORES } from "../../utils/constants";
 
 export function StoreAvailabilityToggle({ storeFilter, onToggle, unavailableStores = [] }) {
   // Una tienda que no entrega en la dirección del usuario ya no tiene productos

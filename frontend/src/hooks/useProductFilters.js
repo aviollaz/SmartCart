@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { useProfile } from "../context/ProfileContext";
+import { STORES } from "../utils/constants";
 import { resolveDisplayPrice } from "../utils/formatters";
 import { stripUnavailableStores } from "../utils/storeAvailability";
 
@@ -8,6 +9,12 @@ const SORT_OPTIONS = {
   PRICE_ASC: "price_asc",
   PRICE_DESC: "price_desc",
 };
+
+// Estado neutro del filtro de disponibilidad, derivado de la misma lista que
+// dibuja los checkboxes para que sumar una tienda sea un solo lugar.
+function emptyStoreFilter() {
+  return Object.fromEntries(STORES.map((store) => [store.id, false]));
+}
 
 function computePriceBounds(results) {
   const prices = results.map(resolveDisplayPrice).filter((p) => typeof p === "number" && p > 0);
@@ -24,7 +31,7 @@ export function useProductFilters(results) {
   const { unavailableStores } = useProfile();
   const [selectedBrands, setSelectedBrands] = useState(() => new Set());
   const [priceRange, setPriceRange] = useState(null);
-  const [storeFilter, setStoreFilter] = useState({ coto_online: false, dia_online: false });
+  const [storeFilter, setStoreFilter] = useState(emptyStoreFilter);
   const [sortBy, setSortBy] = useState(SORT_OPTIONS.RELEVANCE);
 
   // El saneo va acá arriba y no dentro del predicado de filteredResults: los
@@ -56,7 +63,7 @@ export function useProductFilters(results) {
   // a los límites del nuevo resultado.
   useEffect(() => {
     setSelectedBrands(new Set());
-    setStoreFilter({ coto_online: false, dia_online: false });
+    setStoreFilter(emptyStoreFilter());
     setPriceRange(priceBounds);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [usableResults]);
@@ -87,7 +94,7 @@ export function useProductFilters(results) {
 
   const filteredResults = useMemo(() => {
     const [rangeMin, rangeMax] = effectivePriceRange;
-    const anyStoreFilterActive = storeFilter.coto_online || storeFilter.dia_online;
+    const anyStoreFilterActive = Object.values(storeFilter).some(Boolean);
 
     let filtered = usableResults.filter((product) => {
       const brand = product.brand || "Sin marca";

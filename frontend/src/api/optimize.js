@@ -14,9 +14,16 @@ export async function optimizeCart({ cart, userMemberships, userCards, deliveryC
         cart,
         user_memberships: userMemberships,
         user_cards: userCards,
+        // Costos por zona, derivados de la dirección (ya no de un dropdown).
+        // Tienen que viajar SIEMPRE y con las tres tiendas: src/optimizer.py
+        // indexa delivery_costs[store] para cada tienda con mínimo de compra
+        // —un faltante es KeyError— y src/api.py arma los baselines con sus
+        // claves. Es la única fuente del envío de Día y de Carrefour, que no
+        // tienen lookup online; para Coto es el fallback.
         delivery_costs: deliveryCosts,
-        // Con coordenadas el backend consulta la cobertura y el envío real de
-        // Coto; sin ellas cae a los costos por zona de deliveryCosts.
+        // Con coordenadas el backend consulta la cobertura y la tarifa real de
+        // Coto, y pisa su costo acá arriba. Sólo afecta a Coto: no hay
+        // equivalente para Día ni para Carrefour.
         lat: coordinates?.lat ?? null,
         lng: coordinates?.lng ?? null,
       }),

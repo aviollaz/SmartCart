@@ -1,6 +1,6 @@
 import { createContext, useContext, useMemo } from "react";
 import { useLocalStorage } from "../hooks/useLocalStorage";
-import { DELIVERY_ZONES, getDeliveryCostsForZone } from "../utils/deliveryCosts";
+import { getDeliveryCostsForZone } from "../utils/deliveryCosts";
 
 const ProfileContext = createContext(null);
 
@@ -13,10 +13,13 @@ const NO_UNAVAILABLE_STORES = [];
 const DEFAULT_PROFILE = {
   cards: [],
   memberships: [],
-  zone: DELIVERY_ZONES[0],
-  // {displayName, lat, lng} una vez geocodificada, o {skipped:true} si el
+  // {displayName, lat, lng, zone} una vez geocodificada, o {skipped:true} si el
   // usuario decidió seguir sin dirección. `null`/`undefined` significa que
   // todavía no pasó por el onboarding, y es lo que dispara el modal.
+  //
+  // `zone` sale del address estructurado de Nominatim y reemplazó al dropdown
+  // "Zona de envío" que convivía con este campo: se podía tener una dirección
+  // en San Isidro declarando "CABA", y el costo de envío salía de lo declarado.
   //
   // No se versionó la clave de localStorage al agregar este campo: los perfiles
   // guardados antes no lo tienen, así que quedan en undefined y ven el modal,
@@ -55,10 +58,6 @@ export function ProfileProvider({ children }) {
     setProfile((prev) => ({ ...prev, memberships }));
   }
 
-  function setZone(zone) {
-    setProfile((prev) => ({ ...prev, zone }));
-  }
-
   // La cobertura pertenece a una coordenada, así que cambiar de dirección la
   // invalida: se pisa junto con `location` en vez de arrastrar el veredicto de
   // la dirección anterior. Va como segundo argumento —y no como un setter
@@ -72,10 +71,6 @@ export function ProfileProvider({ children }) {
     setProfile((prev) => ({ ...prev, location: { skipped: true }, storeCoverage: {} }));
   }
 
-  function clearLocation() {
-    setProfile((prev) => ({ ...prev, location: null, storeCoverage: {} }));
-  }
-
   function setStoreCoverage(storeId, coverage) {
     setProfile((prev) => ({
       ...prev,
@@ -83,7 +78,17 @@ export function ProfileProvider({ children }) {
     }));
   }
 
-  const deliveryCosts = useMemo(() => getDeliveryCostsForZone(profile.zone), [profile.zone]);
+  // Costo de envío por zona, derivado de la dirección. Sigue siendo la fuente
+  // del envío de Día siempre (no tiene lookup online, a diferencia de Coto), y
+  // la de Coto sólo cuando no hay coordenadas o su sitio no responde.
+  //
+  // Una zona desconocida —fuera del AMBA, reverse geocoding fallido, o un
+  // perfil guardado antes de que este campo existiera— cae al default de
+  // getDeliveryCostsForZone(), que ya contempla ese caso.
+  const deliveryCosts = useMemo(
+    () => getDeliveryCostsForZone(profile.location?.zone),
+    [profile.location]
+  );
 
   // Coordenadas listas para mandar a POST /optimize, o null si el usuario
   // salteó el onboarding (en ese caso el backend cae a los costos por zona).
@@ -114,11 +119,9 @@ export function ProfileProvider({ children }) {
       unavailableStores,
       setCards,
       setMemberships,
-      setZone,
       setLocation,
       setStoreCoverage,
       skipLocation,
-      clearLocation,
     }),
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [profile, deliveryCosts, coordinates, unavailableStores]

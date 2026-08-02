@@ -26,6 +26,12 @@ def test_extract_liters_normalizes_to_ml():
     assert unit == "ml"
 
 
+def test_extract_lt_abbreviation_used_by_carrefour():
+    weight, unit = extract_real_volume("Aceite de girasol alto omega Carrefour Classic 1.5 lt.")
+    assert weight == 1500.0
+    assert unit == "ml"
+
+
 def test_no_size_in_name_falls_back_to_un():
     weight, unit = extract_real_volume("Polenta Molinos Ala")
     assert weight == 1.0

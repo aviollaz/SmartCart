@@ -32,6 +32,7 @@ _BASE_DIR = os.path.dirname(__file__)
 _TAXONOMY_PATHS = {
     "coto": os.path.join(_BASE_DIR, "scrapers", "coto_categories.json"),
     "dia": os.path.join(_BASE_DIR, "scrapers", "dia_categories.json"),
+    "carrefour": os.path.join(_BASE_DIR, "scrapers", "carrefour_categories.json"),
 }
 
 
