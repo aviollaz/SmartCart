@@ -108,3 +108,28 @@ def filter_tags(tags: list[str] | None) -> list[str]:
         return []
 
     return list(tags[1:])
+
+
+def same_aisle_filter(product_row: dict, alias: str = "") -> tuple[str, object]:
+    """
+    Cláusula SQL que restringe los candidatos a sustituto a la misma góndola
+    que el producto original, más su parámetro.
+
+    Prefiere los tags de taxonomía (estrictos: la mayonesa cuelga de
+    "almacén -> aceites y aderezos" y la carne de "frescos -> carnes", así que
+    no pueden matchear). Cae a `category` cuando el producto todavía no tiene
+    tags, que es el caso de toda fila no re-scrapeada: sin ese fallback las
+    sugerencias se romperían en silencio durante la transición.
+
+    Se usa `&&` (solapamiento) y no `@>` (containment) porque las tiendas
+    anidan a distinta profundidad; ver `filter_tags()` arriba.
+
+    Vive acá y no en src/api.py (donde nació) porque src/strategic_swaps.py
+    también lo necesita, y api.py importa ese módulo: dejarlo allá era un ciclo.
+    """
+    prefix = f"{alias}." if alias else ""
+    tags = filter_tags(product_row.get("tags"))
+
+    if tags:
+        return f"AND {prefix}tags && %s::text[]", tags
+    return f"AND {prefix}category = %s", product_row.get("category")

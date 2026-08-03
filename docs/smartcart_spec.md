@@ -129,7 +129,7 @@ La ruta sale del dump de taxonomía de cada tienda (`src/scrapers/*_categories.j
 
 El motivo es que `category` no sirve como guarda de "misma góndola": mapea etiquetas hoja a través de un dict de 9 claves, así que sobre el catálogo completo el 98 % de las categorías reales cae en `Otros`, mezclando mayonesa con condimentos para carne. Los tags, en cambio, vienen de ramas distintas de la taxonomía y no pueden colisionar.
 
-`api.py` compara góndolas con el operador de **solapamiento** de Postgres (`&&`, índice GIN) sobre los segmentos **no top-level** (`category_tags.filter_tags()`), no con containment ni prefijo de rama. La razón es que las tiendas anidan a distinta profundidad:
+La comparación de góndolas está centralizada en `category_tags.same_aisle_filter()`, que arma la cláusula SQL y la consumen tanto las sugerencias de `api.py` como la heurística de cierre de tienda (`strategic_swaps.py`). Usa el operador de **solapamiento** de Postgres (`&&`, índice GIN) sobre los segmentos **no top-level** (`category_tags.filter_tags()`), no containment ni prefijo de rama. La razón es que las tiendas anidan a distinta profundidad:
 
 | | `tags` | segmentos de comparación |
 |---|---|---|

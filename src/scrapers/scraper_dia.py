@@ -5,7 +5,7 @@ import random
 from src.category_tags import category_label, tags_for_category
 from src.database import SmartCartDB
 from src.dietary_parser import detect_dietary_flags
-from src.size_parser import extract_real_volume
+from src.size_parser import extract_real_volume, normalize_magnitude
 
 # Categorías del MVP. El catálogo es deliberadamente angosto; ampliar esta
 # lista es la forma de scrapear más góndolas (los slugs salen de dia_categories.json).
@@ -111,6 +111,9 @@ class DiaScraper:
             if unit_type == "un" and base_price > 0 and precio_por_und is not None and precio_por_und > 0:
                 total_volume_weight = round(base_price / precio_por_und, 3)
 
+                # Estas dos ramas deciden la MAGNITUD: un cociente menor a 1
+                # significa que `precio_por_und` venía por litro/kilo y no por
+                # mililitro/gramo. No tocarlas sin datos nuevos de VTEX.
                 if "lt" in unidad_medida or "l" in unidad_medida:
                     if total_volume_weight < 1.0:
                         total_volume_weight = total_volume_weight * 1000
@@ -120,7 +123,15 @@ class DiaScraper:
                         total_volume_weight = total_volume_weight * 1000
                         unidad_medida = "g"
 
-                unit_type = unidad_medida
+                # Y esto decide el VOCABULARIO, que es otra cosa. Sin esta
+                # llamada, `unidad_medida` viajaba crudo desde la property de
+                # VTEX: un producto en "gr" o en "kg" quedaba guardado con esa
+                # etiqueta y dejaba de ser comparable contra las filas en "g",
+                # desapareciendo en silencio de las sugerencias y de la
+                # heurística de cierre de tienda.
+                total_volume_weight, unit_type = normalize_magnitude(
+                    total_volume_weight, unidad_medida
+                )
 
             # --- EXTRACCIÓN Y NORMALIZACIÓN DE CATEGORÍA ---
             # Preferimos la hoja del dump de taxonomía (misma fuente que los

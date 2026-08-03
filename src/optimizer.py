@@ -24,7 +24,18 @@ MAX_PCT = 100
 DEFAULT_MIN_SPEND_LIMITS = {"coto_online": 15000, "dia_online": 12000, "carrefour_online": 20000}
 DEFAULT_DELIVERY_COSTS = {"coto_online": 3000, "dia_online": 3000, "carrefour_online": 3500}
 
-def optimize_cart(cart_items, user_memberships=None, user_cards=None, min_spend_limits=None, delivery_costs=None, excluded_stores=None):
+def optimize_cart(cart_items, user_memberships=None, user_cards=None, min_spend_limits=None, delivery_costs=None, excluded_stores=None, flat_prices=None):
+    """
+    `flat_prices` es un escape hatch para quien ya tiene la matriz de precios y
+    no quiere pagarla de nuevo: flatten_cart_prices() abre una conexión nueva por
+    llamada, y src/strategic_swaps.py simula un cierre de tienda por cada tienda
+    activa. Omitirlo mantiene el comportamiento de siempre.
+
+    Quien lo pase tiene que pasarlo YA FILTRADO a los unified_id de `cart_items`:
+    `products` sale de sus claves (abajo), así que un UID de más se convierte en
+    un producto fantasma con su propia restricción `== 1` y puede volver
+    infactible un carrito que no lo es.
+    """
     if user_memberships is None: user_memberships = []
     if user_cards is None: user_cards = []
     if min_spend_limits is None: min_spend_limits = dict(DEFAULT_MIN_SPEND_LIMITS)
@@ -42,7 +53,8 @@ def optimize_cart(cart_items, user_memberships=None, user_cards=None, min_spend_
         "dia_online": [{"card": "macro", "discount_pct": 15, "cap": 3000, "description": "15% de ahorro con Macro (Tope $3000)"}]
     }
 
-    flat_prices = flatten_cart_prices(cart_items, user_memberships)
+    if flat_prices is None:
+        flat_prices = flatten_cart_prices(cart_items, user_memberships)
     products = list(flat_prices.keys())
 
     # Las tiendas excluidas (ej. Coto cuando no tiene cobertura en la dirección

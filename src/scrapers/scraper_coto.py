@@ -5,7 +5,7 @@ import random
 
 from src.category_tags import category_label, tags_for_category
 from src.dietary_parser import detect_dietary_flags
-from src.size_parser import extract_real_volume
+from src.size_parser import extract_real_volume, normalize_magnitude
 
 
 # Categorías del MVP. El catálogo es deliberadamente angosto; ampliar esta
@@ -147,13 +147,17 @@ class CotoScraper:
 
                     # Fallback: productos pesables sin tamaño en el nombre (ej. "Tomate x Kg"),
                     # estimado a partir del precio por formato de venta.
+                    #
+                    # `formatPrice` es el precio del formato de venta (el kilo),
+                    # así que el cociente ya viene en kilos y normalize_magnitude
+                    # lo pasa a gramos. Antes esto emitía 'kg' tal cual cuando el
+                    # cociente daba >= 1, y una fila en 'kg' no es comparable
+                    # contra ninguna en 'g': el producto desaparecía en silencio
+                    # de las sugerencias y de la heurística de swaps.
                     if unit_type == "un" and base_price > 0 and format_price > 0:
-                        total_volume_weight = round(base_price / format_price, 3)
-                        if total_volume_weight < 1.0:
-                            total_volume_weight = total_volume_weight * 1000
-                            unit_type = "g"
-                        else:
-                            unit_type = "kg"
+                        total_volume_weight, unit_type = normalize_magnitude(
+                            round(base_price / format_price, 3), "kg"
+                        )
 
                     name = item.get("value")
                     brand = prod_data.get("product_brand")
