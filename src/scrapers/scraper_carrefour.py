@@ -5,7 +5,7 @@ import random
 from src.category_tags import category_label, tags_for_category
 from src.database import SmartCartDB
 from src.dietary_parser import detect_dietary_flags
-from src.size_parser import extract_real_volume
+from src.size_parser import extract_real_volume, normalize_magnitude
 
 # Carrefour corre sobre VTEX IO igual que Día, así que se le pega a la misma
 # operación `productSearchV3` con persisted query. Se manda por POST con el JSON
@@ -193,6 +193,12 @@ class CarrefourScraper:
             if unit_type == "un" and base_price > 0 and precio_por_und is not None and precio_por_und > 0:
                 total_volume_weight = round(base_price / precio_por_und, 3)
 
+                # Igual que en Día: estas dos ramas deciden la MAGNITUD (un
+                # cociente menor a 1 significa que `precio_por_und` venía por
+                # litro/kilo), y normalize_magnitude decide el VOCABULARIO.
+                # Sin lo segundo, la etiqueta cruda de VTEX ("gr", "kg") queda
+                # guardada y el producto deja de ser comparable contra las filas
+                # en "g"/"ml".
                 if "lt" in unidad_medida or "l" in unidad_medida:
                     if total_volume_weight < 1.0:
                         total_volume_weight = total_volume_weight * 1000
@@ -202,7 +208,9 @@ class CarrefourScraper:
                         total_volume_weight = total_volume_weight * 1000
                         unidad_medida = "g"
 
-                unit_type = unidad_medida
+                total_volume_weight, unit_type = normalize_magnitude(
+                    total_volume_weight, unidad_medida
+                )
 
             # --- EXTRACCIÓN Y NORMALIZACIÓN DE CATEGORÍA ---
             # Igual que en Día: preferimos la hoja del dump de taxonomía (misma

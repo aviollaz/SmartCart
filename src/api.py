@@ -12,30 +12,9 @@ from src.database import SmartCartDB
 from src.optimizer import optimize_cart, DEFAULT_DELIVERY_COSTS
 from src.flattener import flatten_cart_prices, evaluate_best_promo, parse_promotions_json
 from src.category_tree import build_category_tree
-from src.category_tags import filter_tags
+from src.category_tags import same_aisle_filter
 from src.coto_logistics import check_coverage, resolve_coto_logistics
-
-
-def _same_aisle_filter(product_row: dict, alias: str = "") -> tuple[str, Any]:
-    """
-    Cláusula SQL que restringe los candidatos a sustituto a la misma góndola
-    que el producto original, más su parámetro.
-
-    Prefiere los tags de taxonomía (estrictos: la mayonesa cuelga de
-    "almacén -> aceites y aderezos" y la carne de "frescos -> carnes", así que
-    no pueden matchear). Cae a `category` cuando el producto todavía no tiene
-    tags, que es el caso de toda fila no re-scrapeada: sin ese fallback las
-    sugerencias se romperían en silencio durante la transición.
-
-    Se usa `&&` (solapamiento) y no `@>` (containment) porque las tiendas
-    anidan a distinta profundidad; ver src/category_tags.filter_tags().
-    """
-    prefix = f"{alias}." if alias else ""
-    tags = filter_tags(product_row.get("tags"))
-
-    if tags:
-        return f"AND {prefix}tags && %s::text[]", tags
-    return f"AND {prefix}category = %s", product_row.get("category")
+from src.strategic_swaps import find_strategic_swaps
 
 
 def _dietary_filter_clause(gluten_free: bool, vegan: bool, alias: str = "") -> str:
@@ -505,7 +484,7 @@ def optimize_shopping_cart(request: OptimizationRequest):
 
                                     if p and p["name_embedding"]:
                                         # Forzamos misma góndola vía tags de taxonomía
-                                        aisle_clause, aisle_param = _same_aisle_filter(p, alias="u")
+                                        aisle_clause, aisle_param = same_aisle_filter(p, alias="u")
                                         cur.execute(f"""
                                             SELECT u.id, u.name
                                             FROM unified_products u
@@ -557,7 +536,7 @@ def optimize_shopping_cart(request: OptimizationRequest):
                                 }
                                 
                                 # 3. Agregamos las columnas de peso y unidad al SELECT de los vecinos
-                                aisle_clause, aisle_param = _same_aisle_filter(p)
+                                aisle_clause, aisle_param = same_aisle_filter(p)
                                 cur.execute(f"""
                                     SELECT id, name, total_volume_weight, unit_type
                                     FROM unified_products
@@ -578,7 +557,34 @@ def optimize_shopping_cart(request: OptimizationRequest):
                                         "suggested_unit": n["unit_type"] or "un"
                                     })
                         
-                        # --- 3. FEATURE: LINK DE PRODUCTO POR ÍTEM, PARA TODAS LAS TIENDAS ---
+                        # --- 3. HEURÍSTICA DE CIERRE DE TIENDA (STRATEGIC SWAPS) ---
+                        # Va acá, y no al final, porque necesita `flat_prices` con
+                        # la matriz del CARRITO: más abajo esa variable se rebindea
+                        # con los candidatos a sugerencia semántica, y con esa
+                        # matriz el cálculo de anclas vería tiendas de productos que
+                        # el usuario no pidió.
+                        #
+                        # Lleva su propio try/except en vez de apoyarse en el de
+                        # abajo: ese se lleva puestos single_store_baselines y
+                        # suggestions, y un fallo de esta feature (que es una
+                        # sugerencia opcional sobre un resultado ya correcto) no
+                        # puede costar las otras dos.
+                        try:
+                            result["strategic_swaps"] = find_strategic_swaps(
+                                result=result,
+                                cart_items=cart_data,
+                                flat_prices=flat_prices,
+                                user_memberships=request.user_memberships,
+                                user_cards=request.user_cards,
+                                delivery_costs=delivery_costs,
+                                excluded_stores=excluded_stores,
+                                cur=cur,
+                            )
+                        except Exception as e:
+                            logger.error(f"Error en la heurística de cierre de tienda: {e}")
+                            result["strategic_swaps"] = []
+
+                        # --- 4. FEATURE: LINK DE PRODUCTO POR ÍTEM, PARA TODAS LAS TIENDAS ---
                         # Día tiene además un magic link de carrito completo (más abajo); para
                         # el resto (ej. Coto, que no expone un endpoint de carrito por URL) esto
                         # permite al usuario abrir cada producto individualmente.
@@ -609,7 +615,7 @@ def optimize_shopping_cart(request: OptimizationRequest):
                                     p["promo_description"] = line_flat["promo_description"]
                                     p["effective_unit_price"] = line_flat["effective_unit_price"]
 
-                        # --- 4. FEATURE: MAGIC LINK PARA DÍA ONLINE ---
+                        # --- 5. FEATURE: MAGIC LINK PARA DÍA ONLINE ---
                         if "dia_online" in result.get("split", {}):
                             dia_products = result["split"]["dia_online"]["products"]
                             uids_dia = [p["unified_id"] for p in dia_products]
@@ -728,6 +734,8 @@ def optimize_shopping_cart(request: OptimizationRequest):
                 result["suggestions"] = []
                 if "single_store_baselines" not in result:
                     result["single_store_baselines"] = {}
+                if "strategic_swaps" not in result:
+                    result["strategic_swaps"] = []
 
     except Exception as e:
         logger.error(f"Error en el motor de optimización: {e}")

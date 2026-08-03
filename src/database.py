@@ -112,6 +112,18 @@ class SmartCartDB:
                                 name = EXCLUDED.name,
                                 brand = EXCLUDED.brand,
                                 category = EXCLUDED.category,
+                                -- unit_type va junto con total_volume_weight: los
+                                -- dos salen de la misma llamada a
+                                -- extract_real_volume() y describen una sola
+                                -- medida. Actualizar el número sin la unidad
+                                -- dejaba el peso nuevo pegado a la unidad vieja
+                                -- del primer INSERT, y así quedaron en la base
+                                -- cosas como "Fritolim 120 g" guardado en 'ml'.
+                                -- Además congelaba en 'un' a todo producto cuyo
+                                -- tamaño el parser no supo leer la primera vez,
+                                -- volviendo inútil cualquier arreglo posterior
+                                -- del parser sin borrar la tabla.
+                                unit_type = EXCLUDED.unit_type,
                                 total_volume_weight = EXCLUDED.total_volume_weight,
                                 tags = EXCLUDED.tags,
                                 is_gluten_free = EXCLUDED.is_gluten_free,
@@ -155,6 +167,118 @@ class SmartCartDB:
         except Exception as e:
             print(f"[DB] Error: {e}")
     
+    # Fracción de las filas de una tienda que un pruning puede borrar antes de
+    # considerarse sospechoso. Un catálogo real se mueve de a poco; perder un
+    # tercio de golpe es la firma de un scrapeo roto, no de productos discontinuados.
+    MAX_PRUNE_RATIO = 0.30
+
+    def prune_missing_store_products(self, store_id: str, seen_skus: set, dry_run: bool = False) -> dict:
+        """
+        Borra las filas de `store_id` cuyo SKU no apareció en el scrapeo actual.
+
+        Sin esto un producto que la tienda discontinúa queda para siempre con
+        `in_stock = TRUE`, y el optimizador lo sigue ofreciendo — incluso puede
+        armar el split entero alrededor de algo que ya no se puede comprar.
+
+        Sólo debe llamarse después de un scrapeo COMPLETO y exitoso de esa tienda:
+        `seen_skus` tiene que ser el universo de lo que la tienda ofrece hoy. Con
+        un recorrido parcial, todo lo que faltó recorrer parece discontinuado.
+
+        Dos frenos, porque el costo de los dos errores no es simétrico: dejar una
+        fila muerta de más molesta, borrar el catálogo entero rompe la app. (1) Un
+        `seen_skus` vacío no borra nada — ese es exactamente el modo de falla que
+        documenta CLAUDE.md, el hash de la persisted query de VTEX rotado
+        devolviendo 200 con `errors` y cero productos. (2) Si el borrado se lleva
+        más de MAX_PRUNE_RATIO de la tienda, se aborta y se avisa: es más probable
+        que se haya roto el scraper a que la tienda haya discontinuado un tercio
+        de su góndola.
+
+        Devuelve {'deleted', 'orphans', 'skipped', 'reason'}.
+        """
+        resultado = {"deleted": 0, "orphans": 0, "skipped": False, "reason": None}
+
+        if not seen_skus:
+            resultado.update(skipped=True, reason="el scrapeo no devolvió ningún SKU")
+            print(f"[DB] Pruning de '{store_id}' omitido: {resultado['reason']}.")
+            return resultado
+
+        try:
+            with psycopg.connect(self.conn_string) as conn:
+                with conn.cursor() as cur:
+                    cur.execute(
+                        "SELECT count(*) FROM store_products WHERE store_id = %s", (store_id,)
+                    )
+                    total = cur.fetchone()[0]
+
+                    cur.execute(
+                        """
+                        SELECT count(*) FROM store_products
+                        WHERE store_id = %s AND store_sku <> ALL(%s)
+                        """,
+                        (store_id, list(seen_skus)),
+                    )
+                    obsoletas = cur.fetchone()[0]
+
+                    if obsoletas == 0:
+                        print(f"[DB] Pruning de '{store_id}': no hay filas obsoletas.")
+                        return resultado
+
+                    if total and (obsoletas / total) > self.MAX_PRUNE_RATIO:
+                        resultado.update(
+                            skipped=True,
+                            reason=(f"borraría {obsoletas} de {total} filas "
+                                    f"({obsoletas / total:.0%}), por encima del "
+                                    f"{self.MAX_PRUNE_RATIO:.0%} permitido"),
+                        )
+                        print(f"[DB] ATENCIÓN: pruning de '{store_id}' abortado: "
+                              f"{resultado['reason']}. Revisá el scraper antes de insistir.")
+                        return resultado
+
+                    cur.execute(
+                        """
+                        DELETE FROM store_products
+                        WHERE store_id = %s AND store_sku <> ALL(%s)
+                        """,
+                        (store_id, list(seen_skus)),
+                    )
+                    resultado["deleted"] = cur.rowcount
+
+                    # Un unified_product que se quedó sin ninguna oferta ya no lo
+                    # vende nadie: dejarlo lo mantiene visible en /search y en el
+                    # catálogo, con un precio que no existe.
+                    cur.execute(
+                        """
+                        DELETE FROM unified_products u
+                        WHERE NOT EXISTS (
+                            SELECT 1 FROM store_products sp WHERE sp.unified_product_id = u.id
+                        )
+                        """
+                    )
+                    resultado["orphans"] = cur.rowcount
+
+                    # El dry-run corre el borrado de verdad y lo deshace, en vez de
+                    # estimarlo con un COUNT: así los dos números que informa son
+                    # exactamente los que vería un run real. Contar los huérfanos
+                    # sin borrar primero exigiría replicar en un SELECT la
+                    # condición del DELETE, y esa copia es justo lo que haría que
+                    # el dry-run mienta el día que alguien cambie una de las dos.
+                    if dry_run:
+                        conn.rollback()
+                        print(f"[DB] Pruning de '{store_id}' (dry-run): borraría "
+                              f"{resultado['deleted']} de {total} filas y "
+                              f"{resultado['orphans']} productos sin ofertas.")
+                        return resultado
+
+            print(f"[DB] Pruning de '{store_id}': {resultado['deleted']} filas obsoletas "
+                  f"borradas, {resultado['orphans']} productos sin ofertas eliminados.")
+        except Exception as e:
+            # Mismo criterio que save_store_products: no tumbar el scrapeo por
+            # esto. Quedarse con filas de más es degradado, no roto.
+            print(f"[DB] Error en el pruning de '{store_id}': {e}")
+            resultado.update(skipped=True, reason=str(e))
+
+        return resultado
+
     def get_market_prices_for_cart(self, unified_ids: list) -> list:
         """
         Retorna la información de precios base, stock, promociones y fotos
