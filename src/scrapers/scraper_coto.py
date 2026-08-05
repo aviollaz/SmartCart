@@ -11,9 +11,9 @@ from src.size_parser import extract_real_volume, normalize_magnitude
 # Categorías del MVP. El catálogo es deliberadamente angosto; ampliar esta
 # lista es la forma de scrapear más góndolas (los ids salen de coto_categories.json).
 MVP_CATEGORIES = [
-    "catv00001412",  # Almacén -> Harinas -> Harina de Trigo
+    "catv00001264",  # Almacén -> Aceites y Condimentos -> Aceites,
     "catv00003266",  # Frescos -> Lácteos -> Leches
-    "catv00001413",  # Almacén -> Harinas -> Sémola
+    "catv00001412",  # Almacén -> Harinas -> Harina de Trigo
     "catv00003250",  # Frescos -> Lácteos -> Dulce de Leche
     "catv00003596",  # Almacén -> Golosinas -> Alfajores
 ]
