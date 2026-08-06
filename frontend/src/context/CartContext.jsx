@@ -1,5 +1,6 @@
 import { createContext, useCallback, useContext, useMemo } from "react";
 import { useLocalStorage } from "../hooks/useLocalStorage";
+import { applySwaps } from "../utils/cartOperations";
 
 const CartContext = createContext(null);
 
@@ -62,27 +63,38 @@ export function CartProvider({ children }) {
     [setItems]
   );
 
-  // Swap in-place para las sugerencias del optimizador: conserva la cantidad
-  // porque la sugerencia se calculó justamente para esa cantidad.
-  const replaceItem = useCallback(
-    (oldUnifiedId, newUnifiedId, newName) => {
-      setItems((prev) => {
-        const existing = prev[oldUnifiedId];
-        if (!existing) return prev;
-
-        const { [oldUnifiedId]: _removed, ...rest } = prev;
-        const alreadyThere = rest[newUnifiedId];
-        return {
-          ...rest,
-          [newUnifiedId]: {
-            name: newName,
-            quantity: (alreadyThere?.quantity || 0) + existing.quantity,
-          },
-        };
-      });
-    },
+  /**
+   * Swap in-place en lote para las recomendaciones del optimizador: cada
+   * `{ from, to, name }` conserva la cantidad, porque la sugerencia se calculó
+   * justamente para esa cantidad.
+   *
+   * Es un lote y no N llamadas sueltas porque el cierre de tienda
+   * (src/strategic_swaps.py) es todo o nada: su ahorro proyectado sale de
+   * simular el carrito con TODOS los reemplazos aplicados y la tienda excluida,
+   * así que aplicar una parte deja la tienda abierta y el número deja de
+   * corresponder a nada.
+   *
+   * La forma `{ from, to, name }` es a propósito genérica: el mapeo desde los
+   * nombres de campo de cada endpoint se hace en el llamador, así el carrito no
+   * queda acoplado al payload de ninguna feature en particular.
+   */
+  const replaceItems = useCallback(
+    (swaps) => setItems((prev) => applySwaps(prev, swaps)),
     [setItems]
   );
+
+  const replaceItem = useCallback(
+    (oldUnifiedId, newUnifiedId, newName) => {
+      replaceItems([{ from: oldUnifiedId, to: newUnifiedId, name: newName }]);
+    },
+    [replaceItems]
+  );
+
+  // Restaura un carrito entero tal cual estaba. Es lo que usa el "deshacer" de
+  // las recomendaciones: invertir swap por swap no sirve, porque si el destino
+  // ya estaba en el carrito las cantidades se fusionaron y la operación inversa
+  // no puede saber cuánto había antes.
+  const restoreItems = useCallback((snapshot) => setItems(snapshot || {}), [setItems]);
 
   const clear = useCallback(() => setItems({}), [setItems]);
 
@@ -92,8 +104,30 @@ export function CartProvider({ children }) {
   );
 
   const value = useMemo(
-    () => ({ items, addItem, incrementItem, decrementItem, removeItem, replaceItem, clear, itemCount }),
-    [items, addItem, incrementItem, decrementItem, removeItem, replaceItem, clear, itemCount]
+    () => ({
+      items,
+      addItem,
+      incrementItem,
+      decrementItem,
+      removeItem,
+      replaceItem,
+      replaceItems,
+      restoreItems,
+      clear,
+      itemCount,
+    }),
+    [
+      items,
+      addItem,
+      incrementItem,
+      decrementItem,
+      removeItem,
+      replaceItem,
+      replaceItems,
+      restoreItems,
+      clear,
+      itemCount,
+    ]
   );
 
   return <CartContext.Provider value={value}>{children}</CartContext.Provider>;

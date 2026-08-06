@@ -2,6 +2,7 @@ import { Link } from "react-router-dom";
 import { X } from "lucide-react";
 import { useCart } from "../../context/CartContext";
 import { CartLineItem } from "./CartLineItem";
+import { ClearCartButton } from "./ClearCartButton";
 import { CoverageWarning } from "./CoverageWarning";
 
 export function CartDrawer({ open, onClose }) {
@@ -41,6 +42,8 @@ export function CartDrawer({ open, onClose }) {
             ))}
           </ul>
         )}
+
+        <ClearCartButton className="mt-4 self-start" />
 
         <Link
           to="/carrito"

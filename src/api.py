@@ -341,6 +341,70 @@ def search_products(
         logger.error(f"Error interno durante la búsqueda semántica: {e}")
         raise HTTPException(status_code=500, detail=f"Error interno en el servidor: {e}")
 
+def _compute_price_savings(result: dict, flat_prices: dict, excluded_stores: list) -> dict:
+    """
+    Cuánto se ahorra por elegir bien la tienda de cada producto: por cada línea
+    del split, el precio MÁS CARO entre los supermercados que la tienen menos el
+    que efectivamente se paga.
+
+    Es una comparación producto a producto y nada más: no entra el envío ni el
+    descuento bancario, así que este número NO es comparable contra
+    `total_spent_net` ni contra ninguna diferencia de totales. La copia del panel
+    lo dice; acá queda escrito para que nadie lo reinterprete después.
+
+    Las tiendas excluidas no cuentan como "más caras": una que no entrega en la
+    dirección infla el ahorro con una compra que el usuario no podía hacer.
+
+    `items` sólo trae las líneas que aportan diferencia. Un producto que existe en
+    una sola tienda da cero por definición, y listarlo sería puro relleno.
+    """
+    excluded = set(excluded_stores or [])
+    items = []
+    total = 0.0
+
+    for store_id, checkout in (result.get("split") or {}).items():
+        for line in checkout["products"]:
+            uid = line["unified_id"]
+            offers = {
+                s: row["total_cost"]
+                for s, row in flat_prices.get(uid, {}).items()
+                if s not in excluded
+            }
+            if not offers:
+                continue
+
+            worst_store, worst_cost = max(offers.items(), key=lambda kv: kv[1])
+            savings = worst_cost - line["total_cost"]
+            if savings <= 0:
+                continue
+
+            total += savings
+            items.append({
+                "unified_id": uid,
+                "actual_store": store_id,
+                "actual_cost": round(line["total_cost"], 2),
+                "worst_store": worst_store,
+                "worst_cost": round(worst_cost, 2),
+                "savings": round(savings, 2),
+            })
+
+    items.sort(key=lambda i: i["savings"], reverse=True)
+    return {"total": round(total, 2), "items": items}
+
+
+# Tiendas que corren sobre VTEX y por lo tanto aceptan un carrito armado por URL
+# (/checkout/cart/add). Coto no está: su sitio es un SPA de ATG sin equivalente,
+# y por eso sigue existiendo el fallback de abrir los productos de a uno.
+#
+# Agregar una tienda VTEX es agregar una fila acá, pero su scraper tiene que
+# guardar `store_item_id` (ver save_store_products): sin esa columna la tienda
+# no arma link, a propósito.
+VTEX_CHECKOUT_DOMAINS = {
+    "dia_online": "diaonline.supermercadosdia.com.ar",
+    "carrefour_online": "www.carrefour.com.ar",
+}
+
+
 def generate_vtex_magic_link(store_domain: str, products: list, sales_channel: int = 1, seller_id: int = 1) -> str:
     """
     Genera un link de inyección directa de carrito para arquitecturas VTEX.
@@ -439,88 +503,37 @@ def optimize_shopping_cart(request: OptimizationRequest):
             try:
                 db = SmartCartDB()
                 flat_prices = flatten_cart_prices(cart_data, request.user_memberships)
-                # Un baseline de una tienda que no entrega en la dirección sería
-                # una comparación contra una compra imposible.
-                stores = [s for s in delivery_costs if s not in excluded_stores]
 
-                # Espejo del dict de src/optimizer.py: si divergen, el baseline
-                # de una tienda compara contra un descuento que el solver no
-                # aplicó. Carrefour no figura en ninguno de los dos (ver el
-                # comentario en optimize_cart).
-                bank_promos = {
-                    "coto_online": [{"card": "galicia", "discount_pct": 20, "cap": 5000}],
-                    "dia_online": [{"card": "macro", "discount_pct": 15, "cap": 3000}]
-                }
-
-                single_store_baselines = {}
-                replaced_items_info = {s: [] for s in stores}
                 suggestions = []
                 # Se inicializa acá y no dentro del `if neighbor_candidates:` de más
                 # abajo: se lee incondicionalmente al armar la respuesta, así que un
                 # carrito sin vecinos en la misma góndola tiraba NameError, que el
-                # except ancho se comía llevándose puesto single_store_baselines.
+                # except ancho se comía.
                 # El orden de inserción del dict es el de ahorro descendente.
                 grouped_suggestions = {}
                 neighbor_candidates = []
                 uid_to_name = {}
-                
+
+                # --- AHORRO CONTRA EL PEOR PRECIO DE CADA PRODUCTO ---
+                # Va acá arriba porque necesita `flat_prices` con la matriz del
+                # CARRITO: más abajo esa variable se rebindea con los candidatos a
+                # sugerencia semántica. Mismo motivo que los strategic swaps.
+                #
+                # Lleva su propio try/except: es un número informativo sobre un
+                # resultado que ya es correcto, y no puede costar las otras
+                # analíticas si algo sale mal.
+                try:
+                    result["price_savings"] = _compute_price_savings(result, flat_prices, excluded_stores)
+                except Exception as e:
+                    logger.error(f"Error calculando el ahorro contra el peor precio: {e}")
+                    result["price_savings"] = None
+
+
                 # UNIFICAMOS TODO BAJO UNA ÚNICA CONEXIÓN A LA BD
                 with psycopg.connect(db.conn_string, row_factory=dict_row) as conn:
                     with conn.cursor() as cur:
-                        
-                        # --- 1. CÁLCULO DE BASELINE CON REEMPLAZOS ---
-                        for store in stores:
-                            store_subtotal = 0
-                            for item in request.cart:
-                                uid = item.unified_id
-                                qty = item.quantity
-                                
-                                if uid in flat_prices and store in flat_prices[uid]:
-                                    store_subtotal += flat_prices[uid][store]["total_cost"]
-                                else:
-                                    # Extraemos también los tags/categoría para no sugerir locuras
-                                    cur.execute("SELECT name_embedding, name, category, tags FROM unified_products WHERE id = %s", (uid,))
-                                    p = cur.fetchone()
 
-                                    if p and p["name_embedding"]:
-                                        # Forzamos misma góndola vía tags de taxonomía
-                                        aisle_clause, aisle_param = same_aisle_filter(p, alias="u")
-                                        cur.execute(f"""
-                                            SELECT u.id, u.name
-                                            FROM unified_products u
-                                            JOIN store_products sp ON u.id = sp.unified_product_id
-                                            WHERE sp.store_id = %s AND sp.in_stock = TRUE AND u.name_embedding IS NOT NULL
-                                            {aisle_clause}
-                                            ORDER BY u.name_embedding <=> %s ASC
-                                            LIMIT 1
-                                        """, (store, aisle_param, p["name_embedding"]))
-                                        fallback = cur.fetchone()
-                                        
-                                        if fallback:
-                                            fallback_uid = fallback["id"]
-                                            fallback_flat = flatten_cart_prices([{"unified_id": fallback_uid, "quantity": qty}], request.user_memberships)
-                                            
-                                            if fallback_uid in fallback_flat and store in fallback_flat[fallback_uid]:
-                                                store_subtotal += fallback_flat[fallback_uid][store]["total_cost"]
-                                                replaced_items_info[store].append({
-                                                    "original": p["name"],
-                                                    "replacement": fallback["name"]
-                                                })
-                            
-                            delivery = delivery_costs.get(store, 3000)
-                            baseline_discount = 0
-                            best_promo = next((p for p in bank_promos.get(store, []) if p["card"] in request.user_cards), None)
-                            if best_promo:
-                                raw_disc = store_subtotal * (best_promo["discount_pct"] / 100.0)
-                                baseline_discount = min(raw_disc, best_promo["cap"])
-                            
-                            total_baseline = store_subtotal + delivery - baseline_discount
-                            single_store_baselines[store] = round(total_baseline, 2)
-                
-                        result["single_store_baselines"] = single_store_baselines
-                        result["baseline_replacements"] = replaced_items_info
-                        
-                        # --- 2. FEATURE: SUGERENCIAS SEMÁNTICAS DE AHORRO PROPORCIONAL ---
+                        # --- 1. FEATURE: SUGERENCIAS SEMÁNTICAS DE AHORRO PROPORCIONAL ---
                         for item in request.cart:
                             # 1. Agregamos las columnas de peso y unidad al SELECT original
                             cur.execute("SELECT name, name_embedding, category, tags, total_volume_weight, unit_type FROM unified_products WHERE id = %s", (item.unified_id,))
@@ -557,7 +570,7 @@ def optimize_shopping_cart(request: OptimizationRequest):
                                         "suggested_unit": n["unit_type"] or "un"
                                     })
                         
-                        # --- 3. HEURÍSTICA DE CIERRE DE TIENDA (STRATEGIC SWAPS) ---
+                        # --- 2. HEURÍSTICA DE CIERRE DE TIENDA (STRATEGIC SWAPS) ---
                         # Va acá, y no al final, porque necesita `flat_prices` con
                         # la matriz del CARRITO: más abajo esa variable se rebindea
                         # con los candidatos a sugerencia semántica, y con esa
@@ -565,10 +578,9 @@ def optimize_shopping_cart(request: OptimizationRequest):
                         # el usuario no pidió.
                         #
                         # Lleva su propio try/except en vez de apoyarse en el de
-                        # abajo: ese se lleva puestos single_store_baselines y
-                        # suggestions, y un fallo de esta feature (que es una
-                        # sugerencia opcional sobre un resultado ya correcto) no
-                        # puede costar las otras dos.
+                        # abajo: ese se lleva puestas las `suggestions`, y un fallo
+                        # de esta feature (que es una sugerencia opcional sobre un
+                        # resultado ya correcto) no puede costarlas.
                         try:
                             result["strategic_swaps"] = find_strategic_swaps(
                                 result=result,
@@ -584,7 +596,7 @@ def optimize_shopping_cart(request: OptimizationRequest):
                             logger.error(f"Error en la heurística de cierre de tienda: {e}")
                             result["strategic_swaps"] = []
 
-                        # --- 4. FEATURE: LINK DE PRODUCTO POR ÍTEM, PARA TODAS LAS TIENDAS ---
+                        # --- 3. FEATURE: LINK DE PRODUCTO POR ÍTEM, PARA TODAS LAS TIENDAS ---
                         # Día tiene además un magic link de carrito completo (más abajo); para
                         # el resto (ej. Coto, que no expone un endpoint de carrito por URL) esto
                         # permite al usuario abrir cada producto individualmente.
@@ -615,35 +627,55 @@ def optimize_shopping_cart(request: OptimizationRequest):
                                     p["promo_description"] = line_flat["promo_description"]
                                     p["effective_unit_price"] = line_flat["effective_unit_price"]
 
-                        # --- 5. FEATURE: MAGIC LINK PARA DÍA ONLINE ---
-                        if "dia_online" in result.get("split", {}):
-                            dia_products = result["split"]["dia_online"]["products"]
-                            uids_dia = [p["unified_id"] for p in dia_products]
-                            
-                            if uids_dia:
-                                cur.execute("""
-                                    SELECT unified_product_id, store_sku 
-                                    FROM store_products 
-                                    WHERE store_id = 'dia_online' AND unified_product_id = ANY(%s)
-                                """, (uids_dia,))
-                                
-                                sku_map = {row["unified_product_id"]: row["store_sku"] for row in cur.fetchall()}
-                                
-                                link_payload = []
-                                for p in dia_products:
-                                    if p["unified_id"] in sku_map:
-                                        link_payload.append({
-                                            "store_sku": sku_map[p["unified_id"]],
-                                            "quantity": p["quantity"]
-                                        })
-                                
-                                if link_payload:
-                                    magic_link = generate_vtex_magic_link(
-                                        store_domain="diaonline.supermercadosdia.com.ar",
-                                        products=link_payload
-                                    )
-                                    result["split"]["dia_online"]["checkout_url"] = magic_link
-                                    
+                        # --- 4. FEATURE: MAGIC LINK PARA LAS TIENDAS VTEX ---
+                        for store_id, domain in VTEX_CHECKOUT_DOMAINS.items():
+                            if store_id not in result.get("split", {}):
+                                continue
+
+                            store_products = result["split"][store_id]["products"]
+                            uids = [p["unified_id"] for p in store_products]
+                            if not uids:
+                                continue
+
+                            # `store_item_id` y no `store_sku`: el segundo guarda
+                            # el productId de VTEX, y /checkout/cart/add espera el
+                            # itemId. En Día los dos números coinciden por cómo
+                            # está armado su catálogo, pero en Carrefour no
+                            # (producto 100650 = item 17305), así que un COALESCE
+                            # al store_sku armaría un carrito equivocado en
+                            # silencio. Una tienda sin la columna poblada
+                            # simplemente no muestra el botón y el frontend cae en
+                            # los links por producto.
+                            cur.execute("""
+                                SELECT unified_product_id, store_item_id
+                                FROM store_products
+                                WHERE store_id = %s AND unified_product_id = ANY(%s)
+                                  AND store_item_id IS NOT NULL
+                            """, (store_id, uids))
+
+                            sku_map = {row["unified_product_id"]: row["store_item_id"] for row in cur.fetchall()}
+
+                            link_payload = [
+                                {"store_sku": sku_map[p["unified_id"]], "quantity": p["quantity"]}
+                                for p in store_products if p["unified_id"] in sku_map
+                            ]
+
+                            # Un carrito a medias es peor que ninguno: el usuario
+                            # cree que ya tiene todo cargado y paga menos productos
+                            # de los que eligió.
+                            if len(link_payload) == len(store_products):
+                                result["split"][store_id]["checkout_url"] = generate_vtex_magic_link(
+                                    store_domain=domain,
+                                    products=link_payload
+                                )
+                            elif link_payload:
+                                logger.warning(
+                                    f"{store_id}: {len(store_products) - len(link_payload)} de "
+                                    f"{len(store_products)} productos sin store_item_id; no se arma el "
+                                    f"link de carrito. ¿Falta re-scrapear la tienda?"
+                                )
+
+
                 # --- PROCESAMIENTO FINAL DE SUGERENCIAS SEMÁNTICAS (Fuera del cursor) ---
                 if neighbor_candidates:
                     items_to_flatten = [{"unified_id": c["suggested_uid"], "quantity": c["quantity"]} for c in neighbor_candidates]
@@ -732,10 +764,10 @@ def optimize_shopping_cart(request: OptimizationRequest):
             except Exception as e:
                 logger.error(f"Error generando analíticas post-optimización: {e}")
                 result["suggestions"] = []
-                if "single_store_baselines" not in result:
-                    result["single_store_baselines"] = {}
                 if "strategic_swaps" not in result:
                     result["strategic_swaps"] = []
+                if "price_savings" not in result:
+                    result["price_savings"] = None
 
     except Exception as e:
         logger.error(f"Error en el motor de optimización: {e}")

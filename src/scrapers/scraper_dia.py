@@ -178,6 +178,11 @@ class DiaScraper:
 
             product = {
                 "store_sku": p.get("productId"),
+                # El SKU real de VTEX, que es lo que espera
+                # /checkout/cart/add?sku=. Acá coincide con el productId, pero se
+                # guarda igual: el link de carrito lo exige explícitamente para
+                # no depender de esa coincidencia (en Carrefour no se da).
+                "store_item_id": first_item.get("itemId"),
                 "ean": first_item.get("ean"),
                 "name": p.get("productName"),
                 "brand": p.get("brand"),

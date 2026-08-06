@@ -1,5 +1,5 @@
 import { ExternalLink } from "lucide-react";
-import { formatPrice, storeLabel } from "../../utils/formatters";
+import { formatPrice, storeLabel, storeName } from "../../utils/formatters";
 import { PromoTransparency } from "./PromoTransparency";
 
 function readBankDiscount(bankDiscount) {
@@ -51,7 +51,7 @@ export function StoreBreakdownCard({ storeId, checkout, cartItems }) {
           rel="noreferrer"
           className="mt-3 flex items-center justify-center gap-2 rounded-md bg-brand-accent px-4 py-2 text-sm font-semibold text-white hover:bg-brand-accent-dark"
         >
-          Comprar carrito en Día
+          Comprar carrito en {storeName(storeId)}
           <ExternalLink size={14} />
         </a>
       ) : (
