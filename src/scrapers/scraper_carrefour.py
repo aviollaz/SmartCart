@@ -248,6 +248,10 @@ class CarrefourScraper:
 
             product = {
                 "store_sku": p.get("productId"),
+                # El SKU real de VTEX, distinto del productId en este catálogo
+                # (producto 100650 = item 17305). Es el que espera
+                # /checkout/cart/add?sku= para armar el carrito por URL.
+                "store_item_id": first_item.get("itemId"),
                 "ean": first_item.get("ean"),
                 "name": p.get("productName"),
                 "brand": p.get("brand"),

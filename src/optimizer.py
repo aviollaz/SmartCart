@@ -1,5 +1,6 @@
 # src/optimizer.py
 from ortools.sat.python import cp_model
+from src.bank_promos import load_bank_promos
 from src.flattener import flatten_cart_prices
 
 # Cotas de los dominios enteros del modelo, en centavos.
@@ -24,7 +25,7 @@ MAX_PCT = 100
 DEFAULT_MIN_SPEND_LIMITS = {"coto_online": 15000, "dia_online": 12000, "carrefour_online": 20000}
 DEFAULT_DELIVERY_COSTS = {"coto_online": 3000, "dia_online": 3000, "carrefour_online": 3500}
 
-def optimize_cart(cart_items, user_memberships=None, user_cards=None, min_spend_limits=None, delivery_costs=None, excluded_stores=None, flat_prices=None):
+def optimize_cart(cart_items, user_memberships=None, user_cards=None, min_spend_limits=None, delivery_costs=None, excluded_stores=None, flat_prices=None, bank_promos=None):
     """
     `flat_prices` es un escape hatch para quien ya tiene la matriz de precios y
     no quiere pagarla de nuevo: flatten_cart_prices() abre una conexión nueva por
@@ -42,16 +43,20 @@ def optimize_cart(cart_items, user_memberships=None, user_cards=None, min_spend_
     if delivery_costs is None: delivery_costs = dict(DEFAULT_DELIVERY_COSTS)
     if excluded_stores is None: excluded_stores = []
 
-    # Carrefour queda sin entrada a propósito, no por olvido: sus descuentos
-    # conocidos son de la Tarjeta Carrefour los fines de semana, y este modelo es
-    # un porcentaje con tope que se aplica siempre, sin noción de día. Cargarlo
-    # acá haría que el optimizador prometa un martes un ahorro que no existe y
-    # elija Carrefour por una razón falsa. `bank_promos.get(j, [])` ya devuelve []
-    # para las tiendas ausentes. Pendiente: relevar los términos reales.
-    bank_promos = {
-        "coto_online": [{"card": "galicia", "discount_pct": 20, "cap": 5000, "description": "20% de ahorro con Galicia (Tope $5000)"}],
-        "dia_online": [{"card": "macro", "discount_pct": 15, "cap": 3000, "description": "15% de ahorro con Macro (Tope $3000)"}]
-    }
+    # Los descuentos bancarios salen de src/scrapers/bank_promos.json, que genera
+    # `python -m src.scrapers.get_bank_promos`. Ya vienen filtrados al día de hoy
+    # y ordenados de mayor a menor, que es lo que hace correcta la selección de
+    # más abajo (se queda con el primero que matchee).
+    #
+    # Carrefour antes quedaba afuera a propósito: sus descuentos son de días
+    # puntuales y este modelo no tiene noción de día, así que cargarlos habría
+    # prometido un martes un ahorro que no existe. Con el filtro por día del
+    # loader eso ya no pasa y Carrefour entra sin caso especial.
+    #
+    # Sin el archivo, load_bank_promos() devuelve la tabla que estaba acá
+    # hardcodeada, así que un repo recién clonado se comporta igual que antes.
+    if bank_promos is None:
+        bank_promos = load_bank_promos()
 
     if flat_prices is None:
         flat_prices = flatten_cart_prices(cart_items, user_memberships)
@@ -117,7 +122,16 @@ def optimize_cart(cart_items, user_memberships=None, user_cards=None, min_spend_
         model.Add(subtotal_vars[j] == sum(costs))
 
         discount_vars[j] = model.NewIntVar(0, MAX_SUBTOTAL_CENTS, f'discount_{j}')
-        best_promo = next((p for p in bank_promos.get(j, []) if p["card"] in user_cards), None)
+        # Las promos ya vienen ordenadas de mayor a menor descuento, así que el
+        # primero que matchee es el mejor. `is_membership` decide contra qué eje
+        # del perfil se compara: "Comunidad Coto" o "Mi Carrefour" no son tarjetas
+        # bancarias y el usuario las declara en user_memberships, así que
+        # buscarlas en user_cards no las encontraría nunca.
+        best_promo = next(
+            (p for p in bank_promos.get(j, [])
+             if p["card"] in (user_memberships if p.get("is_membership") else user_cards)),
+            None,
+        )
 
         if best_promo:
             subtotal_times_pct = model.NewIntVar(0, MAX_SUBTOTAL_CENTS * MAX_PCT, f'subtotal_times_pct_{j}')

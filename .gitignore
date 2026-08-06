@@ -19,3 +19,6 @@ env/
 .vscode/
 .idea/
 .DS_Store
+
+# Archivos de documentación
+docs/

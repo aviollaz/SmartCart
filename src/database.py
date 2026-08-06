@@ -45,6 +45,18 @@ class SmartCartDB:
                     ADD COLUMN IF NOT EXISTS is_gluten_free BOOLEAN DEFAULT FALSE,
                     ADD COLUMN IF NOT EXISTS is_vegan BOOLEAN DEFAULT FALSE;
             """)
+            # El SKU de VTEX (`itemId`), que es lo que espera
+            # /checkout/cart/add?sku= para armar un carrito por URL. Va aparte de
+            # `store_sku` —que en las dos tiendas VTEX guarda el `productId`—
+            # porque son identificadores distintos: en Carrefour el producto
+            # 100650 es el item 17305. En Día coinciden por casualidad de su
+            # catálogo, y confiar en esa coincidencia es lo que haría que la
+            # próxima tienda VTEX arme carritos equivocados sin ningún síntoma.
+            # NULL para las tiendas que no son VTEX (Coto).
+            cur.execute("""
+                ALTER TABLE store_products
+                    ADD COLUMN IF NOT EXISTS store_item_id TEXT;
+            """)
             # GIN es el índice que soporta el operador de solapamiento (&&)
             # con el que api.py filtra "misma góndola".
             cur.execute("""
@@ -143,10 +155,11 @@ class SmartCartDB:
                         # 4. Guardar la Instancia Comercial con el JSON de promos y la IMAGEN
                         cur.execute("""
                             INSERT INTO store_products (
-                                unified_product_id, store_id, store_sku, product_url, base_price, in_stock, promotions_json, image_url
+                                unified_product_id, store_id, store_sku, store_item_id, product_url, base_price, in_stock, promotions_json, image_url
                             )
-                            VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
+                            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
                             ON CONFLICT (store_id, store_sku) DO UPDATE SET
+                                store_item_id = EXCLUDED.store_item_id,
                                 product_url = EXCLUDED.product_url,
                                 base_price = EXCLUDED.base_price,
                                 in_stock = EXCLUDED.in_stock,
@@ -157,10 +170,16 @@ class SmartCartDB:
                             unified_id,
                             store_id,
                             prod['store_sku'],
+                            # Sólo lo mandan los scrapers VTEX. Va también en el
+                            # DO UPDATE SET: una columna que falte ahí queda
+                            # congelada en lo que escribió el primer INSERT, y un
+                            # re-scrapeo es el único mecanismo del proyecto para
+                            # corregir datos.
+                            prod.get('store_item_id'),
                             prod['url'],
-                            base_price,  
+                            base_price,
                             prod['in_stock'],
-                            json.dumps(standardized_promos),  
+                            json.dumps(standardized_promos),
                             prod.get('image_url')  # <-- Guardamos la URL de la imagen extraída del scraper
                         ))
             print("[DB] Guardado exitoso.")

@@ -275,21 +275,46 @@ def _collect_candidates(cur, anchor_rows, target_stores, cart_uids):
     return per_anchor
 
 
-def _cheapest_offer(price_row, target_stores):
-    """(costo, tienda) más barato de un producto entre las tiendas candidatas."""
+def _best_offer(price_row, target_stores, prefer_availability=False):
+    """
+    (costo, tienda) elegido de un producto entre las tiendas candidatas, más la
+    clave con la que se comparó contra los demás candidatos del ancla.
+
+    Con `prefer_availability` la clave antepone en cuántas tiendas se consigue el
+    producto. Ver `_resolve_swaps` para por qué existe ese criterio; acá alcanza
+    con notar que apagado ordena sólo por precio, que es el comportamiento
+    histórico.
+    """
     offers = [(price_row[s]["total_cost"], s) for s in price_row if s in target_stores]
-    return min(offers) if offers else None
+    if not offers:
+        return None
+
+    cost, store = min(offers)
+    rank = (-len(offers), cost) if prefer_availability else (cost,)
+    return cost, store, rank
 
 
 def _resolve_swaps(closing_store, anchors, anchor_rows, candidates, prices_by_qty, flat_prices,
-                   target_stores, quantities, taken_uids):
+                   target_stores, quantities, taken_uids, prefer_availability=False):
     """
-    Elige un reemplazo concreto por ancla: el más barato entre los comparables.
+    Elige un reemplazo concreto por ancla entre los comparables.
 
     Devuelve `(swaps, filas_de_precio)` o None en cuanto un ancla se queda sin
     reemplazo. Es todo o nada: si queda un solo producto que sólo vende la tienda
     a cerrar, la tienda no se puede cerrar y cualquier ahorro parcial sería
     mentira.
+
+    El criterio de elección es un parámetro porque elegir por ancla, aislado del
+    resto del carrito, no alcanza: quien sabe si el conjunto cierra es el solver,
+    y no se le puede pedir que elija entre varios candidatos (cada línea del
+    carrito tiene exactamente un producto). El más barato puede ser exclusivo de
+    una tienda apagada, y entonces el reemplazo la obliga a abrir con su mínimo
+    de compra a cuestas: el caso real fue una harina de $915 que sólo vende Día,
+    cuyo mínimo de $12.000 volvía infactible toda la simulación y tiraba abajo un
+    cierre que con otra harina de $1.039 —vendida en las tres tiendas— ahorraba
+    plata. Con `prefer_availability` se prioriza justamente eso: un reemplazo que
+    está en todos lados no obliga a abrir ninguna tienda. El llamador arma los dos
+    planes y deja que el solver decida cuál conviene.
 
     Cada candidato se cotiza con la cantidad del ancla que reemplaza (de ahí que
     `prices_by_qty` esté indexado por cantidad), y la fila elegida viaja al
@@ -311,17 +336,17 @@ def _resolve_swaps(closing_store, anchors, anchor_rows, candidates, prices_by_qt
             if cand["uid"] in taken_uids:
                 continue
             price_row = priced_at_qty.get(cand["uid"], {})
-            offer = _cheapest_offer(price_row, target_stores)
+            offer = _best_offer(price_row, target_stores, prefer_availability)
             if offer is None:
                 continue
-            cost, store = offer
-            if best is None or cost < best[0]:
-                best = (cost, store, cand, price_row)
+            cost, store, rank = offer
+            if best is None or rank < best[0]:
+                best = (rank, cost, store, cand, price_row)
 
         if best is None:
             return None
 
-        cost, store, cand, price_row = best
+        _rank, cost, store, cand, price_row = best
         taken_uids.add(cand["uid"])
         price_rows[cand["uid"]] = price_row
 
@@ -525,24 +550,47 @@ def _find_strategic_swaps(*, result, cart_items, flat_prices, user_memberships, 
     }
 
     # Paso 4: elegir reemplazos, simular y quedarse con lo que ahorra.
+    #
+    # Se arman DOS planes por tienda y se simulan los dos, porque el criterio
+    # para elegir un reemplazo no es evidente desde el ancla sola (ver
+    # `_resolve_swaps`): el más barato puede ser exclusivo de una tienda apagada
+    # y arrastrar su mínimo de compra. Los planes se deduplican —lo habitual es
+    # que coincidan y se simule una sola vez— y gana el de menor total, que es la
+    # única comparación que corresponde: los dos números salen del mismo solver.
     suggestions = []
     for store, (candidates, target_stores) in candidates_by_store.items():
         anchors = anchors_by_store[store]
-        resolved = _resolve_swaps(
-            store, anchors, anchor_rows, candidates, prices_by_qty, flat_prices,
-            target_stores, quantities, set(cart_uids),
-        )
-        if resolved is None:
-            continue
-        swaps, price_rows = resolved
 
-        simulated = _simulate_closure(
-            store, swaps, price_rows, cart_items, flat_prices, excluded_stores,
-            user_memberships, user_cards, delivery_costs,
-        )
-        if simulated is None:
+        plans = []
+        for prefer_availability in (False, True):
+            resolved = _resolve_swaps(
+                store, anchors, anchor_rows, candidates, prices_by_qty, flat_prices,
+                target_stores, quantities, set(cart_uids),
+                prefer_availability=prefer_availability,
+            )
+            if resolved is None:
+                continue
+            swaps, price_rows = resolved
+            fingerprint = tuple((s["original_uid"], s["replacement_uid"]) for s in swaps)
+            if any(fingerprint == seen for seen, _, _ in plans):
+                continue
+            plans.append((fingerprint, swaps, price_rows))
+
+        best_simulation = None
+        for _fingerprint, swaps, price_rows in plans:
+            simulated = _simulate_closure(
+                store, swaps, price_rows, cart_items, flat_prices, excluded_stores,
+                user_memberships, user_cards, delivery_costs,
+            )
+            if simulated is None:
+                continue
+            if best_simulation is None or simulated["total_spent_net"] < best_simulation[0]["total_spent_net"]:
+                best_simulation = (simulated, swaps)
+
+        if best_simulation is None:
             continue
 
+        simulated, swaps = best_simulation
         simulated_total = simulated["total_spent_net"]
         savings = round(original_total - simulated_total, 2)
 

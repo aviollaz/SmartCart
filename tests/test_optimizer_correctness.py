@@ -16,17 +16,37 @@ import itertools
 import pytest
 
 from src import optimizer as optimizer_module
+from src.bank_promos import FALLBACK_BANK_PROMOS
 from src.optimizer import optimize_cart
 
 COTO = "coto_online"
 DIA = "dia_online"
 
-# Mismos valores que hardcodea el optimizador; los tests los replican para
-# poder calcular el óptimo de forma independiente.
-BANK_PROMOS = {
-    COTO: {"card": "galicia", "discount_pct": 20, "cap": 5000},
-    DIA: {"card": "macro", "discount_pct": 15, "cap": 3000},
-}
+# Se DERIVAN de la tabla del fallback en vez de copiarse a mano.
+#
+# Antes eran dos literales gemelos —uno acá y otro adentro de optimize_cart— y
+# mantenerlos sincronizados era responsabilidad de quien tocara cualquiera de los
+# dos. Ahora los descuentos reales salen de src/scrapers/bank_promos.json, que
+# cambia cada vez que se corre el scraper, así que el oráculo de fuerza bruta no
+# puede depender de él: se fija al fallback, que es estable, y el fixture de
+# abajo se asegura de que el optimizador use ese mismo conjunto.
+BANK_PROMOS = {store: promos[0] for store, promos in FALLBACK_BANK_PROMOS.items()}
+
+
+@pytest.fixture(autouse=True)
+def _promos_bancarias_fijas(monkeypatch):
+    """
+    Fija los descuentos bancarios que ve el optimizador.
+
+    Sin esto, estos tests leerían src/scrapers/bank_promos.json —que trae los
+    descuentos reales, distintos según el día en que se corran— y el óptimo
+    calculado por el oráculo dejaría de coincidir con el del solver.
+    """
+    monkeypatch.setattr(
+        optimizer_module, "load_bank_promos",
+        lambda *args, **kwargs: {store: list(promos)
+                                 for store, promos in FALLBACK_BANK_PROMOS.items()},
+    )
 
 
 @pytest.fixture

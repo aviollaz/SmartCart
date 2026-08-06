@@ -1,3 +1,5 @@
+import { STORES } from "./constants";
+
 const PRICE_FORMATTER = new Intl.NumberFormat("es-AR", {
   style: "currency",
   currency: "ARS",
@@ -24,6 +26,21 @@ export function formatUnitPrice(product) {
 
 export function storeLabel(storeId) {
   return storeId.replace("_online", "").toUpperCase();
+}
+
+const STORE_NAMES = Object.fromEntries(STORES.map((store) => [store.id, store.name]));
+
+/**
+ * Nombre de la tienda tal como se escribe en una oración ("Coto", "Día"), a
+ * diferencia de storeLabel(), que devuelve el encabezado en mayúsculas.
+ *
+ * Cae a storeLabel() ante un id desconocido: el backend puede conocer una tienda
+ * que todavía no está en STORES, y ahí "CARREFOUR" es feo pero correcto, mientras
+ * que un undefined en medio de una frase es un bug visible.
+ */
+export function storeName(storeId) {
+  if (!storeId) return "";
+  return STORE_NAMES[storeId] || storeLabel(storeId);
 }
 
 const SHORT_ADDRESS_MAX = 30;

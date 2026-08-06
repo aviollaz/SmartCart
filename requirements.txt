@@ -7,3 +7,9 @@ fastapi
 uvicorn[standard]
 pytest
 ortools
+# Sólo lo usan los scrapers de promociones bancarias de Día y Carrefour, que
+# renderizan su grilla en el cliente (ver src/promotions/playwright_base.py).
+# Requiere bajar el navegador aparte: python -m playwright install chromium
+# El resto del proyecto no lo necesita: el import es lazy, así que CotoScraper y
+# la API siguen funcionando sin Chromium instalado.
+playwright

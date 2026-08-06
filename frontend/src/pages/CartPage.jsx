@@ -2,15 +2,19 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { useCart } from "../context/CartContext";
 import { useProfile } from "../context/ProfileContext";
 import { optimizeCart } from "../api/optimize";
+import { storeName } from "../utils/formatters";
 import { CartLineItem } from "../components/cart/CartLineItem";
+import { ClearCartButton } from "../components/cart/ClearCartButton";
 import { CoverageWarning } from "../components/cart/CoverageWarning";
+import { UndoBar } from "../components/cart/UndoBar";
 import { ProfileDrawer } from "../components/profile/ProfileDrawer";
 import { OptimizeButton } from "../components/optimize/OptimizeButton";
 import { InfeasibleNotice } from "../components/optimize/InfeasibleNotice";
 import { OptimizeResultsPanel } from "../components/optimize/OptimizeResultsPanel";
 
 export function CartPage({ onOpenLocation }) {
-  const { items, incrementItem, decrementItem, removeItem, replaceItem } = useCart();
+  const { items, incrementItem, decrementItem, removeItem, replaceItem, replaceItems, restoreItems } =
+    useCart();
   const { cards, memberships, deliveryCosts, coordinates, setStoreCoverage } = useProfile();
   const entries = Object.entries(items);
 
@@ -22,6 +26,12 @@ export function CartPage({ onOpenLocation }) {
   // "el carrito cambió por un swap, hay que recalcular" de "el usuario tocó una
   // cantidad", que no debería disparar una optimización sola.
   const reoptimizeRef = useRef(false);
+
+  // Carrito previo a la última recomendación aceptada: { items, message }.
+  // Se guarda el objeto entero en vez de invertir los swaps uno por uno porque
+  // si el reemplazo ya estaba en el carrito las cantidades se fusionaron, y la
+  // operación inversa no puede reconstruir cuánto había de cada uno.
+  const [undoSnapshot, setUndoSnapshot] = useState(null);
 
   const runOptimize = useCallback(async () => {
     setOptimizeStatus("loading");
@@ -73,6 +83,10 @@ export function CartPage({ onOpenLocation }) {
       runOptimize();
       return;
     }
+    // Llegar acá es que el cambio lo hizo el usuario a mano, no una
+    // recomendación: el snapshot describe un carrito anterior a ese cambio y
+    // restaurarlo le borraría lo que acaba de hacer.
+    setUndoSnapshot(null);
     // El resultado describe un carrito que ya no existe: mostrarlo sería mentir.
     setOptimizeStatus((prev) => (prev === "success" || prev === "infeasible" ? "idle" : prev));
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -80,11 +94,43 @@ export function CartPage({ onOpenLocation }) {
 
   const handleAcceptSuggestion = useCallback(
     (originalUid, alternative) => {
+      setUndoSnapshot({ items, message: `Cambiamos ${alternative.suggested_product} en tu carrito.` });
       reoptimizeRef.current = true;
       replaceItem(originalUid, alternative.suggested_uid, alternative.suggested_product);
     },
-    [replaceItem]
+    [items, replaceItem]
   );
+
+  // Cierre de tienda: los reemplazos van todos juntos porque el ahorro
+  // proyectado sale de simular el carrito completo con la tienda excluida (ver
+  // src/strategic_swaps.py). Un lote, una sola re-optimización.
+  const handleApplyStrategicSwap = useCallback(
+    (suggestion) => {
+      const count = suggestion.swaps.length;
+      setUndoSnapshot({
+        items,
+        message: `Cambiamos ${count} producto${count === 1 ? "" : "s"} para sacar ${storeName(
+          suggestion.closed_store
+        )} del pedido.`,
+      });
+      reoptimizeRef.current = true;
+      replaceItems(
+        suggestion.swaps.map((swap) => ({
+          from: swap.original_uid,
+          to: swap.replacement_uid,
+          name: swap.replacement_name,
+        }))
+      );
+    },
+    [items, replaceItems]
+  );
+
+  const handleUndo = useCallback(() => {
+    if (!undoSnapshot) return;
+    reoptimizeRef.current = true;
+    restoreItems(undoSnapshot.items);
+    setUndoSnapshot(null);
+  }, [undoSnapshot, restoreItems]);
 
   return (
     <div className="mx-auto w-full max-w-4xl px-4 py-6">
@@ -94,7 +140,10 @@ export function CartPage({ onOpenLocation }) {
         <CoverageWarning />
 
         <section className="rounded-lg border border-line bg-surface p-5">
-          <h2 className="mb-2 font-display text-lg font-bold text-ink">Productos seleccionados</h2>
+          <div className="mb-2 flex items-start justify-between gap-3">
+            <h2 className="font-display text-lg font-bold text-ink">Productos seleccionados</h2>
+            <ClearCartButton />
+          </div>
           {entries.length === 0 ? (
             <p className="text-sm text-ink-muted">
               Tu carrito está vacío. Buscá productos en la página principal.
@@ -125,8 +174,21 @@ export function CartPage({ onOpenLocation }) {
             No pudimos calcular la optimización. Probá de nuevo en un momento.
           </p>
         )}
+        {/* Vive en la página y no adentro del panel de resultados: el panel se
+            desmonta y vuelve con el resultado nuevo en cada recálculo, y el
+            deshacer tiene que sobrevivir justo a ese recálculo. */}
+        <UndoBar
+          message={undoSnapshot?.message}
+          onUndo={handleUndo}
+          onDismiss={() => setUndoSnapshot(null)}
+        />
+
         {optimizeStatus === "success" && optimizeResult && (
-          <OptimizeResultsPanel result={optimizeResult} onAcceptSuggestion={handleAcceptSuggestion} />
+          <OptimizeResultsPanel
+            result={optimizeResult}
+            onAcceptSuggestion={handleAcceptSuggestion}
+            onApplyStrategicSwap={handleApplyStrategicSwap}
+          />
         )}
       </div>
     </div>

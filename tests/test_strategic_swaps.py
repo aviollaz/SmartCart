@@ -468,6 +468,82 @@ def test_no_sugiere_cuando_el_ahorro_no_llega_al_umbral(fake_flatten, monkeypatc
     assert suggestions == []
 
 
+def test_no_elige_el_reemplazo_mas_barato_si_obliga_a_abrir_una_tienda(fake_flatten):
+    """
+    Elegir por ancla, aislado del resto del carrito, no alcanza: el reemplazo más
+    barato puede ser exclusivo de una tienda apagada, y entonces arrastra su
+    mínimo de compra y vuelve infactible toda la simulación.
+
+    Caso real que lo destapó, con un carrito de la base: una harina exclusiva de
+    Carrefour a $789 con todo el carrito arrastrado a Carrefour por su mínimo. El
+    vecino más barato era una harina de $915 que sólo vende Día, cuyo mínimo de
+    $12.000 no se alcanzaba con un solo producto -> infeasible -> se descartaba el
+    cierre entero. La Chacabuco a $1.039, vendida en las tres tiendas, cerraba
+    Carrefour y ahorraba $2.411.
+
+        original : Carrefour (789 + 11.940 + 10.370 + 3.500)  = 26.599
+        con DIA  : Coto (19.750 + 3.000) + Día (915 + 3.000) -> Día no llega a su mínimo
+        con COTO : Coto (9.872 + 9.878 + 1.039 + 3.000)       = 23.789
+    """
+    exclusivo = {"prod_harina_crf": {CARREFOUR: 789}}
+    comunes = {
+        "prod_alfajor": {COTO: 9872, CARREFOUR: 11940},
+        "prod_aceite": {COTO: 9878, CARREFOUR: 10370},
+    }
+    # El de Día es más barato pero está en una sola tienda; el de Coto sale un
+    # poco más y se consigue en las tres.
+    reemplazos = {
+        "prod_harina_dia": {DIA: 915},
+        "prod_harina_comun": {COTO: 1039, DIA: 1039, CARREFOUR: 1039},
+    }
+    spec = {**exclusivo, **comunes, **reemplazos}
+    fake_flatten(spec)
+
+    cart = _cart(("prod_harina_crf", 1), ("prod_alfajor", 1), ("prod_aceite", 1))
+    products = {"prod_harina_crf": _product("prod_harina_crf", "Harina Bulnez 000 1 kg", 1000.0, "g")}
+    neighbors = {"prod_harina_crf": [
+        _product("prod_harina_dia", "Harina DIA 000 1 kg", 1000.0, "g"),
+        _product("prod_harina_comun", "Harina Chacabuco 000 1 kg", 1000.0, "g"),
+    ]}
+
+    result, suggestions = _run(spec, cart, FakeCursor(products, neighbors))
+
+    assert list(result["split"]) == [CARREFOUR]
+
+    assert len(suggestions) == 1, "el plan por disponibilidad tiene que rescatar el cierre"
+    s = suggestions[0]
+    assert s["swaps"][0]["replacement_uid"] == "prod_harina_comun"
+    assert s["swaps"][0]["replacement_store"] == COTO
+    assert s["original_total"] == 26599
+    assert s["simulated_total"] == 23789
+    assert s["projected_savings"] == 2810
+
+
+def test_con_todos_los_reemplazos_disponibles_gana_el_mas_barato(fake_flatten):
+    """
+    El plan por disponibilidad no puede volverse el criterio: cuando ninguno de
+    los dos obliga a abrir nada, el que tiene que ganar es el más barato, porque
+    los dos planes se simulan y se compara el total del solver.
+    """
+    spec, cart, cursor = _escenario_base(
+        spec_extra={"prod_rep_caro": {COTO: 3500, DIA: 3500, CARREFOUR: 3500}},
+        neighbors_override={"prod_crf_0": [
+            # El caro está en las tres tiendas; el barato en dos, pero las dos
+            # siguen abiertas, así que elegirlo no cuesta nada.
+            _product("prod_rep_caro", "Leche Cara 1L", 1000.0, "ml"),
+            _product("prod_rep_0", "Leche Alternativa 0 1L", 1000.0, "ml"),
+        ]},
+    )
+    fake_flatten(spec)
+
+    _, suggestions = _run(spec, cart, cursor)
+
+    assert len(suggestions) == 1
+    swap = next(s for s in suggestions[0]["swaps"] if s["original_uid"] == "prod_crf_0")
+    assert swap["replacement_uid"] == "prod_rep_0"
+    assert swap["replacement_cost"] == 2500
+
+
 def test_no_sugiere_cuando_el_cierre_deja_al_resto_infactible(fake_flatten):
     """
     Sacar Carrefour deja un carrito que no llega al mínimo de ninguna otra tienda.
