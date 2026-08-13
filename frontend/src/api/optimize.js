@@ -6,7 +6,15 @@ import { apiFetch, ApiError } from "./client";
  * no un error de red) — se modela como {ok:false, detail} en vez de lanzar,
  * para que la UI lo muestre inline (igual que el st.warning de Streamlit).
  */
-export async function optimizeCart({ cart, userMemberships, userCards, deliveryCosts, coordinates }) {
+export async function optimizeCart({
+  cart,
+  userMemberships,
+  userCards,
+  deliveryCosts,
+  coordinates,
+  anonUserId,
+  zone,
+}) {
   try {
     const data = await apiFetch("/optimize", {
       method: "POST",
@@ -26,6 +34,13 @@ export async function optimizeCart({ cart, userMemberships, userCards, deliveryC
         // equivalente para Día ni para Carrefour.
         lat: coordinates?.lat ?? null,
         lng: coordinates?.lng ?? null,
+        // Los dos que siguen no los usa el optimizador: son para el evento que
+        // el backend le manda a SmartCart Performance Analyzer (src/analytics.py).
+        // `anon_user_id` identifica el navegador (KPI de usuarios únicos) y la
+        // zona permite cortar los KPIs geográficamente — de `delivery_costs` no
+        // se puede recuperar la etiqueta. Los dos son nullables del otro lado.
+        anon_user_id: anonUserId ?? null,
+        zone: zone ?? null,
       }),
     });
     return { ok: true, data };

@@ -15,7 +15,8 @@ import { OptimizeResultsPanel } from "../components/optimize/OptimizeResultsPane
 export function CartPage({ onOpenLocation }) {
   const { items, incrementItem, decrementItem, removeItem, replaceItem, replaceItems, restoreItems } =
     useCart();
-  const { cards, memberships, deliveryCosts, coordinates, setStoreCoverage } = useProfile();
+  const { cards, memberships, deliveryCosts, coordinates, location, anon_user_id, setStoreCoverage } =
+    useProfile();
   const entries = Object.entries(items);
 
   const [optimizeStatus, setOptimizeStatus] = useState("idle"); // idle | loading | success | infeasible | error
@@ -47,6 +48,8 @@ export function CartPage({ onOpenLocation }) {
         userCards: cards,
         deliveryCosts,
         coordinates,
+        anonUserId: anon_user_id,
+        zone: location?.zone,
       });
 
       if (response.ok) {
@@ -75,7 +78,7 @@ export function CartPage({ onOpenLocation }) {
       setOptimizeStatus("error");
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [items, memberships, cards, deliveryCosts, coordinates]);
+  }, [items, memberships, cards, deliveryCosts, coordinates, anon_user_id, location]);
 
   useEffect(() => {
     if (reoptimizeRef.current) {

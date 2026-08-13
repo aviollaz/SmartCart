@@ -1,13 +1,16 @@
 import re
+import time
 import logging
 from contextlib import asynccontextmanager
 from typing import List, Optional, Dict, Any
-from fastapi import FastAPI, Query, HTTPException
+from fastapi import FastAPI, Query, HTTPException, BackgroundTasks
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field
 import psycopg
 from psycopg.rows import dict_row
 from sentence_transformers import SentenceTransformer
+from src.analytics import build_cart_optimized_event, send_cart_optimized_event
 from src.database import SmartCartDB
 from src.optimizer import optimize_cart, DEFAULT_DELIVERY_COSTS
 from src.flattener import flatten_cart_prices, evaluate_best_promo, parse_promotions_json
@@ -125,6 +128,19 @@ class OptimizationRequest(BaseModel):
     # caso se cae al comportamiento por zona de siempre.
     lat: Optional[float] = None
     lng: Optional[float] = None
+    # Los dos que siguen no los usa el optimizador: viajan sólo para el evento
+    # analítico (src/analytics.py). Opcionales porque el contrato del analyzer
+    # los acepta nulos y porque un perfil de localStorage anterior a la feature
+    # no los trae — mejor un evento sin identificar que un 422 en el request.
+    #
+    # `anon_user_id` es un UUID de localStorage: identifica un navegador, no una
+    # persona (SmartCart no tiene autenticación). Es lo que hace contable el KPI
+    # de usuarios únicos.
+    anon_user_id: Optional[str] = None
+    # La zona la deriva el frontend de la dirección (utils/deliveryCosts.js), y
+    # ya venía implícita en `delivery_costs`; acá viaja explícita porque un
+    # diccionario de costos no se puede volver a mapear a una etiqueta.
+    zone: Optional[str] = None
 
 class PricePreviewRequest(BaseModel):
     items: List[CartItem]
@@ -460,12 +476,39 @@ def preview_prices(request: PricePreviewRequest):
         raise HTTPException(status_code=500, detail=str(e))
 
 @app.post("/optimize")
-def optimize_shopping_cart(request: OptimizationRequest):
+def optimize_shopping_cart(request: OptimizationRequest, background_tasks: BackgroundTasks):
     """
-    Recibe un carrito y devuelve la asignación óptima de supermercados 
+    Recibe un carrito y devuelve la asignación óptima de supermercados
     considerando mínimos de compra, envíos y descuentos bancarios.
     """
     logger.info(f"Recibida solicitud de optimización para {len(request.cart)} productos.")
+
+    started = time.perf_counter()
+
+    def emit_analytics(payload_result: dict) -> None:
+        """
+        Encola el evento para SmartCart Performance Analyzer (src/analytics.py).
+
+        Se llama desde las DOS salidas del endpoint —el resultado exitoso y el
+        400 por carrito inviable—: el inviable es el KPI de fricción y el
+        contrato del analyzer lo acepta explícitamente con `split` vacío.
+
+        Lleva su propio try/except aunque `build_cart_optimized_event` sea pura:
+        una optimización ya resuelta no puede perderse por un error armando su
+        telemetría.
+        """
+        # El contrato exige `cart.items` no vacío, y un `success` sin split lo
+        # rechaza con 422. Un carrito vacío no es una optimización medible, así
+        # que no se emite en vez de garantizar un rechazo.
+        if not request.cart:
+            return
+
+        try:
+            duration_ms = int((time.perf_counter() - started) * 1000)
+            event = build_cart_optimized_event(request, payload_result, duration_ms)
+            background_tasks.add_task(send_cart_optimized_event, event)
+        except Exception as e:
+            logger.error(f"No se pudo armar el evento analítico: {e}")
 
     try:
         cart_data = [item.model_dump() for item in request.cart]
@@ -775,8 +818,21 @@ def optimize_shopping_cart(request: OptimizationRequest):
 
     if result.get("status") == "infeasible":
         msg = result.get("message", "El carrito no alcanza los montos mínimos requeridos por las tiendas ($15.000 Coto / $12.000 Día). Agregá más productos.")
-        raise HTTPException(status_code=400, detail=msg)
-        
+        emit_analytics(result)
+        # JSONResponse y no `raise HTTPException`, aunque la respuesta que sale
+        # por el cable sea idéntica ({"detail": msg} con 400, que es exactamente
+        # lo que arma el handler por defecto de FastAPI).
+        #
+        # El motivo es el BackgroundTask de arriba: FastAPI engancha las tareas a
+        # la respuesta DESPUÉS de que el endpoint retorna (routing.py,
+        # `if raw_response.background is None`). Si el endpoint lanza, el handler
+        # de excepciones arma otra respuesta, sin `background`, y la tarea nunca
+        # corre: el evento del carrito inviable —el que más interesa medir— se
+        # perdería en silencio. Retornando un Response, FastAPI le engancha el
+        # background igual.
+        return JSONResponse(status_code=400, content={"detail": msg})
+
+    emit_analytics(result)
     return result
 
 @app.get("/logistics/coto/coverage")
