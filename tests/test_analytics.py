@@ -27,7 +27,23 @@ import pytest
 from pydantic import BaseModel
 
 from src import analytics
-from src.analytics import build_cart_optimized_event, send_cart_optimized_event
+from src.analytics import (
+    analytics_status,
+    build_cart_optimized_event,
+    check_analyzer_health,
+    send_cart_optimized_event,
+)
+
+
+@pytest.fixture(autouse=True)
+def _entorno_limpio(monkeypatch):
+    """
+    El módulo hace `load_dotenv()` al importarse, así que sin esto el suite leería
+    la configuración del .env de cada máquina: un ANALYTICS_ENV=prod ajeno haría
+    fallar los tests que afirman "dev". Cada test declara lo que necesita.
+    """
+    for var in ("ANALYTICS_URL", "ANALYTICS_API_KEY", "ANALYTICS_ENV"):
+        monkeypatch.delenv(var, raising=False)
 
 
 # --- Stand-in del request -----------------------------------------------------
@@ -246,7 +262,7 @@ def _reset_missing_key_flag():
     analytics._missing_key_logged = False
 
 
-def test_envio_manda_api_key_url_y_timeout(monkeypatch):
+def test_envio_manda_api_key_url_y_timeout(monkeypatch, caplog):
     monkeypatch.setenv("ANALYTICS_API_KEY", "una-clave")
     monkeypatch.setenv("ANALYTICS_URL", "http://localhost:8001/")
 
@@ -255,14 +271,19 @@ def test_envio_manda_api_key_url_y_timeout(monkeypatch):
     def fake_post(url, **kwargs):
         captured["url"] = url
         captured.update(kwargs)
-        return httpx.Response(201, json={"status": "stored", "id": 1})
+        # 202 y no 201: el analyzer usa la convención de ingesta analítica, y su
+        # alta y su duplicado responden lo mismo. Un emisor que tratara cualquier
+        # cosa distinta de 201 como falla loguearía un error por evento exitoso.
+        return httpx.Response(202, json={"status": "stored", "id": 1})
 
     monkeypatch.setattr(analytics.httpx, "post", fake_post)
 
-    send_cart_optimized_event({"event_id": "abc"})
+    with caplog.at_level("ERROR", logger="src.analytics"):
+        send_cart_optimized_event({"event_id": "abc"})
 
+    assert caplog.records == []
     # La barra final de ANALYTICS_URL no puede duplicarse en el path.
-    assert captured["url"] == "http://localhost:8001/events/cart-optimized"
+    assert captured["url"] == "http://localhost:8001/track-optimization"
     assert captured["headers"] == {"X-API-Key": "una-clave"}
     assert captured["json"] == {"event_id": "abc"}
     assert captured["timeout"] == 2.0
@@ -318,3 +339,84 @@ def test_un_rechazo_del_contrato_se_loguea(monkeypatch, caplog):
         send_cart_optimized_event({"event_id": "abc"})
 
     assert any("422" in r.getMessage() for r in caplog.records)
+
+
+def test_una_ruta_que_ya_no_existe_se_nombra_como_tal(monkeypatch, caplog):
+    """
+    Caso real: el analyzer renombró su endpoint (`/events/cart-optimized` ->
+    `/track-optimization`) y cada evento pasó a dar 404. El mensaje genérico
+    ("rechazó el evento") mandaba a revisar el mapeo del payload, que estaba
+    perfecto. Un 404 no se arregla con ningún payload: es la integración.
+    """
+    monkeypatch.setenv("ANALYTICS_API_KEY", "una-clave")
+    monkeypatch.setattr(analytics.httpx, "post", lambda *a, **kw: httpx.Response(404, text="Not Found"))
+
+    with caplog.at_level("ERROR", logger="src.analytics"):
+        send_cart_optimized_event({"event_id": "abc"})
+
+    mensaje = " ".join(r.getMessage() for r in caplog.records)
+    assert "no conoce la ruta" in mensaje
+    assert analytics.EVENT_PATH in mensaje
+
+
+def test_una_key_equivocada_se_nombra_como_tal(monkeypatch, caplog):
+    monkeypatch.setenv("ANALYTICS_API_KEY", "la-que-no-es")
+    monkeypatch.setattr(analytics.httpx, "post", lambda *a, **kw: httpx.Response(401, text="Unauthorized"))
+
+    with caplog.at_level("ERROR", logger="src.analytics"):
+        send_cart_optimized_event({"event_id": "abc"})
+
+    mensaje = " ".join(r.getMessage() for r in caplog.records)
+    assert "ANALYTICS_API_KEY" in mensaje
+    # El secreto no puede terminar en un log.
+    assert "la-que-no-es" not in mensaje
+
+
+# --- Diagnóstico ---------------------------------------------------------------
+# Existe porque "no emitir" es un estado correcto pero indistinguible de uno sano
+# desde afuera, y así fue como un server bien configurado en todo lo demás estuvo
+# días sin mandar un solo evento.
+
+def test_status_apagado_explica_el_motivo():
+    status = analytics_status()
+
+    assert status["enabled"] is False
+    assert "ANALYTICS_API_KEY" in status["reason"]
+    # La URL se informa igual: sirve para ver a dónde APUNTARÍA si se configurara.
+    assert status["url"] == "http://localhost:8001"
+
+
+def test_status_encendido(monkeypatch):
+    monkeypatch.setenv("ANALYTICS_API_KEY", "una-clave")
+    monkeypatch.setenv("ANALYTICS_URL", "http://analyzer:9000")
+    monkeypatch.setenv("ANALYTICS_ENV", "prod")
+
+    status = analytics_status()
+
+    assert status["enabled"] is True
+    assert status["reason"] is None
+    assert status["url"] == "http://analyzer:9000"
+    assert status["env"] == "prod"
+    # No filtra el secreto: esto termina en la respuesta pública de GET /.
+    assert "una-clave" not in str(status)
+
+
+def test_health_no_lanza_con_el_analyzer_caido(monkeypatch):
+    monkeypatch.setattr(
+        analytics.httpx,
+        "get",
+        lambda *a, **kw: (_ for _ in ()).throw(httpx.ConnectError("connection refused")),
+    )
+
+    health = check_analyzer_health()
+
+    assert health["reachable"] is False
+    assert "refused" in health["detail"]
+
+
+def test_health_ok(monkeypatch):
+    monkeypatch.setattr(
+        analytics.httpx, "get", lambda *a, **kw: httpx.Response(200, json={"status": "ok", "db": "ok"})
+    )
+
+    assert check_analyzer_health() == {"reachable": True, "detail": "ok"}

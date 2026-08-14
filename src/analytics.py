@@ -36,15 +36,34 @@ from datetime import datetime, timezone
 from typing import Any, Dict, Optional
 
 import httpx
+from dotenv import load_dotenv
 
 logger = logging.getLogger(__name__)
+
+# La config sale de un .env (ver .env.example), no de lo que haya exportado la
+# terminal. El motivo es concreto: `uvicorn --reload` recarga el CÓDIGO pero
+# nunca el ENTORNO —el worker hereda el os.environ del proceso padre, congelado
+# en el momento en que se lanzó—, así que un server levantado antes de que
+# existieran estas variables corre el código nuevo y no emite nada, en silencio.
+#
+# Va acá y no en src/api.py porque este es el único consumidor de config, y así
+# queda cubierto todo lo que importe el módulo: uvicorn, pytest y los scripts.
+#
+# `load_dotenv()` NO pisa lo que ya está en el entorno: una variable exportada a
+# mano le gana al archivo, que es lo que permite tener un .env de desarrollo sin
+# que estorbe en otro contexto.
+load_dotenv()
 
 # Timeout agresivo a propósito. Corre en background, así que no bloquea la
 # respuesta, pero un socket colgado igual ocupa un hilo del threadpool que le
 # hace falta a /optimize. Perder una métrica es barato; quedarse sin hilos, no.
 ANALYTICS_TIMEOUT_SECONDS = 2.0
 
-EVENT_PATH = "/events/cart-optimized"
+# La ruta la fija el analyzer y ya cambió una vez (`/events/cart-optimized` ->
+# `/track-optimization`), lo que se manifestó como un 404 por evento y ninguna
+# fila en el warehouse. Si esto vuelve a fallar, el lugar donde mirar es la
+# sección "El evento" de ../SmartCart Performance Analyzer/README.md.
+EVENT_PATH = "/track-optimization"
 
 # Versión del emisor, no del contrato (eso es `schema_version`). Viaja en
 # `source.version` para poder atribuir una anomalía del tablero a un deploy.
@@ -62,6 +81,45 @@ def _analytics_url() -> str:
 
 def _analytics_env() -> str:
     return os.getenv("ANALYTICS_ENV", "dev")
+
+
+def analytics_status() -> Dict[str, Any]:
+    """
+    En qué estado quedó la emisión de eventos. Pura: sólo mira el entorno.
+
+    Existe porque el modo "no emitir" es correcto pero indistinguible de uno sano
+    desde afuera: el único aviso era un WARNING que salía una sola vez, en la
+    primera optimización, entre las barras de progreso del arranque. Un tablero
+    vacío tres semanas después no da ninguna pista de que faltaba una variable.
+
+    La consumen el log de arranque de src/api.py y su `GET /`.
+    """
+    enabled = bool(os.getenv("ANALYTICS_API_KEY"))
+    return {
+        "enabled": enabled,
+        "url": _analytics_url(),
+        "env": _analytics_env(),
+        "reason": None if enabled else "falta ANALYTICS_API_KEY (ver .env.example)",
+    }
+
+
+def check_analyzer_health(timeout: float = ANALYTICS_TIMEOUT_SECONDS) -> Dict[str, Any]:
+    """
+    Le pega al `/health` del analyzer, que existe justamente para esto (lo
+    documenta su README). Diagnóstico y nada más: nunca lanza, y usa el mismo
+    timeout corto que el envío porque corre en el arranque de la API.
+
+    `reachable=False` significa "no contestó", no "está roto": es fail-open igual
+    que todo el resto del módulo.
+    """
+    url = f"{_analytics_url()}/health"
+    try:
+        response = httpx.get(url, timeout=timeout)
+        if response.status_code != 200:
+            return {"reachable": False, "detail": f"HTTP {response.status_code}"}
+        return {"reachable": True, "detail": response.json().get("status", "ok")}
+    except Exception as e:
+        return {"reachable": False, "detail": str(e)}
 
 
 def build_cart_optimized_event(
@@ -153,11 +211,30 @@ def send_cart_optimized_event(payload: Dict[str, Any]) -> None:
             headers={"X-API-Key": api_key},
             timeout=ANALYTICS_TIMEOUT_SECONDS,
         )
-        # Un 422 silencioso es el peor final posible para esto: el evento se
+        # Un rechazo silencioso es el peor final posible para esto: el evento se
         # pierde y nadie se entera hasta que el tablero aparece vacío tres meses
         # después. Se loguea el cuerpo, que es donde el contrato explica qué
         # campo rechazó.
-        if response.status_code >= 400:
+        #
+        # 404 y 401 llevan mensaje propio porque son fallas de INTEGRACIÓN, no
+        # del evento: no hay payload que las arregle y el cuerpo de la respuesta
+        # no dice nada útil. Distinguirlas es la diferencia entre "revisá el
+        # mapeo" y "cambió la ruta / la clave", que es exactamente el rato que se
+        # perdió la vez que el analyzer renombró su endpoint.
+        if response.status_code == 404:
+            logger.error(
+                "El analyzer no conoce la ruta %s (HTTP 404). ¿Cambió su contrato? "
+                "Ver la sección 'El evento' de su README. Evento %s descartado.",
+                url,
+                payload.get("event_id"),
+            )
+        elif response.status_code == 401:
+            logger.error(
+                "El analyzer rechazó la ANALYTICS_API_KEY (HTTP 401). Tiene que "
+                "coincidir con la de su .env. Evento %s descartado.",
+                payload.get("event_id"),
+            )
+        elif response.status_code >= 400:
             logger.error(
                 "El analyzer rechazó el evento %s (HTTP %s): %s",
                 payload.get("event_id"),

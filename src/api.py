@@ -10,7 +10,12 @@ from pydantic import BaseModel, Field
 import psycopg
 from psycopg.rows import dict_row
 from sentence_transformers import SentenceTransformer
-from src.analytics import build_cart_optimized_event, send_cart_optimized_event
+from src.analytics import (
+    analytics_status,
+    build_cart_optimized_event,
+    check_analyzer_health,
+    send_cart_optimized_event,
+)
 from src.database import SmartCartDB
 from src.optimizer import optimize_cart, DEFAULT_DELIVERY_COSTS
 from src.flattener import flatten_cart_prices, evaluate_best_promo, parse_promotions_json
@@ -170,7 +175,26 @@ async def lifespan(app: FastAPI):
             logger.info("Conexión inicial con la base de datos exitosa.")
     except Exception as e:
         logger.error(f"Error al conectar con la base de datos en startup: {e}")
-    
+
+    # Estado de la emisión de eventos a SmartCart Performance Analyzer. Se dice
+    # en el arranque porque los dos modos de no-emisión —falta la API key, o el
+    # analyzer no responde— son deliberadamente silenciosos en tiempo de request
+    # (la analítica no puede tumbar /optimize), y sin esta línea un server mal
+    # configurado se ve igual que uno sano hasta que alguien abre el tablero y lo
+    # encuentra vacío.
+    status = analytics_status()
+    if not status["enabled"]:
+        logger.warning(f"Analitica: OFF - {status['reason']}. No se emiten eventos.")
+    else:
+        health = check_analyzer_health()
+        if health["reachable"]:
+            logger.info(f"Analitica: ON -> {status['url']} (analyzer OK, env={status['env']})")
+        else:
+            logger.warning(
+                f"Analitica: ON -> {status['url']}, pero el analyzer no responde "
+                f"({health['detail']}). Los eventos se van a perder hasta que vuelva."
+            )
+
     yield
     # Limpieza
     ml_models.clear()
@@ -201,7 +225,11 @@ def read_root():
         "status": "online",
         "project": "SmartCart Argentina",
         "phase": "Fase 2: Motor de Similitud y Búsqueda Semántica",
-        "model_loaded": "model" in ml_models
+        "model_loaded": "model" in ml_models,
+        # Config, no ping: chequear el estado con un curl no puede costar una
+        # llamada de red por request. Para saber si el analyzer está VIVO están
+        # la línea "Analitica:" del arranque y su propio GET /health.
+        "analytics": analytics_status(),
     }
 
 def _build_store_offer(sp: dict) -> dict:

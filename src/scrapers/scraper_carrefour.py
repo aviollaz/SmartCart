@@ -1,4 +1,5 @@
 import httpx
+import logging
 import time
 import random
 
@@ -6,6 +7,8 @@ from src.category_tags import category_label, tags_for_category
 from src.database import SmartCartDB
 from src.dietary_parser import detect_dietary_flags
 from src.size_parser import extract_real_volume, normalize_magnitude
+
+logger = logging.getLogger(__name__)
 
 # Carrefour corre sobre VTEX IO igual que Día, así que se le pega a la misma
 # operación `productSearchV3` con persisted query. Se manda por POST con el JSON
@@ -113,12 +116,13 @@ class CarrefourScraper:
         try:
             response = self.client.post(GRAPHQL_URL, json=payload)
             if response.status_code != 200:
-                print(f"[CARREFOUR] Error {response.status_code} en la sección {from_idx}-{to_idx}")
+                logger.error("[CARREFOUR] Error %s en la sección %s-%s",
+                             response.status_code, from_idx, to_idx)
                 return None
 
             return response.json()
-        except Exception as e:
-            print(f"[CARREFOUR] Excepción en request POST: {e}")
+        except Exception:
+            logger.exception("[CARREFOUR] Excepción en request POST.")
             return None
 
     @staticmethod
@@ -142,13 +146,14 @@ class CarrefourScraper:
             mensajes = "; ".join(
                 str(err.get("message", err)) for err in errors if isinstance(err, dict)
             ) or str(errors)
-            print(f"[CARREFOUR] La API devolvió errores de GraphQL: {mensajes}")
-            print("[CARREFOUR] Suele significar que el sha256Hash de la persisted query cambió.")
+            logger.error("[CARREFOUR] La API devolvió errores de GraphQL: %s", mensajes)
+            logger.error("[CARREFOUR] Suele significar que el sha256Hash de la persisted query cambió.")
             return None
 
         data = response_json.get("data")
         if not isinstance(data, dict) or data.get("productSearch") is None:
-            print("[CARREFOUR] Respuesta sin 'data.productSearch': no es un resultado de búsqueda válido.")
+            logger.error("[CARREFOUR] Respuesta sin 'data.productSearch': "
+                         "no es un resultado de búsqueda válido.")
             return None
 
         return data["productSearch"]
@@ -289,22 +294,25 @@ class CarrefourScraper:
         taxonomy_label = category_label("carrefour", category_query)
 
         if not category_tags:
-            print(f"[CARREFOUR] Ojo: '{category_query}' no está en carrefour_categories.json (se guardará sin tags).")
+            logger.warning("[CARREFOUR] Ojo: '%s' no está en carrefour_categories.json "
+                           "(se guardará sin tags).", category_query)
 
         for page in range(MAX_PAGES):
-            print(f"[CARREFOUR] Recopilando {category_query} - Índices {from_idx} a {to_idx}...")
+            logger.info("[CARREFOUR] Recopilando %s - Índices %s a %s...",
+                        category_query, from_idx, to_idx)
             raw_data = self.scrape_category_slice(category_query, from_idx, to_idx)
             products = self.process_products(raw_data, category_tags, taxonomy_label)
 
             if not products:
-                print(f"[CARREFOUR] Final de la categoría '{category_query}' alcanzado.")
+                logger.info("[CARREFOUR] Final de la categoría '%s' alcanzado.", category_query)
                 break
 
             # Si el endpoint deja de respetar el `from` y repite la primera
             # página, cortamos acá en vez de acumular duplicados hasta MAX_PAGES.
             nuevos = [p for p in products if p["store_sku"] not in seen_skus]
             if not nuevos:
-                print(f"[CARREFOUR] La página {from_idx}-{to_idx} repite productos ya vistos; se corta.")
+                logger.warning("[CARREFOUR] La página %s-%s repite productos ya vistos; se corta.",
+                               from_idx, to_idx)
                 break
 
             seen_skus.update(p["store_sku"] for p in nuevos)
@@ -312,19 +320,27 @@ class CarrefourScraper:
 
             total_disponible = self.extract_search_payload(raw_data).get("recordsFiltered")
             if isinstance(total_disponible, int) and to_idx + 1 >= total_disponible:
-                print(f"[CARREFOUR] Se recorrieron los {total_disponible} productos de '{category_query}'.")
+                logger.info("[CARREFOUR] Se recorrieron los %s productos de '%s'.",
+                            total_disponible, category_query)
                 break
 
             from_idx += PAGE_SIZE
             to_idx += PAGE_SIZE
             time.sleep(random.uniform(1.5, 3.0))  # Delay para evitar bloqueos
         else:
-            print(f"[CARREFOUR] Se alcanzó el tope de {MAX_PAGES} páginas en '{category_query}'.")
+            logger.warning("[CARREFOUR] Se alcanzó el tope de %s páginas en '%s'.",
+                           MAX_PAGES, category_query)
 
         return all_category_products
 
 
 if __name__ == "__main__":
+    # Corriendo standalone nadie configuró el logging: sin esto, el progreso del
+    # scrapeo (que ahora va por logger) no se ve. Bajo el orquestador este bloque
+    # no corre y manda su configuración, que además escribe a archivo.
+    logging.basicConfig(level=logging.INFO,
+                        format="%(asctime)s [%(levelname)s] %(message)s")
+
     scraper = CarrefourScraper()
     db = SmartCartDB()
 

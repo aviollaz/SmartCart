@@ -7,6 +7,13 @@ __pycache__/
 .venv/
 venv/
 env/
+# El venv de Linux que usa el pipeline de cron, aparte del de Windows: los
+# binarios no son intercambiables.
+.venv-linux/
+
+# Logs del pipeline de scraping (ops/run_pipeline.sh)
+logs/
+*.log
 
 # Variables de entorno y secretos
 .env

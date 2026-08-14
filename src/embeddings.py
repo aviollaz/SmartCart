@@ -72,19 +72,29 @@ class EmbeddingPipeline:
             logger.error(f"Error al buscar productos pendientes: {e}")
             return []
 
-    def generate_and_save_embeddings(self, batch_size: int = 64):
+    def generate_and_save_embeddings(self, batch_size: int = 64) -> dict:
         """
         Genera los embeddings para todos los productos pendientes y los persiste por lotes (batches).
+
+        Devuelve {'pending', 'embedded', 'batches_ok', 'batches_failed'}. Los
+        errores por lote se siguen tolerando (un lote caído no aborta el resto),
+        pero ahora se cuentan: sin ese número, "no había nada pendiente" y
+        "fallaron los doce lotes" se ven exactamente igual desde afuera, y el
+        síntoma —productos en la base que GET /search no encuentra— aparece
+        recién días después.
         """
+        stats = {"pending": 0, "embedded": 0, "batches_ok": 0, "batches_failed": 0}
+
         # Primero aseguramos extensión e índice
         self.ensure_vector_extension_and_index()
 
         pending_products = self.get_products_pending_embeddings()
         if not pending_products:
             logger.info("No hay productos pendientes para generar embeddings.")
-            return
+            return stats
 
         total_products = len(pending_products)
+        stats["pending"] = total_products
         logger.info(f"Comenzando procesamiento de {total_products} productos en lotes de {batch_size}...")
 
         for i in range(0, total_products, batch_size):
@@ -123,13 +133,20 @@ class EmbeddingPipeline:
                         """, update_data)
                     conn.commit()
                 
+                stats["batches_ok"] += 1
+                stats["embedded"] += len(batch)
                 logger.info(f"Lote {i // batch_size + 1} guardado correctamente ({len(batch)} productos).")
             except Exception as e:
+                stats["batches_failed"] += 1
                 logger.error(f"Error procesando lote {i // batch_size + 1}: {e}")
                 logger.info("Intentando continuar con el siguiente lote para tolerancia a fallos...")
                 time.sleep(1)
 
-        logger.info("Pipeline de embeddings finalizado.")
+        logger.info(
+            "Pipeline de embeddings finalizado: %d/%d productos embebidos, %d lote(s) fallidos.",
+            stats["embedded"], stats["pending"], stats["batches_failed"],
+        )
+        return stats
 
 if __name__ == "__main__":
     pipeline = EmbeddingPipeline()

@@ -1,8 +1,15 @@
 # src/database.py
+import json
+import logging
+import os
+
 import psycopg
 from psycopg.rows import dict_row
-import json
+
 from src.promotion_parser import PromoTransformer
+
+logger = logging.getLogger(__name__)
+
 
 class SmartCartDB:
     # Diccionario de normalización (Mapea categorías crudas de los supers a las tuyas maestras)
@@ -25,8 +32,17 @@ class SmartCartDB:
         "Harinas comunes y leudantes": "Almacén"
     }
 
-    def __init__(self):
-        self.conn_string = "host=localhost port=5432 dbname=smartcart user=smartuser password=smartpassword"
+    # El docker-compose local. Sigue siendo el default para no romper nada de lo
+    # existente: todo el backend instancia SmartCartDB() sin argumentos.
+    DEFAULT_CONN_STRING = (
+        "host=localhost port=5432 dbname=smartcart user=smartuser password=smartpassword"
+    )
+
+    def __init__(self, conn_string: str | None = None):
+        # DATABASE_URL existe para que el pipeline desatendido pueda apuntar a otra
+        # instancia sin tocar código. Se lee acá y no a nivel módulo porque
+        # `load_dotenv()` corre en el entry point, después de importar.
+        self.conn_string = conn_string or os.getenv("DATABASE_URL") or self.DEFAULT_CONN_STRING
         self._schema_ready = False
 
     def _ensure_schema(self, conn):
@@ -66,11 +82,25 @@ class SmartCartDB:
 
         self._schema_ready = True
 
-    def save_store_products(self, products: list, store_id: str):
-        if not products:
-            return
+    def save_store_products(self, products: list, store_id: str) -> int:
+        """
+        Persiste el lote de una categoría y devuelve cuántas filas se guardaron.
 
-        print(f"[DB] Estandarizando y guardando {len(products)} productos en '{store_id}'...")
+        LEVANTA si la escritura falla, a diferencia de la versión anterior que
+        imprimía el error y devolvía normalmente. Ese `except` no salvaba ningún
+        dato —psycopg3 envuelve todo el lote en una transacción, así que un error a
+        mitad de camino ya revertía la categoría entera— pero sí escondía la
+        pérdida: con Postgres caído el scrapeo reportaba éxito con cero filas
+        escritas y después podaba contra un `seen_skus` que nunca aterrizó.
+
+        El llamador decide qué hacer con la excepción; el orquestador la usa para
+        marcar la categoría como fallida, bloquear el pruning de esa tienda y
+        registrar el error real en la telemetría.
+        """
+        if not products:
+            return 0
+
+        logger.info("Estandarizando y guardando %d productos en '%s'...", len(products), store_id)
         try:
             with psycopg.connect(self.conn_string) as conn:
                 self._ensure_schema(conn)
@@ -182,10 +212,13 @@ class SmartCartDB:
                             json.dumps(standardized_promos),
                             prod.get('image_url')  # <-- Guardamos la URL de la imagen extraída del scraper
                         ))
-            print("[DB] Guardado exitoso.")
-        except Exception as e:
-            print(f"[DB] Error: {e}")
-    
+            logger.info("Guardado exitoso: %d filas en '%s'.", len(products), store_id)
+            return len(products)
+        except Exception:
+            logger.exception("Error guardando %d productos en '%s'.", len(products), store_id)
+            raise
+
+
     # Fracción de las filas de una tienda que un pruning puede borrar antes de
     # considerarse sospechoso. Un catálogo real se mueve de a poco; perder un
     # tercio de golpe es la firma de un scrapeo roto, no de productos discontinuados.
@@ -218,7 +251,7 @@ class SmartCartDB:
 
         if not seen_skus:
             resultado.update(skipped=True, reason="el scrapeo no devolvió ningún SKU")
-            print(f"[DB] Pruning de '{store_id}' omitido: {resultado['reason']}.")
+            logger.warning("Pruning de '%s' omitido: %s.", store_id, resultado["reason"])
             return resultado
 
         try:
@@ -239,7 +272,7 @@ class SmartCartDB:
                     obsoletas = cur.fetchone()[0]
 
                     if obsoletas == 0:
-                        print(f"[DB] Pruning de '{store_id}': no hay filas obsoletas.")
+                        logger.info("Pruning de '%s': no hay filas obsoletas.", store_id)
                         return resultado
 
                     if total and (obsoletas / total) > self.MAX_PRUNE_RATIO:
@@ -249,8 +282,11 @@ class SmartCartDB:
                                     f"({obsoletas / total:.0%}), por encima del "
                                     f"{self.MAX_PRUNE_RATIO:.0%} permitido"),
                         )
-                        print(f"[DB] ATENCIÓN: pruning de '{store_id}' abortado: "
-                              f"{resultado['reason']}. Revisá el scraper antes de insistir.")
+                        logger.error(
+                            "ATENCIÓN: pruning de '%s' abortado: %s. "
+                            "Revisá el scraper antes de insistir.",
+                            store_id, resultado["reason"],
+                        )
                         return resultado
 
                     cur.execute(
@@ -283,17 +319,24 @@ class SmartCartDB:
                     # el dry-run mienta el día que alguien cambie una de las dos.
                     if dry_run:
                         conn.rollback()
-                        print(f"[DB] Pruning de '{store_id}' (dry-run): borraría "
-                              f"{resultado['deleted']} de {total} filas y "
-                              f"{resultado['orphans']} productos sin ofertas.")
+                        logger.info(
+                            "Pruning de '%s' (dry-run): borraría %d de %d filas y "
+                            "%d productos sin ofertas.",
+                            store_id, resultado["deleted"], total, resultado["orphans"],
+                        )
                         return resultado
 
-            print(f"[DB] Pruning de '{store_id}': {resultado['deleted']} filas obsoletas "
-                  f"borradas, {resultado['orphans']} productos sin ofertas eliminados.")
+            logger.info(
+                "Pruning de '%s': %d filas obsoletas borradas, "
+                "%d productos sin ofertas eliminados.",
+                store_id, resultado["deleted"], resultado["orphans"],
+            )
         except Exception as e:
-            # Mismo criterio que save_store_products: no tumbar el scrapeo por
-            # esto. Quedarse con filas de más es degradado, no roto.
-            print(f"[DB] Error en el pruning de '{store_id}': {e}")
+            # Acá SÍ se atrapa, a diferencia de save_store_products: quedarse con
+            # filas de más deja la base degradada, no rota, y no vale tumbar por eso
+            # un scrapeo que ya terminó bien. El motivo viaja en `reason` y el
+            # orquestador lo registra en la telemetría como PARTIAL.
+            logger.exception("Error en el pruning de '%s'.", store_id)
             resultado.update(skipped=True, reason=str(e))
 
         return resultado
@@ -323,6 +366,6 @@ class SmartCartDB:
                 with conn.cursor() as cur:
                     cur.execute(query, (unified_ids,))
                     return cur.fetchall()
-        except Exception as e:
-            print(f"[DB] Error al recuperar precios para el carrito: {e}")
+        except Exception:
+            logger.exception("Error al recuperar precios para el carrito.")
             return []

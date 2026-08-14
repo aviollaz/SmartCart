@@ -1,4 +1,5 @@
 import httpx
+import logging
 import re
 import time
 import random
@@ -6,6 +7,8 @@ import random
 from src.category_tags import category_label, tags_for_category
 from src.dietary_parser import detect_dietary_flags
 from src.size_parser import extract_real_volume, normalize_magnitude
+
+logger = logging.getLogger(__name__)
 
 
 # Categorías del MVP. El catálogo es deliberadamente angosto; ampliar esta
@@ -94,13 +97,14 @@ class CotoScraper:
                 f"&origin_referrer=/sitios/cdigi/productos/categorias/{category_id}"
             )
             
-            print(f"[COTO] Extrayendo {category_id} - Página {page}...")
+            logger.info("[COTO] Extrayendo %s - Página %s...", category_id, page)
             
             try:
                 response = self.client.get(url)
                 
                 if response.status_code != 200:
-                    print(f"[COTO] Error {response.status_code} al intentar acceder a la página {page}. Frenando.")
+                    logger.error("[COTO] Error %s al intentar acceder a la página %s. Frenando.",
+                                 response.status_code, page)
                     break
                     
                 data = response.json()
@@ -119,7 +123,7 @@ class CotoScraper:
                 results = data.get("response", {}).get("results", [])
                 
                 if not results:
-                    print(f"[COTO] Final de la categoría {category_id} alcanzado.")
+                    logger.info("[COTO] Final de la categoría %s alcanzado.", category_id)
                     break
                 
                 for item in results:
@@ -190,14 +194,20 @@ class CotoScraper:
                 time.sleep(random.uniform(1.5, 3.0))
                 page += 1
                 
-            except Exception as e:
-                print(f"[COTO] Ocurrió una excepción en la página {page}: {e}")
+            except Exception:
+                logger.exception("[COTO] Ocurrió una excepción en la página %s.", page)
                 break
                 
         return all_products
 
 if __name__ == "__main__":
     from src.database import SmartCartDB
+
+    # Corriendo standalone nadie configuró el logging: sin esto, el progreso del
+    # scrapeo (que ahora va por logger) no se ve. Bajo el orquestador este bloque
+    # no corre y manda su configuración, que además escribe a archivo.
+    logging.basicConfig(level=logging.INFO,
+                        format="%(asctime)s [%(levelname)s] %(message)s")
 
     scraper = CotoScraper()
     db = SmartCartDB()

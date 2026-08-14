@@ -1,5 +1,9 @@
 # src/transformers.py
+import logging
 import re
+
+logger = logging.getLogger(__name__)
+
 
 class PromoTransformer:
     @staticmethod
@@ -172,7 +176,7 @@ class PromoTransformer:
                 })
             elif name and name not in PromoTransformer._teasers_desconocidos:
                 PromoTransformer._teasers_desconocidos.add(name)
-                print(f"[PROMOS/{prefix}] Teaser sin regla, ignorado: {teaser.get('name')!r}")
+                logger.debug("[PROMOS/%s] Teaser sin regla, ignorado: %r", prefix, teaser.get("name"))
 
         return base_price, parsed_promos
 

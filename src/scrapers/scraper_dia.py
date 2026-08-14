@@ -1,4 +1,5 @@
 import httpx
+import logging
 import time
 import random
 
@@ -6,6 +7,8 @@ from src.category_tags import category_label, tags_for_category
 from src.database import SmartCartDB
 from src.dietary_parser import detect_dietary_flags
 from src.size_parser import extract_real_volume, normalize_magnitude
+
+logger = logging.getLogger(__name__)
 
 # Categorías del MVP. El catálogo es deliberadamente angosto; ampliar esta
 # lista es la forma de scrapear más góndolas (los slugs salen de dia_categories.json).
@@ -67,10 +70,11 @@ class DiaScraper:
             if response.status_code == 200:
                 return response.json()
             else:
-                print(f"[DÍA] Error {response.status_code} en la sección {from_idx}-{to_idx}")
+                logger.error("[DÍA] Error %s en la sección %s-%s",
+                             response.status_code, from_idx, to_idx)
                 return None
-        except Exception as e:
-            print(f"[DÍA] Excepción en request POST: {e}")
+        except Exception:
+            logger.exception("[DÍA] Excepción en request POST.")
             return None
 
     def process_products(self, response_json, category_tags: list[str] | None = None, taxonomy_label: str | None = None):
@@ -219,12 +223,12 @@ class DiaScraper:
         taxonomy_label = category_label("dia", category_query)
 
         while True:
-            print(f"[DÍA] Recopilando {category_query} - Índices {from_idx} a {to_idx}...")
+            logger.info("[DÍA] Recopilando %s - Índices %s a %s...", category_query, from_idx, to_idx)
             raw_data = self.scrape_category_slice(category_query, from_idx, to_idx)
             products = self.process_products(raw_data, category_tags, taxonomy_label)
 
             if not products:
-                print(f"[DÍA] Final de la categoría '{category_query}' alcanzado.")
+                logger.info("[DÍA] Final de la categoría '%s' alcanzado.", category_query)
                 break
 
             all_category_products.extend(products)
@@ -236,6 +240,12 @@ class DiaScraper:
         return all_category_products
 
 if __name__ == "__main__":
+    # Corriendo standalone nadie configuró el logging: sin esto, el progreso del
+    # scrapeo (que ahora va por logger) no se ve. Bajo el orquestador este bloque
+    # no corre y manda su configuración, que además escribe a archivo.
+    logging.basicConfig(level=logging.INFO,
+                        format="%(asctime)s [%(levelname)s] %(message)s")
+
     scraper = DiaScraper()
     db = SmartCartDB()
     

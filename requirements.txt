@@ -7,6 +7,10 @@ fastapi
 uvicorn[standard]
 pytest
 ortools
+# La config de la analítica (ANALYTICS_*) sale de un .env, no del shell: ver
+# src/analytics.py. Venía instalado de arrastre por uvicorn[standard], y de eso
+# no se puede depender — un `pip install` que resuelva distinto lo deja afuera.
+python-dotenv
 # Sólo lo usan los scrapers de promociones bancarias de Día y Carrefour, que
 # renderizan su grilla en el cliente (ver src/promotions/playwright_base.py).
 # Requiere bajar el navegador aparte: python -m playwright install chromium

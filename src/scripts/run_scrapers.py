@@ -8,6 +8,11 @@ Uso:
     python -m src.scripts.run_scrapers --prune-dry-run  # ver qué se borraría
     python -m src.scripts.run_scrapers --no-prune       # no borrar nada
 
+Este es el CLI *interactivo*, para desarrollo. El camino desatendido (cron) es
+`src/scripts/orchestrator.py`, que reusa los runners de este módulo y le agrega
+logging a archivo, telemetría en Postgres, lockfile y timeout. La lógica de
+recorrido vive acá y en un solo lugar: el orquestador no la duplica.
+
 Al terminar cada tienda se borran sus filas obsoletas: las de productos que la
 tienda ya no ofrece. Sin eso quedan para siempre con `in_stock = TRUE` y el
 optimizador las sigue cotizando. Sólo se poda una tienda que terminó su recorrido
@@ -22,68 +27,136 @@ para no cargar el modelo tres veces.
 Requiere Postgres arriba (docker-compose up -d).
 """
 import argparse
+import logging
 import sys
 import time
-import traceback
+from dataclasses import dataclass, field
+from typing import Callable, Iterable
 
 from src.database import SmartCartDB
 from src.scrapers import scraper_carrefour, scraper_coto, scraper_dia
 
+logger = logging.getLogger(__name__)
 
-def _run_store(db, store_id, label, categories, scrape, pause) -> tuple[int, set]:
-    """
-    Recorre las categorías de una tienda y devuelve (productos, SKUs vistos).
 
-    El set de SKUs es lo que después habilita el pruning, y por eso se arma acá y
-    no dentro de `save_store_products`: sólo tiene sentido como el universo de un
-    recorrido COMPLETO. Si esta función levanta a mitad de camino, el llamador se
-    queda sin el set y no poda, que es lo correcto — con un recorrido parcial todo
-    lo que faltó ver parece discontinuado.
+@dataclass
+class StoreRunResult:
     """
-    total = 0
-    seen_skus = set()
+    Lo que dejó el recorrido de una tienda.
+
+    Existe porque el orquestador necesita distinguir tres desenlaces que la vieja
+    tupla `(int, set)` no podía expresar: todo bien, algo se perdió pero el resto
+    sirve, y no se pudo hacer nada. Sin esa distinción la telemetría sólo puede
+    decir "corrió" o "explotó", que es justo lo que no ayuda a las 3 de la mañana.
+    """
+    store: str                              # "coto"
+    store_id: str                           # "coto_online"
+    items_scraped: int = 0                  # filas efectivamente persistidas
+    seen_skus: set = field(default_factory=set)
+    categories_total: int = 0
+    categories_ok: int = 0
+    categories_failed: int = 0
+    errors: list = field(default_factory=list)
+
+    @property
+    def complete(self) -> bool:
+        """
+        Si el barrido cubrió TODAS las categorías. Es lo único que habilita el pruning.
+
+        Con un recorrido parcial, todo lo que no se llegó a ver es indistinguible
+        de lo discontinuado, y podar sobre eso borra catálogo vivo.
+        """
+        return self.categories_total > 0 and self.categories_failed == 0
+
+    @property
+    def first_error(self) -> str | None:
+        return self.errors[0] if self.errors else None
+
+
+def _run_store(
+    db: SmartCartDB,
+    store: str,
+    store_id: str,
+    label: str,
+    categories: Iterable[str],
+    scrape: Callable[[str], list],
+    pause: float,
+) -> StoreRunResult:
+    """
+    Recorre las categorías de una tienda y devuelve qué pasó con cada una.
+
+    La caída de UNA categoría no aborta la tienda: se loguea, se cuenta como
+    fallida y se sigue con la siguiente. Rescatar las categorías que sí anduvieron
+    vale la pena — pero el `complete` que sale de acá queda en False, así que esa
+    tienda no se poda. Ese es el punto: tolerar el fallo sin dejar que contamine la
+    decisión de borrar.
+
+    El set de SKUs se arma acá y no dentro de `save_store_products` porque sólo
+    tiene sentido como el universo de un recorrido COMPLETO.
+    """
+    categories = list(categories)
+    result = StoreRunResult(store=store, store_id=store_id, categories_total=len(categories))
 
     for category in categories:
-        print(f"\n=== [{label}] {category} ===")
-        products = scrape(category)
+        logger.info("[%s] categoría '%s'", label, category)
+        try:
+            products = scrape(category)
 
-        if products:
-            db.save_store_products(products, store_id)
-            total += len(products)
-            seen_skus.update(p["store_sku"] for p in products if p.get("store_sku"))
+            if products:
+                saved = db.save_store_products(products, store_id)
+                result.items_scraped += saved
+                result.seen_skus.update(p["store_sku"] for p in products if p.get("store_sku"))
+            else:
+                logger.warning("[%s] categoría '%s' no devolvió productos.", label, category)
+
+            result.categories_ok += 1
+        except Exception as exc:
+            # Un 500 de la tienda, un hash de persisted query rotado o Postgres
+            # caído a mitad del barrido. Ninguno de los tres justifica perder las
+            # categorías que ya entraron.
+            result.categories_failed += 1
+            result.errors.append(f"{category}: {type(exc).__name__}: {exc}")
+            logger.exception("[%s] falló la categoría '%s'.", label, category)
 
         time.sleep(pause)
 
-    return total, seen_skus
+    return result
 
 
-def run_coto(db: SmartCartDB) -> tuple[int, set]:
+def run_coto(db: SmartCartDB) -> StoreRunResult:
     scraper = scraper_coto.CotoScraper()
-    return _run_store(db, "coto_online", "COTO", scraper_coto.MVP_CATEGORIES,
+    return _run_store(db, "coto", "coto_online", "COTO", scraper_coto.MVP_CATEGORIES,
                       scraper.scrape_category, 2.0)
 
 
-def run_dia(db: SmartCartDB) -> tuple[int, set]:
+def run_dia(db: SmartCartDB) -> StoreRunResult:
     scraper = scraper_dia.DiaScraper()
-    return _run_store(db, "dia_online", "DÍA", scraper_dia.MVP_CATEGORIES,
+    return _run_store(db, "dia", "dia_online", "DÍA", scraper_dia.MVP_CATEGORIES,
                       scraper.scrape_entire_category, 3.5)
 
 
-def run_carrefour(db: SmartCartDB) -> tuple[int, set]:
+def run_carrefour(db: SmartCartDB) -> StoreRunResult:
     scraper = scraper_carrefour.CarrefourScraper()
-    return _run_store(db, "carrefour_online", "CARREFOUR", scraper_carrefour.MVP_CATEGORIES,
-                      scraper.scrape_entire_category, 3.5)
+    return _run_store(db, "carrefour", "carrefour_online", "CARREFOUR",
+                      scraper_carrefour.MVP_CATEGORIES, scraper.scrape_entire_category, 3.5)
 
 
-def main():
-    # El scrapeo tarda varios minutos; sin esto Python bufferea la salida al
-    # redirigirla a un archivo o un pipe y no se ve el progreso hasta el final.
-    sys.stdout.reconfigure(line_buffering=True)
+# A nivel módulo y no dentro de main(): el orquestador lo importa para armar su
+# propio bucle con telemetría en vez de re-declarar la lista de tiendas. Sumar una
+# tienda es una entrada acá, no dos listas que se desincronizan.
+STORE_RUNNERS: dict[str, tuple[Callable[[SmartCartDB], StoreRunResult], str]] = {
+    "coto": (run_coto, "coto_online"),
+    "dia": (run_dia, "dia_online"),
+    "carrefour": (run_carrefour, "carrefour_online"),
+}
 
-    parser = argparse.ArgumentParser(description="Corre los scrapers de SmartCart.")
+
+def build_arg_parser(description: str = "Corre los scrapers de SmartCart.") -> argparse.ArgumentParser:
+    """Los flags que comparten este CLI y el orquestador, definidos una sola vez."""
+    parser = argparse.ArgumentParser(description=description)
     parser.add_argument(
         "--store",
-        choices=["coto", "dia", "carrefour", "all"],
+        choices=[*STORE_RUNNERS, "all"],
         default="all",
         help="Qué tienda scrapear (default: all).",
     )
@@ -102,55 +175,72 @@ def main():
         action="store_true",
         help="Informar cuántas filas obsoletas se borrarían, sin borrarlas.",
     )
-    args = parser.parse_args()
+    return parser
+
+
+def main():
+    # El scrapeo tarda varios minutos; sin esto Python bufferea la salida al
+    # redirigirla a un archivo o un pipe y no se ve el progreso hasta el final.
+    sys.stdout.reconfigure(line_buffering=True)
+    logging.basicConfig(
+        level=logging.INFO,
+        format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
+        handlers=[logging.StreamHandler(sys.stdout)],
+    )
+    logging.getLogger("httpx").setLevel(logging.WARNING)
+
+    args = build_arg_parser().parse_args()
 
     db = SmartCartDB()
-    runners = {
-        "coto": (run_coto, "coto_online"),
-        "dia": (run_dia, "dia_online"),
-        "carrefour": (run_carrefour, "carrefour_online"),
-    }
-    selected = list(runners) if args.store == "all" else [args.store]
+    selected = list(STORE_RUNNERS) if args.store == "all" else [args.store]
 
     started = time.time()
-    totals = {}
-    pruned = {}
+    results: dict[str, StoreRunResult | None] = {}
+    pruned: dict[str, dict] = {}
 
     for store in selected:
-        runner, store_id = runners[store]
+        runner, store_id = STORE_RUNNERS[store]
         try:
-            totals[store], seen_skus = runner(db)
+            result = results[store] = runner(db)
         except Exception:
-            # Una tienda caída no debe tirar abajo el scrapeo de la otra.
-            print(f"\n[ERROR] Falló el scrapeo de '{store}':")
-            traceback.print_exc()
-            totals[store] = None
-            # Sin pruning: el recorrido quedó incompleto y lo que no se llegó a
-            # ver es indistinguible de lo discontinuado.
+            # `_run_store` ya tolera el fallo de una categoría, así que llegar acá
+            # significa algo estructural (construir el scraper, por ejemplo).
+            logger.exception("Falló el scrapeo de '%s'.", store)
+            results[store] = None
             continue
 
-        if not args.no_prune:
-            print(f"\n=== [PRUNING] {store} ===")
-            pruned[store] = db.prune_missing_store_products(
-                store_id, seen_skus, dry_run=args.prune_dry_run
+        if args.no_prune:
+            continue
+        if not result.complete:
+            logger.warning(
+                "Pruning de '%s' omitido: el barrido quedó incompleto (%d/%d categorías).",
+                store, result.categories_ok, result.categories_total,
             )
+            continue
+
+        pruned[store] = db.prune_missing_store_products(
+            result.store_id, result.seen_skus, dry_run=args.prune_dry_run
+        )
 
     if not args.skip_embeddings:
-        print("\n=== EMBEDDINGS ===")
         try:
             # Import diferido: carga sentence-transformers, que es lento.
             from src.embeddings import EmbeddingPipeline
 
             EmbeddingPipeline().generate_and_save_embeddings()
         except Exception:
-            print("\n[ERROR] Falló la generación de embeddings:")
-            traceback.print_exc()
+            logger.exception("Falló la generación de embeddings.")
 
     print("\n" + "=" * 60)
     print("RESUMEN")
     print("=" * 60)
-    for store, count in totals.items():
-        linea = f"  {store:6} -> {'FALLÓ' if count is None else f'{count} productos'}"
+    for store, result in results.items():
+        if result is None:
+            linea = f"  {store:10} -> FALLÓ"
+        else:
+            linea = f"  {store:10} -> {result.items_scraped} productos"
+            if result.categories_failed:
+                linea += f"  | {result.categories_failed}/{result.categories_total} categorías fallidas"
         p = pruned.get(store)
         if p:
             if p["skipped"]:
@@ -161,8 +251,10 @@ def main():
     print(f"  tiempo -> {time.time() - started:.0f}s")
     print("=" * 60)
 
-    # Exit code distinto de 0 si alguna tienda falló, para que sirva en CI.
-    return 1 if any(count is None for count in totals.values()) else 0
+    # Exit code distinto de 0 si alguna tienda falló entera o en parte, para que
+    # sirva en CI. El orquestador tiene su propia tabla de exit codes, más fina.
+    fallo = any(r is None or r.categories_failed for r in results.values())
+    return 1 if fallo else 0
 
 
 if __name__ == "__main__":
