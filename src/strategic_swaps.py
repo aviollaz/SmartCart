@@ -41,39 +41,27 @@ import logging
 
 from dataclasses import dataclass, field, asdict
 
-from src.category_tags import same_aisle_filter
 from src.flattener import flatten_cart_prices
 from src.optimizer import optimize_cart
-from src.size_parser import extract_pack_count
+from src.substitutions import (
+    comparable_candidates,
+    fetch_product_rows,
+    format_size,
+    weight_of,
+)
 
 logger = logging.getLogger(__name__)
-
-# Cuántos vecinos semánticos se traen por ancla antes de filtrar. Los filtros de
-# comparabilidad descartan bastante, así que pedir uno solo dejaría anclas sin
-# reemplazo por un candidato de tamaño incompatible que igual no íbamos a usar.
-CANDIDATES_PER_ANCHOR = 5
 
 # Tope de productos a cambiar en una sugerencia. Una alerta que pide cambiar
 # quince productos no es una recomendación, es un carrito nuevo: el usuario no la
 # va a aplicar y el ruido le resta credibilidad a las que sí valen la pena.
 MAX_ANCHOR_SWAPS = 8
 
-# Banda de tamaño aceptable para un reemplazo, relativa al original. Sin esto la
-# heurística "ahorra" achicando el carrito: cambiar 1L por 500ml sale más barato
-# y no es el mismo mandado.
-MIN_WEIGHT_RATIO = 0.5
-MAX_WEIGHT_RATIO = 2.0
-
 # Umbral para emitir la sugerencia. Es relativo al total porque lo que hace que
 # valga la pena molestar al usuario escala con el carrito, con un piso absoluto
 # para que en un carrito chico un 3% no habilite un ahorro trivial.
 MIN_SAVINGS_PCT = 0.03
 MIN_SAVINGS_ABS = 500.0
-
-# Fallback de src/size_parser.py cuando no pudo parsear el tamaño del nombre.
-# No significa "pesa 1", significa "no sé cuánto pesa".
-_UNKNOWN_UNIT = "un"
-_UNKNOWN_WEIGHT = 1.0
 
 
 @dataclass
@@ -98,60 +86,6 @@ class StrategicSwapSuggestion:
         return asdict(self)
 
 
-def _weight_of(row: dict) -> tuple[float, str]:
-    """Peso y unidad de una fila de unified_products, con el fallback del parser."""
-    raw_weight = row.get("total_volume_weight")
-    weight = float(raw_weight) if raw_weight else _UNKNOWN_WEIGHT
-    return weight, (row.get("unit_type") or _UNKNOWN_UNIT)
-
-
-def _is_comparable(orig: tuple[float, str], cand: tuple[float, str]) -> bool:
-    """
-    ¿Son dos presentaciones del mismo tipo de producto, en tamaños intercambiables?
-
-    Gatea por comparabilidad, no por precio: el costo que después entra en la
-    simulación es el real del reemplazo, no uno prorrateado por peso. La
-    proporción sirve para decidir si el cambio es honesto, no para inventar un
-    precio que el usuario no va a pagar.
-    """
-    orig_weight, orig_unit = orig
-    cand_weight, cand_unit = cand
-
-    # g y ml son intercambiables (misma regla que las sugerencias de api.py): el
-    # parser normaliza kg->g y l->ml, y un yogur puede venir declarado en
-    # cualquiera de las dos según la tienda.
-    units_ok = orig_unit == cand_unit or (orig_unit in ("g", "ml") and cand_unit in ("g", "ml"))
-    if not units_ok:
-        return False
-
-    # Si alguno de los dos no tiene tamaño parseado, su peso es un 1.0 sintético.
-    # Compararlo contra un peso real da una proporción inventada, así que en ese
-    # caso sólo se exige que ambos sean "por unidad" y se saltea el ratio: dos
-    # productos vendidos por unidad ya son comparables sin saber cuánto pesan.
-    if orig_unit == _UNKNOWN_UNIT or cand_unit == _UNKNOWN_UNIT:
-        return orig_unit == _UNKNOWN_UNIT and cand_unit == _UNKNOWN_UNIT
-
-    if orig_weight <= 0:
-        return False
-
-    return MIN_WEIGHT_RATIO <= (cand_weight / orig_weight) <= MAX_WEIGHT_RATIO
-
-
-def _format_size(weight: float, unit: str) -> str:
-    """Tamaño legible para la UI: 1000 g -> '1 Kg', 1500 ml -> '1.5 L'."""
-    if unit == _UNKNOWN_UNIT:
-        return "1 unidad"
-
-    display_weight, display_unit = weight, unit
-    if unit == "g" and weight >= 1000:
-        display_weight, display_unit = weight / 1000, "Kg"
-    elif unit == "ml" and weight >= 1000:
-        display_weight, display_unit = weight / 1000, "L"
-
-    rendered = f"{display_weight:g}"
-    return f"{rendered} {display_unit}"
-
-
 def _find_anchor_uids(store, store_products, flat_prices, excluded_stores):
     """
     Productos asignados a `store` que no se consiguen en ninguna otra tienda
@@ -172,71 +106,17 @@ def _find_anchor_uids(store, store_products, flat_prices, excluded_stores):
     return anchors
 
 
-def _fetch_anchor_rows(cur, anchor_uids):
-    """Nombre, tamaño y datos de góndola de cada ancla, en una sola query."""
-    cur.execute(
-        """
-        SELECT id, name, category, tags, total_volume_weight, unit_type, name_embedding
-        FROM unified_products
-        WHERE id = ANY(%s)
-        """,
-        (list(anchor_uids),),
-    )
-    return {row["id"]: row for row in cur.fetchall()}
-
-
-def _fetch_candidates(cur, anchor_row, target_stores):
-    """
-    Vecinos semánticos del ancla que estén en stock en alguna tienda distinta de
-    la que se quiere cerrar.
-
-    Reusa el patrón de las sugerencias de api.py: lee el `name_embedding` ya
-    guardado del ancla y lo manda como parámetro. No toca el SentenceTransformer,
-    así que esto no carga ni usa el modelo.
-
-    El DISTINCT ON evita que un producto vendido por dos tiendas ocupe dos lugares
-    del LIMIT y nos deje con menos candidatos reales de los que pedimos.
-    """
-    aisle_clause, aisle_param = same_aisle_filter(anchor_row, alias="u")
-
-    cur.execute(
-        f"""
-        SELECT * FROM (
-            SELECT DISTINCT ON (u.id)
-                   u.id, u.name, u.total_volume_weight, u.unit_type,
-                   u.name_embedding <=> %s AS distance
-            FROM unified_products u
-            JOIN store_products sp ON u.id = sp.unified_product_id
-            WHERE sp.store_id = ANY(%s)
-              AND sp.in_stock = TRUE
-              AND u.name_embedding IS NOT NULL
-              AND u.id != %s
-              {aisle_clause}
-            ORDER BY u.id, distance ASC
-        ) AS vecinos
-        ORDER BY distance ASC
-        LIMIT %s
-        """,
-        (
-            anchor_row["name_embedding"],
-            list(target_stores),
-            anchor_row["id"],
-            aisle_param,
-            CANDIDATES_PER_ANCHOR,
-        ),
-    )
-    return cur.fetchall()
-
-
 def _collect_candidates(cur, anchor_rows, target_stores, cart_uids):
     """
     Candidatos comparables por ancla: misma góndola, mismo formato de pack,
     unidad compatible y tamaño dentro de la banda.
 
-    Descarta los que ya están en el carrito. Un UID repetido rompe la simulación
-    de forma silenciosa: `flatten_cart_prices` arma su `quantity_map` con el
-    último que ve y `optimize_cart` resuelve la cantidad con el primero, así que
-    el costo simulado terminaría sin corresponder a ningún carrito real.
+    Los cuatro criterios viven en src/substitutions.py, compartidos con las
+    sugerencias de api.py. Acá sólo queda el descarte de los que ya están en el
+    carrito, que es propio de esta heurística: un UID repetido rompe la
+    simulación en silencio, porque `flatten_cart_prices` arma su `quantity_map`
+    con el último que ve y `optimize_cart` resuelve la cantidad con el primero,
+    así que el costo simulado no correspondería a ningún carrito real.
     """
     per_anchor = {}
 
@@ -244,31 +124,7 @@ def _collect_candidates(cur, anchor_rows, target_stores, cart_uids):
         if not anchor_row.get("name_embedding"):
             continue
 
-        anchor_size = _weight_of(anchor_row)
-        anchor_pack = extract_pack_count(anchor_row["name"])
-        viables = []
-
-        for cand in _fetch_candidates(cur, anchor_row, target_stores):
-            if cand["id"] in cart_uids:
-                continue
-            # Un pack de 6 y una unidad suelta no son el mismo producto por más
-            # que el gramaje del nombre entre en la banda: el tamaño que guarda
-            # la base es el que figura en el nombre, y en los packs ese número
-            # tanto puede ser el total como el de cada unidad (ver
-            # extract_pack_count). Exigir el mismo formato evita ofrecerle al
-            # usuario un alfajor a cambio de una caja de seis.
-            if extract_pack_count(cand["name"]) != anchor_pack:
-                continue
-            cand_size = _weight_of(cand)
-            if not _is_comparable(anchor_size, cand_size):
-                continue
-            viables.append({
-                "uid": cand["id"],
-                "name": cand["name"],
-                "weight": cand_size[0],
-                "unit": cand_size[1],
-            })
-
+        viables = comparable_candidates(cur, anchor_row, target_stores, exclude_uids=cart_uids)
         if viables:
             per_anchor[uid] = viables
 
@@ -325,7 +181,7 @@ def _resolve_swaps(closing_store, anchors, anchor_rows, candidates, prices_by_qt
 
     for uid in anchors:
         anchor_row = anchor_rows[uid]
-        anchor_weight, anchor_unit = _weight_of(anchor_row)
+        anchor_weight, anchor_unit = weight_of(anchor_row)
         qty = quantities[uid]
         priced_at_qty = prices_by_qty.get(qty, {})
         best = None
@@ -358,12 +214,12 @@ def _resolve_swaps(closing_store, anchors, anchor_rows, candidates, prices_by_qt
             "original_uid": uid,
             "original_name": anchor_row["name"],
             "original_cost": round(original_cost, 2) if original_cost is not None else None,
-            "original_size": _format_size(anchor_weight, anchor_unit),
+            "original_size": format_size(anchor_weight, anchor_unit),
             "replacement_uid": cand["uid"],
             "replacement_name": cand["name"],
             "replacement_store": store,
             "replacement_cost": round(cost, 2),
-            "replacement_size": _format_size(cand["weight"], cand["unit"]),
+            "replacement_size": format_size(cand["weight"], cand["unit"]),
             "quantity": qty,
         })
 
@@ -501,7 +357,7 @@ def _find_strategic_swaps(*, result, cart_items, flat_prices, user_memberships, 
     # Paso 2: candidatos a reemplazo, con una query por ancla.
     cart_uids = set(quantities)
     all_anchor_uids = {uid for anchors in anchors_by_store.values() for uid in anchors}
-    anchor_rows = _fetch_anchor_rows(cur, all_anchor_uids)
+    anchor_rows = fetch_product_rows(cur, all_anchor_uids)
 
     candidates_by_store = {}
     for store, anchors in anchors_by_store.items():

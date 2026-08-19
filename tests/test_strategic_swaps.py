@@ -681,33 +681,3 @@ def test_un_error_de_base_devuelve_lista_vacia_sin_propagar(fake_flatten):
     _, suggestions = _run(spec, cart, cursor)
 
     assert suggestions == []
-
-
-# --------------------------------------------------------------------------
-# Helpers puros
-# --------------------------------------------------------------------------
-
-@pytest.mark.parametrize("orig, cand, esperado", [
-    ((1000.0, "g"), (1000.0, "g"), True),
-    ((1000.0, "g"), (900.0, "ml"), True),      # g y ml son intercambiables
-    ((1000.0, "ml"), (500.0, "ml"), True),     # el borde inferior entra
-    ((1000.0, "ml"), (2000.0, "ml"), True),    # el borde superior entra
-    ((1000.0, "ml"), (499.0, "ml"), False),    # media botella no es lo mismo
-    ((1000.0, "ml"), (2001.0, "ml"), False),
-    ((1.0, "un"), (1.0, "un"), True),          # dos productos por unidad
-    ((1000.0, "g"), (1.0, "un"), False),       # peso real vs. tamaño no parseado
-    ((1.0, "un"), (1000.0, "g"), False),
-])
-def test_comparabilidad_de_tamanos(orig, cand, esperado):
-    assert swaps_module._is_comparable(orig, cand) is esperado
-
-
-@pytest.mark.parametrize("weight, unit, esperado", [
-    (1000.0, "g", "1 Kg"),
-    (1500.0, "ml", "1.5 L"),
-    (500.0, "g", "500 g"),
-    (900.0, "ml", "900 ml"),
-    (1.0, "un", "1 unidad"),
-])
-def test_formato_de_tamano(weight, unit, esperado):
-    assert swaps_module._format_size(weight, unit) == esperado

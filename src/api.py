@@ -17,12 +17,12 @@ from src.analytics import (
     send_cart_optimized_event,
 )
 from src.database import SmartCartDB
-from src.optimizer import optimize_cart, DEFAULT_DELIVERY_COSTS
+from src.optimizer import optimize_cart, DEFAULT_DELIVERY_COSTS, DEFAULT_MIN_SPEND_LIMITS
 from src.flattener import flatten_cart_prices, evaluate_best_promo, parse_promotions_json
 from src.category_tree import build_category_tree
-from src.category_tags import same_aisle_filter
 from src.coto_logistics import check_coverage, resolve_coto_logistics
 from src.strategic_swaps import find_strategic_swaps
+from src.substitutions import build_semantic_suggestions
 
 
 def _dietary_filter_clause(gluten_free: bool, vegan: bool, alias: str = "") -> str:
@@ -575,21 +575,7 @@ def optimize_shopping_cart(request: OptimizationRequest, background_tasks: Backg
                 db = SmartCartDB()
                 flat_prices = flatten_cart_prices(cart_data, request.user_memberships)
 
-                suggestions = []
-                # Se inicializa acá y no dentro del `if neighbor_candidates:` de más
-                # abajo: se lee incondicionalmente al armar la respuesta, así que un
-                # carrito sin vecinos en la misma góndola tiraba NameError, que el
-                # except ancho se comía.
-                # El orden de inserción del dict es el de ahorro descendente.
-                grouped_suggestions = {}
-                neighbor_candidates = []
-                uid_to_name = {}
-
                 # --- AHORRO CONTRA EL PEOR PRECIO DE CADA PRODUCTO ---
-                # Va acá arriba porque necesita `flat_prices` con la matriz del
-                # CARRITO: más abajo esa variable se rebindea con los candidatos a
-                # sugerencia semántica. Mismo motivo que los strategic swaps.
-                #
                 # Lleva su propio try/except: es un número informativo sobre un
                 # resultado que ya es correcto, y no puede costar las otras
                 # analíticas si algo sale mal.
@@ -599,59 +585,46 @@ def optimize_shopping_cart(request: OptimizationRequest, background_tasks: Backg
                     logger.error(f"Error calculando el ahorro contra el peor precio: {e}")
                     result["price_savings"] = None
 
-
                 # UNIFICAMOS TODO BAJO UNA ÚNICA CONEXIÓN A LA BD
                 with psycopg.connect(db.conn_string, row_factory=dict_row) as conn:
                     with conn.cursor() as cur:
 
                         # --- 1. FEATURE: SUGERENCIAS SEMÁNTICAS DE AHORRO PROPORCIONAL ---
-                        for item in request.cart:
-                            # 1. Agregamos las columnas de peso y unidad al SELECT original
-                            cur.execute("SELECT name, name_embedding, category, tags, total_volume_weight, unit_type FROM unified_products WHERE id = %s", (item.unified_id,))
-                            p = cur.fetchone()
-                            
-                            if p and p["name_embedding"]:
-                                # 2. Usamos los datos directos de la BD con un fallback de seguridad
-                                uid_to_name[item.unified_id] = {
-                                    "name": p["name"],
-                                    "weight": float(p["total_volume_weight"]) if p["total_volume_weight"] else 1.0,
-                                    "unit": p["unit_type"] or "un",
-                                    "category": p["category"]
-                                }
-                                
-                                # 3. Agregamos las columnas de peso y unidad al SELECT de los vecinos
-                                aisle_clause, aisle_param = same_aisle_filter(p)
-                                cur.execute(f"""
-                                    SELECT id, name, total_volume_weight, unit_type
-                                    FROM unified_products
-                                    WHERE id != %s AND name_embedding IS NOT NULL
-                                    {aisle_clause}
-                                    ORDER BY name_embedding <=> %s ASC
-                                    LIMIT 3
-                                """, (item.unified_id, aisle_param, p["name_embedding"]))
-                                
-                                for n in cur.fetchall():
-                                    # 4. Asignamos directo desde el resultado SQL del vecino
-                                    neighbor_candidates.append({
-                                        "original_uid": item.unified_id,
-                                        "suggested_uid": n["id"],
-                                        "suggested_name": n["name"],
-                                        "quantity": item.quantity,
-                                        "suggested_weight": float(n["total_volume_weight"]) if n["total_volume_weight"] else 1.0,
-                                        "suggested_unit": n["unit_type"] or "un"
-                                    })
-                        
-                        # --- 2. HEURÍSTICA DE CIERRE DE TIENDA (STRATEGIC SWAPS) ---
-                        # Va acá, y no al final, porque necesita `flat_prices` con
-                        # la matriz del CARRITO: más abajo esa variable se rebindea
-                        # con los candidatos a sugerencia semántica, y con esa
-                        # matriz el cálculo de anclas vería tiendas de productos que
-                        # el usuario no pidió.
+                        # La selección de candidatos vive en src/substitutions.py,
+                        # compartida con la heurística de cierre de tienda de más
+                        # abajo. Estaba escrita acá inline y había divergido: le
+                        # faltaban la banda de tamaño y la guarda de formato de
+                        # pack, así que prorrateaba el precio de un pack de seis
+                        # por el peso de UNA unidad y anunciaba ahorros de hasta
+                        # el 83% que no existían.
                         #
-                        # Lleva su propio try/except en vez de apoyarse en el de
-                        # abajo: ese se lleva puestas las `suggestions`, y un fallo
-                        # de esta feature (que es una sugerencia opcional sobre un
-                        # resultado ya correcto) no puede costarlas.
+                        # `target_stores` acota los candidatos a las tiendas que
+                        # pueden entregar: sugerir un producto que sólo vende una
+                        # tienda excluida es ofrecer algo que el usuario no puede
+                        # comprar.
+                        try:
+                            result["suggestions"] = build_semantic_suggestions(
+                                cur,
+                                cart_data,
+                                target_stores=[s for s in DEFAULT_MIN_SPEND_LIMITS
+                                               if s not in excluded_stores],
+                                user_memberships=request.user_memberships,
+                            )
+                        except Exception as e:
+                            logger.error(f"Error generando sugerencias semánticas: {e}")
+                            result["suggestions"] = []
+
+                        # --- 2. HEURÍSTICA DE CIERRE DE TIENDA (STRATEGIC SWAPS) ---
+                        # `flat_prices` es la matriz del CARRITO y ya no la
+                        # reasigna nadie: las sugerencias semánticas aplanaban acá
+                        # su propia matriz (carrito + candidatos) sobre la misma
+                        # variable, y esta feature y `price_savings` dependían de
+                        # correr antes. Ese orden implícito se fue con el bloque
+                        # inline a src/substitutions.py, que aplana lo suyo aparte.
+                        #
+                        # Lleva su propio try/except: un fallo de esta feature
+                        # (una sugerencia opcional sobre un resultado ya correcto)
+                        # no puede costar las demás.
                         try:
                             result["strategic_swaps"] = find_strategic_swaps(
                                 result=result,
@@ -747,94 +720,10 @@ def optimize_shopping_cart(request: OptimizationRequest, background_tasks: Backg
                                 )
 
 
-                # --- PROCESAMIENTO FINAL DE SUGERENCIAS SEMÁNTICAS (Fuera del cursor) ---
-                if neighbor_candidates:
-                    items_to_flatten = [{"unified_id": c["suggested_uid"], "quantity": c["quantity"]} for c in neighbor_candidates]
-                    items_to_flatten.extend(cart_data)
-                    flat_prices = flatten_cart_prices(items_to_flatten, request.user_memberships)
-                    
-                    for cand in neighbor_candidates:
-                        orig_uid = cand["original_uid"]
-                        sugg_uid = cand["suggested_uid"]
-                        
-                        if orig_uid not in flat_prices or sugg_uid not in flat_prices: continue
-                        
-                        orig_min_cost = min([flat_prices[orig_uid][s]["total_cost"] for s in flat_prices[orig_uid]])
-                        sugg_min_cost = min([flat_prices[sugg_uid][s]["total_cost"] for s in flat_prices[sugg_uid]])
-                        
-                        orig_info = uid_to_name[orig_uid]
-                        orig_weight = orig_info["weight"]
-                        orig_unit = orig_info["unit"]
-                        sugg_weight = cand["suggested_weight"]
-                        sugg_unit = cand["suggested_unit"]
-
-                        # Solo calculamos si las unidades son lógicamente comparables
-                        if orig_unit == sugg_unit or (orig_unit in ['g', 'ml'] and sugg_unit in ['g', 'ml']):
-                            
-                            sugg_cost_per_unit = sugg_min_cost / sugg_weight
-                            sugg_proportional_cost = sugg_cost_per_unit * orig_weight
-                            
-                            savings_proportional = orig_min_cost - sugg_proportional_cost
-                            
-                            # Formateo de UI para volver a Litros o Kilos si es grande
-                            display_weight = orig_weight
-                            display_unit = orig_unit
-                            if display_unit == 'g' and display_weight >= 1000:
-                                display_weight /= 1000
-                                display_unit = 'Kg'
-                            elif display_unit == 'ml' and display_weight >= 1000:
-                                display_weight /= 1000
-                                display_unit = 'L'
-                            
-                            # Subimos el umbral a 20% para limpiar ruido
-                            if savings_proportional > (orig_min_cost * 0.2):
-                                sugg_min_unit_price = min(
-                                    flat_prices[sugg_uid][s]["effective_unit_price"]
-                                    for s in flat_prices[sugg_uid]
-                                )
-                                suggestions.append({
-                                    "original_uid": orig_uid,
-                                    "original_product": orig_info["name"],
-                                    "suggested_product": cand["suggested_name"],
-                                    "savings": round(savings_proportional, 2),
-                                    "suggested_uid": sugg_uid,
-                                    "effective_unit_price": sugg_min_unit_price,
-                                    "metric_info": f"a igual cantidad de {display_weight} {display_unit.upper()}"
-                                })
-
-                    # Agrupamos por producto original en vez de devolver una lista plana.
-                    # El dedupe global por suggested_uid con tope de 5 que había antes
-                    # recortaba alternativas de forma impredecible: un producto podía
-                    # quedarse sin ninguna porque otro se había llevado el cupo.
-                    suggestions = sorted(suggestions, key=lambda x: x["savings"], reverse=True)
-                    for s in suggestions:
-                        group = grouped_suggestions.get(s["original_uid"])
-                        if group is None:
-                            group = {
-                                "original_uid": s["original_uid"],
-                                "original_product": s["original_product"],
-                                "alternatives": []
-                            }
-                            grouped_suggestions[s["original_uid"]] = group
-
-                        if len(group["alternatives"]) >= 3:
-                            continue
-                        if any(a["suggested_uid"] == s["suggested_uid"] for a in group["alternatives"]):
-                            continue
-
-                        group["alternatives"].append({
-                            "suggested_uid": s["suggested_uid"],
-                            "suggested_product": s["suggested_product"],
-                            "savings": s["savings"],
-                            "effective_unit_price": s["effective_unit_price"],
-                            "metric_info": s["metric_info"]
-                        })
-
-                result["suggestions"] = list(grouped_suggestions.values())
-
             except Exception as e:
                 logger.error(f"Error generando analíticas post-optimización: {e}")
-                result["suggestions"] = []
+                if "suggestions" not in result:
+                    result["suggestions"] = []
                 if "strategic_swaps" not in result:
                     result["strategic_swaps"] = []
                 if "price_savings" not in result:
