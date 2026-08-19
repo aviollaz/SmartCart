@@ -503,6 +503,219 @@ def preview_prices(request: PricePreviewRequest):
         logger.error(f"Error calculando el preview de precios: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
+# ---------------------------------------------------------------------------
+# Etapas de POST /optimize
+#
+# Cada una es una función con firma explícita en vez de un bloque dentro del
+# endpoint. Lo que cada etapa lee y escribe ahora está en su firma: antes todas
+# compartían las mismas variables locales del endpoint y el orden en que corrían
+# era parte del contrato sin estar escrito en ningún lado.
+# ---------------------------------------------------------------------------
+
+def _optional_feature(nombre: str, default, fn, *args, **kwargs):
+    """
+    Corre una feature opcional y devuelve `default` si falla, dejando el error
+    en el log.
+
+    Todo lo que se le cuelga a un resultado exitoso —el ahorro contra el peor
+    precio, las sugerencias, el cierre de tienda, los links— es explicación
+    sobre una optimización que YA es correcta. Que cualquiera se caiga no puede
+    costar ni la respuesta ni las otras features: misma doctrina fail-open que
+    src/coto_logistics.py y src/analytics.py.
+
+    Existe como helper y no como cuatro try/except copiados para que la política
+    quede escrita una sola vez y no pueda divergir entre features, que es
+    exactamente lo que le había pasado al motor de sustitución antes de
+    unificarlo en src/substitutions.py.
+    """
+    try:
+        return fn(*args, **kwargs)
+    except Exception as e:
+        logger.error(f"Error en {nombre}: {e}")
+        return default
+
+
+def _resolve_coto_stage(request):
+    """
+    Etapa de logística: cobertura y envío real de Coto.
+
+    Va antes del solver porque cambia dos de sus entradas: qué tiendas
+    participan y cuánto cuesta el envío de Coto. Nunca lanza (fail-open, ver
+    src/coto_logistics.py), así que un problema con el sitio de Coto no puede
+    tumbar la optimización entera.
+
+    :return: (delivery_costs, excluded_stores, coto_logistics)
+    """
+    delivery_costs = dict(request.delivery_costs) if request.delivery_costs else dict(DEFAULT_DELIVERY_COSTS)
+    excluded_stores = []
+
+    coto_logistics = resolve_coto_logistics(
+        request.lat,
+        request.lng,
+        fallback_delivery_cost=delivery_costs.get("coto_online"),
+    )
+
+    if not coto_logistics["covered"]:
+        excluded_stores.append("coto_online")
+        logger.info(f"Coto excluido por falta de cobertura en ({request.lat}, {request.lng}).")
+    elif coto_logistics["delivery_cost"] is not None:
+        delivery_costs["coto_online"] = float(coto_logistics["delivery_cost"])
+
+    return delivery_costs, excluded_stores, coto_logistics
+
+
+def _attach_product_urls(cur, split: dict, flat_prices: dict) -> None:
+    """
+    Agrega a cada línea del split su link al producto y la promo que se le aplicó.
+
+    Día y Carrefour tienen además un magic link de carrito completo
+    (`_attach_vtex_checkout_links`); para el resto —Coto, que no expone un
+    endpoint de carrito por URL— esto es lo que le permite al usuario abrir los
+    productos de a uno.
+
+    La promo aplicada viaja para que el desglose del frontend pueda explicar de
+    dónde sale el `total_cost` en vez de mostrar un número sin justificar.
+
+    Muta `split` in-place.
+    """
+    for store_id, store_result in split.items():
+        store_products = store_result["products"]
+        uids = [p["unified_id"] for p in store_products]
+        if not uids:
+            continue
+
+        cur.execute("""
+            SELECT unified_product_id, product_url
+            FROM store_products
+            WHERE store_id = %s AND unified_product_id = ANY(%s)
+        """, (store_id, uids))
+
+        url_map = {row["unified_product_id"]: row["product_url"] for row in cur.fetchall()}
+        for p in store_products:
+            p["product_url"] = url_map.get(p["unified_id"])
+
+            line_flat = flat_prices.get(p["unified_id"], {}).get(store_id)
+            if line_flat:
+                p["applied_promo_id"] = line_flat["applied_promo_id"]
+                p["promo_description"] = line_flat["promo_description"]
+                p["effective_unit_price"] = line_flat["effective_unit_price"]
+
+
+def _attach_vtex_checkout_links(cur, split: dict) -> None:
+    """
+    Agrega el link de carrito armado por URL a las tiendas VTEX del split.
+
+    Muta `split` in-place.
+    """
+    for store_id, domain in VTEX_CHECKOUT_DOMAINS.items():
+        if store_id not in split:
+            continue
+
+        store_products = split[store_id]["products"]
+        uids = [p["unified_id"] for p in store_products]
+        if not uids:
+            continue
+
+        # `store_item_id` y no `store_sku`: el segundo guarda el productId de
+        # VTEX, y /checkout/cart/add espera el itemId. En Día los dos números
+        # coinciden por cómo está armado su catálogo, pero en Carrefour no
+        # (producto 100650 = item 17305), así que un COALESCE al store_sku
+        # armaría un carrito equivocado en silencio. Una tienda sin la columna
+        # poblada simplemente no muestra el botón y el frontend cae en los
+        # links por producto.
+        cur.execute("""
+            SELECT unified_product_id, store_item_id
+            FROM store_products
+            WHERE store_id = %s AND unified_product_id = ANY(%s)
+              AND store_item_id IS NOT NULL
+        """, (store_id, uids))
+
+        sku_map = {row["unified_product_id"]: row["store_item_id"] for row in cur.fetchall()}
+
+        link_payload = [
+            {"store_sku": sku_map[p["unified_id"]], "quantity": p["quantity"]}
+            for p in store_products if p["unified_id"] in sku_map
+        ]
+
+        # Un carrito a medias es peor que ninguno: el usuario cree que ya tiene
+        # todo cargado y paga menos productos de los que eligió.
+        if len(link_payload) == len(store_products):
+            split[store_id]["checkout_url"] = generate_vtex_magic_link(
+                store_domain=domain,
+                products=link_payload
+            )
+        elif link_payload:
+            logger.warning(
+                f"{store_id}: {len(store_products) - len(link_payload)} de "
+                f"{len(store_products)} productos sin store_item_id; no se arma el "
+                f"link de carrito. ¿Falta re-scrapear la tienda?"
+            )
+
+
+def _enrich_successful_result(result: dict, request, cart_data: list,
+                              delivery_costs: dict, excluded_stores: list) -> None:
+    """
+    Cuelga del resultado óptimo todo lo que es explicación y no cálculo: cuánto
+    se ahorró por elegir bien la tienda, qué alternativas hay, si conviene
+    cerrar una tienda entera, y por dónde se compra.
+
+    Nada de esto cambia el split ni el total. Cada feature va por
+    `_optional_feature`, así que una puede fallar sin llevarse las otras.
+
+    Muta `result` in-place.
+    """
+    db = SmartCartDB()
+    flat_prices = flatten_cart_prices(cart_data, request.user_memberships)
+
+    result["price_savings"] = _optional_feature(
+        "el ahorro contra el peor precio", None,
+        _compute_price_savings, result, flat_prices, excluded_stores,
+    )
+
+    # Una sola conexión para las cuatro features que tocan la base.
+    with psycopg.connect(db.conn_string, row_factory=dict_row) as conn:
+        with conn.cursor() as cur:
+            split = result.get("split", {})
+
+            result["suggestions"] = _optional_feature(
+                "las sugerencias semánticas", [],
+                build_semantic_suggestions,
+                cur,
+                cart_data,
+                target_stores=[s for s in DEFAULT_MIN_SPEND_LIMITS if s not in excluded_stores],
+                user_memberships=request.user_memberships,
+            )
+
+            result["strategic_swaps"] = _optional_feature(
+                "la heurística de cierre de tienda", [],
+                find_strategic_swaps,
+                result=result,
+                cart_items=cart_data,
+                flat_prices=flat_prices,
+                user_memberships=request.user_memberships,
+                user_cards=request.user_cards,
+                delivery_costs=delivery_costs,
+                excluded_stores=excluded_stores,
+                cur=cur,
+            )
+
+            _optional_feature("los links por producto", None,
+                              _attach_product_urls, cur, split, flat_prices)
+            _optional_feature("los magic links de VTEX", None,
+                              _attach_vtex_checkout_links, cur, split)
+
+
+def _ensure_optional_keys(result: dict) -> None:
+    """
+    Garantiza que las claves opcionales existan aunque el enriquecimiento entero
+    se haya caído (ej. Postgres abajo a mitad de request). El frontend las lee
+    sin chequear.
+    """
+    result.setdefault("suggestions", [])
+    result.setdefault("strategic_swaps", [])
+    result.setdefault("price_savings", None)
+
+
 @app.post("/optimize")
 def optimize_shopping_cart(request: OptimizationRequest, background_tasks: BackgroundTasks):
     """
@@ -541,25 +754,7 @@ def optimize_shopping_cart(request: OptimizationRequest, background_tasks: Backg
     try:
         cart_data = [item.model_dump() for item in request.cart]
 
-        # --- ETAPA DE LOGÍSTICA: cobertura y envío real de Coto ---
-        # Va antes del solver porque cambia dos de sus entradas: qué tiendas
-        # participan y cuánto cuesta el envío de Coto. Nunca lanza (fail-open:
-        # ver src/coto_logistics.py), así que un problema con el sitio de Coto
-        # no puede tumbar la optimización entera.
-        delivery_costs = dict(request.delivery_costs) if request.delivery_costs else dict(DEFAULT_DELIVERY_COSTS)
-        excluded_stores = []
-
-        coto_logistics = resolve_coto_logistics(
-            request.lat,
-            request.lng,
-            fallback_delivery_cost=delivery_costs.get("coto_online"),
-        )
-
-        if not coto_logistics["covered"]:
-            excluded_stores.append("coto_online")
-            logger.info(f"Coto excluido por falta de cobertura en ({request.lat}, {request.lng}).")
-        elif coto_logistics["delivery_cost"] is not None:
-            delivery_costs["coto_online"] = float(coto_logistics["delivery_cost"])
+        delivery_costs, excluded_stores, coto_logistics = _resolve_coto_stage(request)
 
         result = optimize_cart(
             cart_items=cart_data,
@@ -571,163 +766,17 @@ def optimize_shopping_cart(request: OptimizationRequest, background_tasks: Backg
         result["logistics"] = {"coto": coto_logistics}
 
         if result.get("status") == "success":
-            try:
-                db = SmartCartDB()
-                flat_prices = flatten_cart_prices(cart_data, request.user_memberships)
-
-                # --- AHORRO CONTRA EL PEOR PRECIO DE CADA PRODUCTO ---
-                # Lleva su propio try/except: es un número informativo sobre un
-                # resultado que ya es correcto, y no puede costar las otras
-                # analíticas si algo sale mal.
-                try:
-                    result["price_savings"] = _compute_price_savings(result, flat_prices, excluded_stores)
-                except Exception as e:
-                    logger.error(f"Error calculando el ahorro contra el peor precio: {e}")
-                    result["price_savings"] = None
-
-                # UNIFICAMOS TODO BAJO UNA ÚNICA CONEXIÓN A LA BD
-                with psycopg.connect(db.conn_string, row_factory=dict_row) as conn:
-                    with conn.cursor() as cur:
-
-                        # --- 1. FEATURE: SUGERENCIAS SEMÁNTICAS DE AHORRO PROPORCIONAL ---
-                        # La selección de candidatos vive en src/substitutions.py,
-                        # compartida con la heurística de cierre de tienda de más
-                        # abajo. Estaba escrita acá inline y había divergido: le
-                        # faltaban la banda de tamaño y la guarda de formato de
-                        # pack, así que prorrateaba el precio de un pack de seis
-                        # por el peso de UNA unidad y anunciaba ahorros de hasta
-                        # el 83% que no existían.
-                        #
-                        # `target_stores` acota los candidatos a las tiendas que
-                        # pueden entregar: sugerir un producto que sólo vende una
-                        # tienda excluida es ofrecer algo que el usuario no puede
-                        # comprar.
-                        try:
-                            result["suggestions"] = build_semantic_suggestions(
-                                cur,
-                                cart_data,
-                                target_stores=[s for s in DEFAULT_MIN_SPEND_LIMITS
-                                               if s not in excluded_stores],
-                                user_memberships=request.user_memberships,
-                            )
-                        except Exception as e:
-                            logger.error(f"Error generando sugerencias semánticas: {e}")
-                            result["suggestions"] = []
-
-                        # --- 2. HEURÍSTICA DE CIERRE DE TIENDA (STRATEGIC SWAPS) ---
-                        # `flat_prices` es la matriz del CARRITO y ya no la
-                        # reasigna nadie: las sugerencias semánticas aplanaban acá
-                        # su propia matriz (carrito + candidatos) sobre la misma
-                        # variable, y esta feature y `price_savings` dependían de
-                        # correr antes. Ese orden implícito se fue con el bloque
-                        # inline a src/substitutions.py, que aplana lo suyo aparte.
-                        #
-                        # Lleva su propio try/except: un fallo de esta feature
-                        # (una sugerencia opcional sobre un resultado ya correcto)
-                        # no puede costar las demás.
-                        try:
-                            result["strategic_swaps"] = find_strategic_swaps(
-                                result=result,
-                                cart_items=cart_data,
-                                flat_prices=flat_prices,
-                                user_memberships=request.user_memberships,
-                                user_cards=request.user_cards,
-                                delivery_costs=delivery_costs,
-                                excluded_stores=excluded_stores,
-                                cur=cur,
-                            )
-                        except Exception as e:
-                            logger.error(f"Error en la heurística de cierre de tienda: {e}")
-                            result["strategic_swaps"] = []
-
-                        # --- 3. FEATURE: LINK DE PRODUCTO POR ÍTEM, PARA TODAS LAS TIENDAS ---
-                        # Día tiene además un magic link de carrito completo (más abajo); para
-                        # el resto (ej. Coto, que no expone un endpoint de carrito por URL) esto
-                        # permite al usuario abrir cada producto individualmente.
-                        for store_id, store_result in result.get("split", {}).items():
-                            store_products = store_result["products"]
-                            uids = [p["unified_id"] for p in store_products]
-                            if not uids:
-                                continue
-
-                            cur.execute("""
-                                SELECT unified_product_id, product_url
-                                FROM store_products
-                                WHERE store_id = %s AND unified_product_id = ANY(%s)
-                            """, (store_id, uids))
-
-                            url_map = {row["unified_product_id"]: row["product_url"] for row in cur.fetchall()}
-                            for p in store_products:
-                                p["product_url"] = url_map.get(p["unified_id"])
-
-                                # Promo efectivamente aplicada a esta línea, para que el
-                                # desglose del frontend pueda explicar de dónde sale el
-                                # total_cost en vez de mostrar un número sin justificar.
-                                # `flat_prices` es el flatten del carrito calculado arriba
-                                # (todavía no fue rebindeado con los candidatos a sugerencia).
-                                line_flat = flat_prices.get(p["unified_id"], {}).get(store_id)
-                                if line_flat:
-                                    p["applied_promo_id"] = line_flat["applied_promo_id"]
-                                    p["promo_description"] = line_flat["promo_description"]
-                                    p["effective_unit_price"] = line_flat["effective_unit_price"]
-
-                        # --- 4. FEATURE: MAGIC LINK PARA LAS TIENDAS VTEX ---
-                        for store_id, domain in VTEX_CHECKOUT_DOMAINS.items():
-                            if store_id not in result.get("split", {}):
-                                continue
-
-                            store_products = result["split"][store_id]["products"]
-                            uids = [p["unified_id"] for p in store_products]
-                            if not uids:
-                                continue
-
-                            # `store_item_id` y no `store_sku`: el segundo guarda
-                            # el productId de VTEX, y /checkout/cart/add espera el
-                            # itemId. En Día los dos números coinciden por cómo
-                            # está armado su catálogo, pero en Carrefour no
-                            # (producto 100650 = item 17305), así que un COALESCE
-                            # al store_sku armaría un carrito equivocado en
-                            # silencio. Una tienda sin la columna poblada
-                            # simplemente no muestra el botón y el frontend cae en
-                            # los links por producto.
-                            cur.execute("""
-                                SELECT unified_product_id, store_item_id
-                                FROM store_products
-                                WHERE store_id = %s AND unified_product_id = ANY(%s)
-                                  AND store_item_id IS NOT NULL
-                            """, (store_id, uids))
-
-                            sku_map = {row["unified_product_id"]: row["store_item_id"] for row in cur.fetchall()}
-
-                            link_payload = [
-                                {"store_sku": sku_map[p["unified_id"]], "quantity": p["quantity"]}
-                                for p in store_products if p["unified_id"] in sku_map
-                            ]
-
-                            # Un carrito a medias es peor que ninguno: el usuario
-                            # cree que ya tiene todo cargado y paga menos productos
-                            # de los que eligió.
-                            if len(link_payload) == len(store_products):
-                                result["split"][store_id]["checkout_url"] = generate_vtex_magic_link(
-                                    store_domain=domain,
-                                    products=link_payload
-                                )
-                            elif link_payload:
-                                logger.warning(
-                                    f"{store_id}: {len(store_products) - len(link_payload)} de "
-                                    f"{len(store_products)} productos sin store_item_id; no se arma el "
-                                    f"link de carrito. ¿Falta re-scrapear la tienda?"
-                                )
-
-
-            except Exception as e:
-                logger.error(f"Error generando analíticas post-optimización: {e}")
-                if "suggestions" not in result:
-                    result["suggestions"] = []
-                if "strategic_swaps" not in result:
-                    result["strategic_swaps"] = []
-                if "price_savings" not in result:
-                    result["price_savings"] = None
+            # El enriquecimiento entero va detrás de un try porque comparte los
+            # modos de falla que ninguna feature puede manejar sola: la conexión
+            # a Postgres y el aplanado del carrito. Adentro cada feature tiene su
+            # propia red (`_optional_feature`), así que acá sólo se llega si se
+            # cayó algo común a todas.
+            _optional_feature(
+                "el enriquecimiento del resultado", None,
+                _enrich_successful_result,
+                result, request, cart_data, delivery_costs, excluded_stores,
+            )
+            _ensure_optional_keys(result)
 
     except Exception as e:
         logger.error(f"Error en el motor de optimización: {e}")
