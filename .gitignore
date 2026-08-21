@@ -28,4 +28,10 @@ logs/
 .DS_Store
 
 # Archivos de documentación
-docs/
+# Se ignora el material de referencia (docs/references/ son ~700K de capturas de
+# pantalla de las grillas de promos), pero NO los .md: smartcart_spec.md ya
+# estaba trackeado desde antes de esta regla y TODO.md tiene que estarlo también.
+# Ojo con el patrón: `docs/` a secas excluye el directorio entero y git ni
+# siquiera desciende, así que una negación adentro no tendría efecto.
+docs/*
+!docs/*.md

@@ -100,6 +100,12 @@ class ProductResponse(BaseModel):
     is_vegan: bool = False
     unit_info: UnitInfo
     distance: float = Field(..., description="Distancia de coseno con respecto a la búsqueda (menor es más similar)")
+    # Cuántas tiendas ofrecen el producto con stock. Es lo que desempata el
+    # ranking (ver STORE_BONUS) y lo que permite verificar el feature desde la
+    # API. Ojo: cuenta solo ofertas `in_stock`, mientras que
+    # `available_at_stores` las trae todas, así que los dos números pueden no
+    # coincidir. Opcional para no romper a ningún consumidor existente.
+    store_count: Optional[int] = None
     available_at_stores: List[StoreOffer] = []
 
 class CategorySubcategoryResponse(BaseModel):
@@ -153,6 +159,47 @@ class PricePreviewRequest(BaseModel):
 
 # Estado global para mantener el modelo cargado en memoria
 ml_models = {}
+
+# ---------------------------------------------------------------- ranking
+# El orden de /search era distancia coseno pura, así que un producto que está
+# en las tres tiendas no tenía ninguna ventaja sobre uno que está en una sola.
+# Para una app cuyo objetivo es comparar precios, eso deja arriba resultados
+# sobre los que el optimizador no puede hacer nada.
+#
+# No se puede arreglar en el frontend: el cliente solo recibe los `limit`
+# vecinos que Postgres ya eligió, así que un producto de 3 tiendas en el puesto
+# 25 no existe para él. Reordenar allá cambia el ORDEN del top-N pero nunca su
+# COMPOSICIÓN. Por eso se recupera un pool más grande y se reordena en SQL.
+SEARCH_POOL_SIZE = 100
+
+# `hnsw.ef_search` vale 40 por defecto en pgvector, y es un techo sobre las
+# filas que el índice devuelve: con el default, un `LIMIT 100` devuelve 40 y el
+# pool de arriba es una ilusión — el rerank reordena siempre los mismos 40
+# candidatos y el feature parece andar sin hacer nada. Se sube por conexión.
+SEARCH_EF_SEARCH = 200
+
+# Bonus por tienda extra, en unidades de distancia coseno. Calibrado sobre 15
+# queries reales del catálogo: el spread natural del top-20 (d@20 - d@1) tiene
+# mediana 0.110, así que la pérdida máxima de relevancia que habilita este
+# bonus —`STORE_BONUS * STORE_BONUS_CAP` = 0.02— es ~18% de ese spread. Medido:
+# cambia el 5% del top-20 y sube las tiendas promedio de 1.49 a 1.57.
+#
+# NO subirlo para "mejorar" el efecto. Con 0.02 la query "yogur bebible" saca
+# dos yogures BEBIBLES (d=0.368, 0.370) y mete tres Yogurísimo GRIEGO (d≈0.39)
+# que están en 3 tiendas: el embedding no trata "bebible" como restricción
+# dura, así que un bonus moderado compra disponibilidad con relevancia literal.
+# Con 0.05 el 31% del top-20 cambia y un producto puede saltar del puesto 79,
+# cruzando entero el gap de relevancia entre el rank 20 y el 100 (0.105) — en
+# los hechos, ordenar por cantidad de tiendas. Es el mismo tipo de umbral que
+# category_tree.py documenta en su discusión del 0.90: se acota por el daño que
+# no debe causar, no se sube hasta que "traiga más".
+STORE_BONUS = 0.01
+
+# Tope de tiendas extra que puede acumular el bonus. Con 3 tiendas en total, 2
+# es el máximo posible; existir como constante es lo que le da a la pérdida de
+# relevancia una cota dura (`STORE_BONUS * STORE_BONUS_CAP`) en vez de dejarla
+# crecer con la cantidad de tiendas que se sumen en el futuro.
+STORE_BONUS_CAP = 2
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -317,20 +364,60 @@ def search_products(
         # Solo se filtra por TRUE — un FALSE en estas columnas es "sin evidencia".
         dietary_clause = _dietary_filter_clause(gluten_free, vegan)
 
-        # 2. Consultar vecinos más cercanos en PostgreSQL usando la distancia de coseno (<=>)
-        # Traemos también los detalles del producto unificado
+        # 2. Recuperar y reordenar, en dos etapas dentro de la misma query.
+        #
+        # Etapa 1 (`pool`): los SEARCH_POOL_SIZE vecinos más cercanos con el
+        # ORDER BY por distancia pura, que es lo único que el índice HNSW puede
+        # acelerar. Etapa 2: reordenar ese pool por distancia menos el bonus de
+        # disponibilidad, y recién ahí cortar a `limit`.
+        #
+        # El pool tiene que ser más grande que `limit`, si no el rerank no puede
+        # cambiar QUÉ productos se muestran, solo en qué orden — que es
+        # exactamente la limitación por la que esto no se resuelve en el cliente.
         with psycopg.connect(db.conn_string, row_factory=dict_row) as conn:
             with conn.cursor() as cur:
+                # Sin esto el pool queda topeado en 40 filas (default de
+                # pgvector) sin ningún error a la vista. Va por conexión.
+                # `set_config()` y no `SET`: SET no acepta parámetros ligados
+                # (`SET hnsw.ef_search = $1` es un error de sintaxis), y la
+                # alternativa sería interpolar el número en un f-string.
+                cur.execute(
+                    "SELECT set_config('hnsw.ef_search', %s, false)",
+                    (str(SEARCH_EF_SEARCH),),
+                )
+
                 cur.execute(f"""
-                    SELECT id, ean, name, brand, category, units_per_pack, unit_type, total_volume_weight,
-                           is_gluten_free, is_vegan,
-                           name_embedding <=> %s AS distance
-                    FROM unified_products
-                    WHERE name_embedding IS NOT NULL
-                    {dietary_clause}
-                    ORDER BY distance ASC
+                    WITH pool AS (
+                        SELECT id, ean, name, brand, category, units_per_pack, unit_type,
+                               total_volume_weight, is_gluten_free, is_vegan,
+                               name_embedding <=> %s AS distance
+                        FROM unified_products
+                        WHERE name_embedding IS NOT NULL
+                        {dietary_clause}
+                        ORDER BY distance ASC
+                        LIMIT %s
+                    )
+                    SELECT p.id, p.ean, p.name, p.brand, p.category, p.units_per_pack,
+                           p.unit_type, p.total_volume_weight, p.is_gluten_free,
+                           p.is_vegan, p.distance,
+                           count(DISTINCT sp.store_id) AS store_count
+                    FROM pool p
+                    -- LEFT y no INNER: un producto sin ofertas con stock tiene
+                    -- que seguir apareciendo (la query de ofertas de abajo
+                    -- tampoco filtra por in_stock). Un INNER lo borraría sin
+                    -- que nada lo indique.
+                    LEFT JOIN store_products sp
+                           ON sp.unified_product_id = p.id AND sp.in_stock
+                    GROUP BY p.id, p.ean, p.name, p.brand, p.category, p.units_per_pack,
+                             p.unit_type, p.total_volume_weight, p.is_gluten_free,
+                             p.is_vegan, p.distance
+                    -- GREATEST(... , 0) porque un producto sin ofertas da -1 y
+                    -- convertiría el bonus en penalización por accidente.
+                    ORDER BY p.distance - %s * LEAST(
+                                 GREATEST(count(DISTINCT sp.store_id) - 1, 0), %s
+                             ) ASC
                     LIMIT %s
-                """, (vector_str, limit))
+                """, (vector_str, SEARCH_POOL_SIZE, STORE_BONUS, STORE_BONUS_CAP, limit))
                 
                 nearest_products = cur.fetchall()
                 
@@ -375,7 +462,11 @@ def search_products(
                     "unit_type": p["unit_type"],
                     "total_volume_weight": float(p["total_volume_weight"]) if p["total_volume_weight"] is not None else None
                 },
+                # Se devuelve la distancia CRUDA, no el score de ordenamiento:
+                # es la relevancia semántica, y mezclarle el bonus volvería el
+                # campo inservible para cualquier lectura futura.
                 "distance": float(p["distance"]),
+                "store_count": int(p["store_count"]),
                 "available_at_stores": offers_by_product.get(prod_id, [])
             })
             
@@ -857,16 +948,32 @@ def get_products_by_category(
     """Devuelve productos filtrados por una categoría exacta."""
     try:
         db = SmartCartDB()
-        dietary_clause = _dietary_filter_clause(gluten_free, vegan)
+        # Con alias: la query lleva un JOIN a store_products, así que las
+        # columnas dietarias tienen que quedar calificadas o Postgres las
+        # rechaza por ambiguas.
+        dietary_clause = _dietary_filter_clause(gluten_free, vegan, alias="u")
         with psycopg.connect(db.conn_string, row_factory=dict_row) as conn:
             with conn.cursor() as cur:
+                # Este endpoint no tiene noción de relevancia (su `distance` es
+                # 0.0 fija), así que ordenar por disponibilidad no resigna nada:
+                # a diferencia de /search, acá no hay nada que el bonus pueda
+                # desplazar. Además arregla un problema anterior: sin ORDER BY,
+                # el LIMIT recortaba filas en el orden que Postgres tuviera a
+                # mano y dos llamadas iguales podían devolver productos
+                # distintos. El `name` desempata para que el orden sea estable.
                 cur.execute(f"""
-                    SELECT id, ean, name, brand, category, units_per_pack, unit_type, total_volume_weight,
-                           is_gluten_free, is_vegan,
-                           0.0 AS distance
-                    FROM unified_products
-                    WHERE category = %s
+                    SELECT u.id, u.ean, u.name, u.brand, u.category, u.units_per_pack,
+                           u.unit_type, u.total_volume_weight, u.is_gluten_free,
+                           u.is_vegan, 0.0 AS distance,
+                           count(DISTINCT sp.store_id) AS store_count
+                    FROM unified_products u
+                    LEFT JOIN store_products sp
+                           ON sp.unified_product_id = u.id AND sp.in_stock
+                    WHERE u.category = %s
                     {dietary_clause}
+                    GROUP BY u.id, u.ean, u.name, u.brand, u.category, u.units_per_pack,
+                             u.unit_type, u.total_volume_weight, u.is_gluten_free, u.is_vegan
+                    ORDER BY store_count DESC, u.name ASC
                     LIMIT %s
                 """, (category_name, limit))
                 nearest_products = cur.fetchall()
@@ -925,6 +1032,7 @@ def get_products_by_category(
                     "total_volume_weight": float(p["total_volume_weight"]) if p["total_volume_weight"] is not None else None
                 },
                 "distance": 0.0,
+                "store_count": int(p["store_count"]),
                 "available_at_stores": offers
             })
         return results
