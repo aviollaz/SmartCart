@@ -5,16 +5,14 @@ taxonomía (src/scrapers/*_categories.json), sin base de datos ni modelo.
 import pytest
 
 from src.category_tags import category_label, filter_tags, tags_for_category
+from src.shelves import keys_for_store
 
-# Las categorías que efectivamente scrapean los bloques __main__ de cada scraper.
-COTO_MVP = ["catv00001412", "catv00003266", "catv00001413", "catv00003250", "catv00003596"]
-DIA_MVP = [
-    "almacen/harinas/harinas-de-trigo",
-    "frescos/leches",
-    "almacen/aceites-y-aderezos",
-    "desayuno/para-untar/dulces-de-leche",
-    "almacen/golosinas-y-alfajores/alfajores",
-]
+# Las categorías que efectivamente se barren. Se leen de la tabla de góndolas en
+# vez de copiarse acá: una copia se desactualiza sin que ningún test falle, que
+# es justo lo que estos casos tendrían que detectar.
+COTO_MVP = keys_for_store("coto")
+DIA_MVP = keys_for_store("dia")
+CARREFOUR_MVP = keys_for_store("carrefour")
 
 
 @pytest.mark.parametrize("category_id", COTO_MVP)
@@ -25,6 +23,11 @@ def test_todas_las_categorias_mvp_de_coto_resuelven(category_id):
 @pytest.mark.parametrize("slug", DIA_MVP)
 def test_todas_las_categorias_mvp_de_dia_resuelven(slug):
     assert tags_for_category("dia", slug)
+
+
+@pytest.mark.parametrize("slug", CARREFOUR_MVP)
+def test_todas_las_categorias_mvp_de_carrefour_resuelven(slug):
+    assert tags_for_category("carrefour", slug)
 
 
 def test_tags_son_segmentos_slugificados():
@@ -95,3 +98,23 @@ def test_el_top_level_compartido_no_alcanza_para_solapar():
 
     assert harinas[0] == alfajores[0] == "almacen"
     assert not _solapan(harinas, alfajores)
+
+
+def test_la_puntuacion_no_sobrevive_al_slug():
+    """
+    "Sal, aderezos y saborizadores" salía como `sal,-aderezos-y-saborizadores`.
+    Un tag con coma adentro no rompe nada visible: simplemente no matchea nunca
+    con el && de Postgres, que es la peor forma de fallar.
+    """
+    tags = tags_for_category("carrefour", "almacen/sal-aderezos-y-saborizadores")
+
+    assert tags == ["almacen", "sal-aderezos-y-saborizadores"]
+    assert not any("," in t for t in tags)
+
+
+def test_ninguna_categoria_scrapeada_produce_un_tag_con_puntuacion():
+    for store, claves in (("coto", COTO_MVP), ("dia", DIA_MVP), ("carrefour", CARREFOUR_MVP)):
+        for clave in claves:
+            for tag in tags_for_category(store, clave):
+                assert tag == tag.strip("-")
+                assert all(c.isalnum() or c == "-" for c in tag), f"{store}/{clave}: {tag}"

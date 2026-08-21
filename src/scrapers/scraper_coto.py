@@ -4,22 +4,47 @@ import re
 import time
 import random
 
-from src.category_tags import category_label, tags_for_category
+from src.category_tags import category_label
 from src.dietary_parser import detect_dietary_flags
+from src.shelves import keys_for_store, shelf_tags
 from src.size_parser import extract_real_volume, normalize_magnitude
 
 logger = logging.getLogger(__name__)
 
 
-# Categorías del MVP. El catálogo es deliberadamente angosto; ampliar esta
-# lista es la forma de scrapear más góndolas (los ids salen de coto_categories.json).
-MVP_CATEGORIES = [
-    "catv00001264",  # Almacén -> Aceites y Condimentos -> Aceites,
-    "catv00003266",  # Frescos -> Lácteos -> Leches
-    "catv00001412",  # Almacén -> Harinas -> Harina de Trigo
-    "catv00003250",  # Frescos -> Lácteos -> Dulce de Leche
-    "catv00003596",  # Almacén -> Golosinas -> Alfajores
-]
+# Las góndolas que se barren viven en src/shelves.py, alineadas con las de Día y
+# Carrefour: el catálogo sólo sirve para comparar precios si las tres tiendas
+# barrieron el mismo estante. Ampliar es agregar una fila allá, no una lista acá.
+MVP_CATEGORIES = keys_for_store("coto")
+
+# Tope duro de páginas por categoría. Es una red de seguridad, no el criterio de
+# corte: el corte real es la página sin resultados. Si el endpoint dejara de
+# respetar el `page` y devolviera siempre el mismo tramo, sin este tope el
+# barrido no termina nunca — y bajo cron eso se come la ventana entera del
+# watchdog y deja el lock tomado para el día siguiente. Mismo rol que el
+# MAX_PAGES de scraper_carrefour.py.
+MAX_PAGES = 60
+
+
+def _as_price(value) -> float:
+    """
+    Precio de Coto como float, tolerando lo que el payload manda de verdad.
+
+    `float(d.get("formatPrice", 0))` no alcanza: la clave EXISTE con valor
+    `null` en parte del catálogo, así que el default nunca se aplica y el
+    `float(None)` levanta TypeError. Eso no se veía con 5 categorías, y cuando
+    aparece rompe de la peor forma posible — el `except` del bucle de páginas lo
+    atrapa y hace `break`, así que la categoría termina temprano con los
+    productos que alcanzó a juntar y se reporta como exitosa. Un precio ausente
+    es 0.0, que es lo que el resto del código ya sabe interpretar.
+    """
+    if value is None:
+        return 0.0
+
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return 0.0
 
 
 def build_coto_url(value: str, product_id: str) -> str | None:
@@ -81,14 +106,15 @@ class CotoScraper:
     def scrape_category(self, category_id: str):
         page = 1
         all_products = []
+        seen_ids = set()
 
         # La ruta jerárquica de esta categoría ya está en el dump de taxonomía,
         # indexada por el mismo id que recibimos acá: se resuelve una sola vez
         # y se adjunta a cada producto como tags estrictos de góndola.
-        category_tags = tags_for_category("coto", category_id)
+        category_tags = shelf_tags("coto", category_id)
         taxonomy_label = category_label("coto", category_id)
 
-        while True:
+        for _ in range(MAX_PAGES):
             url = (
                 f"https://api.coto.com.ar/api/v1/ms-digital-sitio-bff-web/api/v1/products/categories/{category_id}"
                 f"?page={page}&key=key_r6xzz4IAoTWcipni&num_results_per_page=24"
@@ -126,6 +152,7 @@ class CotoScraper:
                     logger.info("[COTO] Final de la categoría %s alcanzado.", category_id)
                     break
                 
+                nuevos_en_pagina = 0
                 for item in results:
                     prod_data = item.get("data", {})
                     
@@ -137,12 +164,12 @@ class CotoScraper:
                     if isinstance(prices_list, list):
                         for p_store in prices_list:
                             if p_store.get("store") == "200":
-                                base_price = float(p_store.get("listPrice", 0))
-                                format_price = float(p_store.get("formatPrice", 0))
+                                base_price = _as_price(p_store.get("listPrice"))
+                                format_price = _as_price(p_store.get("formatPrice"))
                                 break
                     
                     if base_price == 0.0:
-                        base_price = float(prod_data.get("product_list_price", 0))
+                        base_price = _as_price(prod_data.get("product_list_price"))
                     
                     # Fuente primaria: parsear el tamaño real del nombre del producto
                     # (ej. "250 Ml", "400 Gr") - la metadata de la tienda
@@ -189,14 +216,38 @@ class CotoScraper:
                         "is_vegan": is_vegan,
                         "raw_promos": prod_data.get("discounts", [])
                     }
+                    # Sólo los nuevos: si el endpoint repite un tramo, guardar el
+                    # duplicado no corrompe nada (el upsert es por store_sku) pero
+                    # infla el conteo que reporta el barrido.
+                    if product["store_sku"] in seen_ids:
+                        continue
+                    seen_ids.add(product["store_sku"])
+                    nuevos_en_pagina += 1
                     all_products.append(product)
                 
+                # Si el endpoint deja de respetar el `page` y repite el tramo,
+                # cortamos acá en vez de acumular duplicados hasta MAX_PAGES.
+                if not nuevos_en_pagina:
+                    logger.warning("[COTO] La página %s repite productos ya vistos; se corta.", page)
+                    break
+
                 time.sleep(random.uniform(1.5, 3.0))
                 page += 1
                 
             except Exception:
+                # Se relanza en vez de cortar en silencio. Tragarse la excepción
+                # devolvía los productos juntados hasta ahí y `_run_store` la
+                # contaba como categoría OK, así que un fallo a mitad del barrido
+                # terminaba con `StoreRunResult.complete = True` y habilitaba el
+                # pruning: todo lo que faltó recorrer parece discontinuado y se
+                # borra. Perder la categoría entera es preferible a borrar
+                # catálogo vivo; `_run_store` la marca fallida y sigue con la
+                # siguiente, que es donde vive la tolerancia a fallos.
                 logger.exception("[COTO] Ocurrió una excepción en la página %s.", page)
-                break
+                raise
+        else:
+            logger.warning("[COTO] Se alcanzó el tope de %s páginas en '%s'.",
+                           MAX_PAGES, category_id)
                 
         return all_products
 

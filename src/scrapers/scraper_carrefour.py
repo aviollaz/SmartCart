@@ -3,9 +3,10 @@ import logging
 import time
 import random
 
-from src.category_tags import category_label, tags_for_category
+from src.category_tags import category_label
 from src.database import SmartCartDB
 from src.dietary_parser import detect_dietary_flags
+from src.shelves import keys_for_store, shelf_tags
 from src.size_parser import extract_real_volume, normalize_magnitude
 
 logger = logging.getLogger(__name__)
@@ -18,17 +19,10 @@ GRAPHQL_URL = "https://www.carrefour.com.ar/_v/segment/graphql/v1?workspace=mast
 
 BASE_URL = "https://www.carrefour.com.ar"
 
-# Categorías del MVP. Los slugs salen de carrefour_categories.json (generado por
-# get_carrefour_categories.py) y están verificados contra ese dump: dos son de
-# dos niveles y tres de tres, que es justamente lo que ejercita el `map`
-# dinámico de _build_payload().
-MVP_CATEGORIES = [
-    "almacen/aceites-y-vinagres",
-    "lacteos-y-productos-frescos/leches",
-    "almacen/harinas/harinas-comunes-y-leudantes",
-    "desayuno-y-merienda/mermeladas-y-otros-dulces/dulce-de-leche",
-    "desayuno-y-merienda/golosinas-y-chocolates/alfajores",
-]
+# Las góndolas que se barren viven en src/shelves.py, alineadas con las de Coto y
+# Día: el catálogo sólo sirve para comparar precios si las tres tiendas
+# barrieron el mismo estante. Ampliar es agregar una fila allá, no una lista acá.
+MVP_CATEGORIES = keys_for_store("carrefour")
 
 # Tamaño de la grilla del sitio. VTEX pagina por índices absolutos [from, to].
 PAGE_SIZE = 16
@@ -290,7 +284,7 @@ class CarrefourScraper:
 
         # El dump de taxonomía está indexado por el mismo slug que recibimos acá,
         # así que la ruta jerárquica se resuelve una sola vez por categoría.
-        category_tags = tags_for_category("carrefour", category_query)
+        category_tags = shelf_tags("carrefour", category_query)
         taxonomy_label = category_label("carrefour", category_query)
 
         if not category_tags:

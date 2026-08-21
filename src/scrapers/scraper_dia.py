@@ -3,22 +3,25 @@ import logging
 import time
 import random
 
-from src.category_tags import category_label, tags_for_category
+from src.category_tags import category_label
 from src.database import SmartCartDB
 from src.dietary_parser import detect_dietary_flags
+from src.shelves import keys_for_store, shelf_tags
 from src.size_parser import extract_real_volume, normalize_magnitude
 
 logger = logging.getLogger(__name__)
 
-# Categorías del MVP. El catálogo es deliberadamente angosto; ampliar esta
-# lista es la forma de scrapear más góndolas (los slugs salen de dia_categories.json).
-MVP_CATEGORIES = [
-    "almacen/harinas/harinas-de-trigo",
-    "frescos/leches",
-    "almacen/aceites-y-aderezos",
-    "desayuno/para-untar/dulces-de-leche",
-    "almacen/golosinas-y-alfajores/alfajores",
-]
+# Las góndolas que se barren viven en src/shelves.py, alineadas con las de Coto y
+# Carrefour: el catálogo sólo sirve para comparar precios si las tres tiendas
+# barrieron el mismo estante. Ampliar es agregar una fila allá, no una lista acá.
+MVP_CATEGORIES = keys_for_store("dia")
+
+# Tope duro de páginas por categoría. Es una red de seguridad, no el criterio de
+# corte: el corte real es la página sin productos. Sin esto un endpoint que
+# ignore el `from` y repita el primer tramo deja el barrido en bucle — es
+# exactamente el riesgo por el que ops/run_pipeline.sh envuelve todo en
+# `timeout`. Mismo rol que el MAX_PAGES de scraper_carrefour.py.
+MAX_PAGES = 60
 
 class DiaScraper:
     def __init__(self):
@@ -216,13 +219,14 @@ class DiaScraper:
         from_idx = 0
         to_idx = step - 1
         all_category_products = []
+        seen_skus = set()
 
         # El dump de taxonomía está indexado por el mismo slug que recibimos
         # acá, así que la ruta jerárquica se resuelve una sola vez por categoría.
-        category_tags = tags_for_category("dia", category_query)
+        category_tags = shelf_tags("dia", category_query)
         taxonomy_label = category_label("dia", category_query)
 
-        while True:
+        for _ in range(MAX_PAGES):
             logger.info("[DÍA] Recopilando %s - Índices %s a %s...", category_query, from_idx, to_idx)
             raw_data = self.scrape_category_slice(category_query, from_idx, to_idx)
             products = self.process_products(raw_data, category_tags, taxonomy_label)
@@ -231,11 +235,23 @@ class DiaScraper:
                 logger.info("[DÍA] Final de la categoría '%s' alcanzado.", category_query)
                 break
 
-            all_category_products.extend(products)
+            # Si el endpoint deja de respetar el `from` y repite la primera
+            # página, cortamos acá en vez de acumular duplicados hasta MAX_PAGES.
+            nuevos = [p for p in products if p["store_sku"] not in seen_skus]
+            if not nuevos:
+                logger.warning("[DÍA] La página %s-%s repite productos ya vistos; se corta.",
+                               from_idx, to_idx)
+                break
+
+            seen_skus.update(p["store_sku"] for p in nuevos)
+            all_category_products.extend(nuevos)
 
             from_idx += step
             to_idx += step
             time.sleep(random.uniform(1.5, 3.0)) # Delay to prevent blocking
+        else:
+            logger.warning("[DÍA] Se alcanzó el tope de %s páginas en '%s'.",
+                           MAX_PAGES, category_query)
 
         return all_category_products
 
