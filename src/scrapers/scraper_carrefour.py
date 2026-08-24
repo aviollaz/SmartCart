@@ -6,6 +6,8 @@ import random
 from src.category_tags import category_label
 from src.database import SmartCartDB
 from src.dietary_parser import detect_dietary_flags
+from src.scrapers.errors import CategoryScrapeError
+from src.scrapers.vtex import extract_search_payload
 from src.shelves import keys_for_store, shelf_tags
 from src.size_parser import extract_real_volume, normalize_magnitude
 
@@ -107,55 +109,37 @@ class CarrefourScraper:
     def scrape_category_slice(self, category_query: str, from_idx: int, to_idx: int):
         payload = self._build_payload(category_query, from_idx, to_idx)
 
+        # Igual que en Día: un error LEVANTA. Devolver None dejaba al llamador
+        # con cero productos, que su regla de "página vacía = fin de categoría"
+        # lee como éxito, y el pruning después borra lo que no se recorrió.
         try:
             response = self.client.post(GRAPHQL_URL, json=payload)
-            if response.status_code != 200:
-                logger.error("[CARREFOUR] Error %s en la sección %s-%s",
-                             response.status_code, from_idx, to_idx)
-                return None
-
-            return response.json()
-        except Exception:
+        except Exception as exc:
             logger.exception("[CARREFOUR] Excepción en request POST.")
-            return None
+            raise CategoryScrapeError(
+                f"[CARREFOUR] Falló el POST de la sección {from_idx}-{to_idx}: {exc}"
+            ) from exc
 
-    @staticmethod
-    def extract_search_payload(response_json) -> dict | None:
-        """
-        Devuelve el bloque `productSearch`, o None si la respuesta no es una
-        respuesta válida de búsqueda.
+        if response.status_code != 200:
+            logger.error("[CARREFOUR] Error %s en la sección %s-%s",
+                         response.status_code, from_idx, to_idx)
+            raise CategoryScrapeError(
+                f"[CARREFOUR] HTTP {response.status_code} en la sección {from_idx}-{to_idx}."
+            )
 
-        No es paranoia: el hash de la persisted query está fijo y sale de una
-        sesión del navegador. Si Carrefour lo rota, GraphQL contesta **HTTP 200**
-        con un array `errors` (PERSISTED_QUERY_NOT_FOUND) y sin `data`. Sin esta
-        distinción, el corte de paginación por "página vacía" lo interpreta como
-        "la categoría se terminó" y el scrapeo cierra con 0 productos y sin un
-        solo error a la vista.
-        """
-        if not isinstance(response_json, dict):
-            return None
-
-        errors = response_json.get("errors")
-        if errors:
-            mensajes = "; ".join(
-                str(err.get("message", err)) for err in errors if isinstance(err, dict)
-            ) or str(errors)
-            logger.error("[CARREFOUR] La API devolvió errores de GraphQL: %s", mensajes)
-            logger.error("[CARREFOUR] Suele significar que el sha256Hash de la persisted query cambió.")
-            return None
-
-        data = response_json.get("data")
-        if not isinstance(data, dict) or data.get("productSearch") is None:
-            logger.error("[CARREFOUR] Respuesta sin 'data.productSearch': "
-                         "no es un resultado de búsqueda válido.")
-            return None
-
-        return data["productSearch"]
+        try:
+            return response.json()
+        except Exception as exc:
+            raise CategoryScrapeError(
+                f"[CARREFOUR] La sección {from_idx}-{to_idx} no devolvió JSON: {exc}"
+            ) from exc
 
     def process_products(self, response_json, category_tags: list[str] | None = None, taxonomy_label: str | None = None):
-        search = self.extract_search_payload(response_json)
-        if search is None:
-            return []
+        # La validación vive en src/scrapers/vtex.py, compartida con Día: las dos
+        # tiendas corren la misma persisted query y fallan igual cuando el hash
+        # se rota. Y ahora LEVANTA en vez de devolver None — detectar el problema
+        # y después seguir con un `break` silencioso era la mitad del arreglo.
+        search = extract_search_payload(response_json, "CARREFOUR")
 
         category_tags = category_tags or []
         products_data = search.get("products") or []
@@ -301,18 +285,19 @@ class CarrefourScraper:
                 logger.info("[CARREFOUR] Final de la categoría '%s' alcanzado.", category_query)
                 break
 
-            # Si el endpoint deja de respetar el `from` y repite la primera
-            # página, cortamos acá en vez de acumular duplicados hasta MAX_PAGES.
             nuevos = [p for p in products if p["store_sku"] not in seen_skus]
             if not nuevos:
-                logger.warning("[CARREFOUR] La página %s-%s repite productos ya vistos; se corta.",
-                               from_idx, to_idx)
-                break
+                # El endpoint dejó de respetar el `from`: no sabemos qué parte de
+                # la categoría falta, así que esto es un fallo, no un final.
+                raise CategoryScrapeError(
+                    f"[CARREFOUR] La página {from_idx}-{to_idx} de '{category_query}' repite "
+                    f"productos ya vistos: la paginación dejó de avanzar."
+                )
 
             seen_skus.update(p["store_sku"] for p in nuevos)
             all_category_products.extend(nuevos)
 
-            total_disponible = self.extract_search_payload(raw_data).get("recordsFiltered")
+            total_disponible = extract_search_payload(raw_data, "CARREFOUR").get("recordsFiltered")
             if isinstance(total_disponible, int) and to_idx + 1 >= total_disponible:
                 logger.info("[CARREFOUR] Se recorrieron los %s productos de '%s'.",
                             total_disponible, category_query)
@@ -322,8 +307,13 @@ class CarrefourScraper:
             to_idx += PAGE_SIZE
             time.sleep(random.uniform(1.5, 3.0))  # Delay para evitar bloqueos
         else:
-            logger.warning("[CARREFOUR] Se alcanzó el tope de %s páginas en '%s'.",
-                           MAX_PAGES, category_query)
+            # Agotar el tope significa que ni el corte por página vacía ni el de
+            # `recordsFiltered` llegaron: la categoría quedó recorrida a medias y
+            # reportarla OK habilitaría el pruning sobre un barrido trunco.
+            raise CategoryScrapeError(
+                f"[CARREFOUR] Se alcanzó el tope de {MAX_PAGES} páginas en '{category_query}' "
+                f"sin llegar al final de la categoría."
+            )
 
         return all_category_products
 

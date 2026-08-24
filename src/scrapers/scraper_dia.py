@@ -6,6 +6,8 @@ import random
 from src.category_tags import category_label
 from src.database import SmartCartDB
 from src.dietary_parser import detect_dietary_flags
+from src.scrapers.errors import CategoryScrapeError
+from src.scrapers.vtex import extract_search_payload
 from src.shelves import keys_for_store, shelf_tags
 from src.size_parser import extract_real_volume, normalize_magnitude
 
@@ -68,24 +70,44 @@ class DiaScraper:
             }
         }
 
+        # Los errores LEVANTAN en vez de devolver None. Devolviéndolo, el
+        # llamador terminaba con una lista vacía de productos y su regla de
+        # "página vacía = fin de categoría" lo leía como un barrido exitoso: un
+        # 500 pasajero en la página 3 de 6 cerraba la categoría con dos páginas,
+        # `_run_store` la contaba OK y el pruning borraba las otras cuatro como
+        # discontinuadas. Es el mismo bug que ya se corrigió en Coto.
         try:
             response = self.client.post(url, json=payload)
-            if response.status_code == 200:
-                return response.json()
-            else:
-                logger.error("[DÍA] Error %s en la sección %s-%s",
-                             response.status_code, from_idx, to_idx)
-                return None
-        except Exception:
+        except Exception as exc:
             logger.exception("[DÍA] Excepción en request POST.")
-            return None
+            raise CategoryScrapeError(
+                f"[DÍA] Falló el POST de la sección {from_idx}-{to_idx}: {exc}"
+            ) from exc
+
+        if response.status_code != 200:
+            logger.error("[DÍA] Error %s en la sección %s-%s",
+                         response.status_code, from_idx, to_idx)
+            raise CategoryScrapeError(
+                f"[DÍA] HTTP {response.status_code} en la sección {from_idx}-{to_idx}."
+            )
+
+        try:
+            return response.json()
+        except Exception as exc:
+            raise CategoryScrapeError(
+                f"[DÍA] La sección {from_idx}-{to_idx} no devolvió JSON: {exc}"
+            ) from exc
 
     def process_products(self, response_json, category_tags: list[str] | None = None, taxonomy_label: str | None = None):
-        if not response_json:
-            return []
+        # `extract_search_payload` levanta si la respuesta no es un resultado de
+        # búsqueda válido — el caso del sha256Hash rotado, que contesta 200 con
+        # `errors` y sin `data`. Día no tenía esa distinción: leía el JSON con
+        # `.get()` encadenados, así que una persisted query vencida rendía cero
+        # productos y se reportaba como categoría agotada.
+        search = extract_search_payload(response_json, "DÍA")
 
         category_tags = category_tags or []
-        products_data = response_json.get("data", {}).get("productSearch", {}).get("products", [])
+        products_data = search.get("products") or []
         parsed_products = []
 
         for p in products_data:
@@ -235,13 +257,14 @@ class DiaScraper:
                 logger.info("[DÍA] Final de la categoría '%s' alcanzado.", category_query)
                 break
 
-            # Si el endpoint deja de respetar el `from` y repite la primera
-            # página, cortamos acá en vez de acumular duplicados hasta MAX_PAGES.
             nuevos = [p for p in products if p["store_sku"] not in seen_skus]
             if not nuevos:
-                logger.warning("[DÍA] La página %s-%s repite productos ya vistos; se corta.",
-                               from_idx, to_idx)
-                break
+                # El endpoint dejó de respetar el `from`: no sabemos qué parte de
+                # la categoría falta, así que esto es un fallo, no un final.
+                raise CategoryScrapeError(
+                    f"[DÍA] La página {from_idx}-{to_idx} de '{category_query}' repite "
+                    f"productos ya vistos: la paginación dejó de avanzar."
+                )
 
             seen_skus.update(p["store_sku"] for p in nuevos)
             all_category_products.extend(nuevos)
@@ -250,8 +273,14 @@ class DiaScraper:
             to_idx += step
             time.sleep(random.uniform(1.5, 3.0)) # Delay to prevent blocking
         else:
-            logger.warning("[DÍA] Se alcanzó el tope de %s páginas en '%s'.",
-                           MAX_PAGES, category_query)
+            # Agotar el tope significa que el corte por página vacía nunca llegó:
+            # la categoría queda recorrida a medias y no hay forma de saber
+            # cuánto falta. Reportarla OK habilitaría el pruning sobre un barrido
+            # trunco.
+            raise CategoryScrapeError(
+                f"[DÍA] Se alcanzó el tope de {MAX_PAGES} páginas en '{category_query}' "
+                f"sin llegar al final de la categoría."
+            )
 
         return all_category_products
 

@@ -6,6 +6,7 @@ import random
 
 from src.category_tags import category_label
 from src.dietary_parser import detect_dietary_flags
+from src.scrapers.errors import CategoryScrapeError
 from src.shelves import keys_for_store, shelf_tags
 from src.size_parser import extract_real_volume, normalize_magnitude
 
@@ -129,9 +130,17 @@ class CotoScraper:
                 response = self.client.get(url)
                 
                 if response.status_code != 200:
-                    logger.error("[COTO] Error %s al intentar acceder a la página %s. Frenando.",
+                    # Cortaba con `break`, que es indistinguible del final de la
+                    # categoría: el mismo agujero que el `except` de más abajo ya
+                    # había cerrado relanzando. Un 500 pasajero en la página 3
+                    # dejaba la categoría con dos páginas, contada OK, y el
+                    # pruning borraba el resto como discontinuado.
+                    logger.error("[COTO] Error %s al intentar acceder a la página %s.",
                                  response.status_code, page)
-                    break
+                    raise CategoryScrapeError(
+                        f"[COTO] HTTP {response.status_code} en la página {page} "
+                        f"de '{category_id}'."
+                    )
                     
                 data = response.json()
                 
@@ -225,15 +234,20 @@ class CotoScraper:
                     nuevos_en_pagina += 1
                     all_products.append(product)
                 
-                # Si el endpoint deja de respetar el `page` y repite el tramo,
-                # cortamos acá en vez de acumular duplicados hasta MAX_PAGES.
                 if not nuevos_en_pagina:
-                    logger.warning("[COTO] La página %s repite productos ya vistos; se corta.", page)
-                    break
+                    # El endpoint dejó de respetar el `page`: no sabemos qué parte
+                    # de la categoría falta, así que es un fallo, no un final.
+                    raise CategoryScrapeError(
+                        f"[COTO] La página {page} de '{category_id}' repite productos "
+                        f"ya vistos: la paginación dejó de avanzar."
+                    )
 
                 time.sleep(random.uniform(1.5, 3.0))
                 page += 1
                 
+            except CategoryScrapeError:
+                # Ya trae su propio diagnóstico; sube tal cual.
+                raise
             except Exception:
                 # Se relanza en vez de cortar en silencio. Tragarse la excepción
                 # devolvía los productos juntados hasta ahí y `_run_store` la
@@ -246,9 +260,14 @@ class CotoScraper:
                 logger.exception("[COTO] Ocurrió una excepción en la página %s.", page)
                 raise
         else:
-            logger.warning("[COTO] Se alcanzó el tope de %s páginas en '%s'.",
-                           MAX_PAGES, category_id)
-                
+            # Agotar el tope significa que el corte por página sin resultados
+            # nunca llegó: la categoría quedó recorrida a medias, y reportarla OK
+            # habilitaría el pruning sobre un barrido trunco.
+            raise CategoryScrapeError(
+                f"[COTO] Se alcanzó el tope de {MAX_PAGES} páginas en '{category_id}' "
+                f"sin llegar al final de la categoría."
+            )
+
         return all_products
 
 if __name__ == "__main__":

@@ -9,7 +9,9 @@ import pytest
 
 from src.flattener import evaluate_best_promo
 from src.promotion_parser import PromoTransformer
+from src.scrapers.errors import CategoryScrapeError
 from src.scrapers.scraper_carrefour import CarrefourScraper, build_carrefour_url
+from src.scrapers.vtex import extract_search_payload
 
 
 def _producto_vtex(**overrides):
@@ -92,17 +94,25 @@ def test_errores_de_graphql_no_se_confunden_con_categoria_vacia():
     # La persisted query vencida contesta HTTP 200 con `errors` y sin `data`. Si
     # eso se leyera como "no hay más productos", el scrapeo cerraría en silencio
     # con 0 filas y sin un solo error visible.
+    #
+    # Antes esto devolvía None y una lista vacía, que es exactamente el contrato
+    # equivocado: detectar el problema y después seguir con un `break` silencioso
+    # deja la categoría corta y reportada OK, y habilita el pruning a borrar todo
+    # lo que el barrido no alcanzó. Ahora levanta y `_run_store` la marca fallida.
     respuesta_rota = {
         "errors": [{"message": "PersistedQueryNotFound", "extensions": {"code": "PERSISTED_QUERY_NOT_FOUND"}}]
     }
     scraper = CarrefourScraper()
 
-    assert scraper.extract_search_payload(respuesta_rota) is None
-    assert scraper.process_products(respuesta_rota) == []
+    with pytest.raises(CategoryScrapeError, match="PersistedQueryNotFound"):
+        extract_search_payload(respuesta_rota, "CARREFOUR")
+    with pytest.raises(CategoryScrapeError):
+        scraper.process_products(respuesta_rota)
 
-    # Una categoría realmente agotada sí es un payload válido con 0 productos.
+    # Una categoría realmente agotada sí es un payload válido con 0 productos, y
+    # ese es el único final que NO es un error.
     vacia = _respuesta([])
-    assert scraper.extract_search_payload(vacia) is not None
+    assert extract_search_payload(vacia, "CARREFOUR") == {"recordsFiltered": 0, "products": []}
     assert scraper.process_products(vacia) == []
 
 
