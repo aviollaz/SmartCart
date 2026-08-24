@@ -200,7 +200,10 @@ def _maybe_prune(
                        store_id)
         return None
 
-    if not result.complete:
+    if result.prune_scope is None:
+        # Barrido completo: vale el contrato original, se poda la tienda entera.
+        logger.info("Pruning de '%s' (modo: %s, toda la tienda)...", store_id, prune_mode)
+    else:
         logger.warning(
             "Pruning de '%s' acotado a %d/%d categorías: las %d que fallaron quedan "
             "fuera del borrado, en vez de dejar sin podar a toda la tienda.",
@@ -208,11 +211,9 @@ def _maybe_prune(
             result.categories_failed,
         )
 
-    logger.info("Pruning de '%s' (modo: %s, %d categorías en alcance)...",
-                store_id, prune_mode, len(result.ok_categories))
     return db.prune_missing_store_products(
         store_id, result.seen_skus, dry_run=(prune_mode == "dry-run"),
-        categories=result.ok_categories,
+        categories=result.prune_scope,
     )
 
 
