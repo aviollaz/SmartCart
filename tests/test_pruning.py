@@ -37,10 +37,16 @@ def _limpiar(db):
             )
 
 
-def _sembrar(db, skus):
-    """Crea un unified_product y su oferta por cada SKU."""
+def _sembrar(db, skus, source_category=None):
+    """
+    Crea un unified_product y su oferta por cada SKU.
+
+    `source_category` es el alcance del pruning: `None` reproduce las filas
+    anteriores a esa columna, que nunca entran en un borrado acotado.
+    """
     _limpiar(db)
     with psycopg.connect(db.conn_string) as conn:
+        db._ensure_schema(conn)
         with conn.cursor() as cur:
             for sku in skus:
                 uid = f"prod_test_pruning_{sku}"
@@ -53,10 +59,11 @@ def _sembrar(db, skus):
                 cur.execute(
                     """INSERT INTO store_products
                        (unified_product_id, store_id, store_sku, product_url, base_price,
-                        in_stock, promotions_json)
-                       VALUES (%s, %s, %s, 'http://x', 1000, TRUE, '[]')
+                        in_stock, promotions_json, source_category)
+                       VALUES (%s, %s, %s, 'http://x', 1000, TRUE, '[]', %s)
                        ON CONFLICT (store_id, store_sku) DO NOTHING""",
-                    (uid, STORE, sku),
+                    (uid, STORE, sku, source_category(sku) if callable(source_category)
+                     else source_category),
                 )
 
 
@@ -181,3 +188,89 @@ def test_no_toca_otras_tiendas(db):
     for store, n in antes.items():
         if store != STORE:
             assert despues.get(store) == n, f"el pruning tocó {store}"
+
+
+# --------------------------------------------------- alcance por categoría
+
+
+def _cat(sku):
+    """Reparte los SKUs en dos categorías: pares en 'catA', impares en 'catB'."""
+    return "catA" if int(sku[1:]) % 2 == 0 else "catB"
+
+
+def test_una_categoria_caida_no_le_cuesta_el_pruning_al_resto(db):
+    """
+    El motivo de todo el alcance por categoría: antes, `StoreRunResult.complete`
+    exigía cero categorías fallidas, así que una sola caída entre 30 dejaba a la
+    tienda sin podar y acumulando filas `in_stock = TRUE` de productos muertos.
+    """
+    _sembrar(db, [f"s{n}" for n in range(10)], source_category=_cat)
+
+    # catA cerró bien y vio 4 de sus 5 SKUs; catB se cayó y queda fuera del alcance.
+    vistos = {"s0", "s2", "s4", "s6"}
+    resultado = db.prune_missing_store_products(STORE, vistos, categories={"catA"})
+
+    assert resultado["skipped"] is False
+    assert resultado["deleted"] == 1, "sólo el s8, que catA no vio"
+    # Los cinco impares son de catB: no se vieron, pero tampoco se tocan.
+    assert _skus_en_base(db) == ["s0", "s1", "s2", "s3", "s4", "s5", "s6", "s7", "s9"]
+
+
+def test_el_ratio_se_mide_dentro_del_alcance(db):
+    """
+    El denominador tiene que ser el alcance, no la tienda. Contra el total de la
+    tienda, una categoría rota que vale una fracción chica del catálogo nunca
+    tocaría el freno del 30% — que es justo el caso que el freno existe para
+    atajar.
+    """
+    _sembrar(db, [f"s{n}" for n in range(10)], source_category=_cat)
+
+    # catA tiene 5 filas y sólo se vio 1: borraría el 80% de la categoría, aunque
+    # sea apenas el 40% de la tienda.
+    resultado = db.prune_missing_store_products(STORE, {"s0"}, categories={"catA"})
+
+    assert resultado["skipped"] is True
+    assert "80%" in resultado["reason"]
+    assert len(_skus_en_base(db)) == 10
+
+
+def test_las_filas_sin_categoria_nunca_entran_en_un_alcance_acotado(db):
+    """
+    Las filas anteriores a la columna tienen `source_category` en NULL. Quedarse
+    con ellas de más es la dirección segura, y se resuelve solo cuando un barrido
+    completo las vuelve a escribir.
+    """
+    _sembrar(db, [f"s{n}" for n in range(10)], source_category=None)
+
+    resultado = db.prune_missing_store_products(STORE, {"s0"}, categories={"catA"})
+
+    # El alcance no matchea ninguna fila, así que no hay nada obsoleto que borrar:
+    # las 9 que no se vieron sobreviven porque están fuera del universo podable.
+    assert resultado["deleted"] == 0
+    assert len(_skus_en_base(db)) == 10, "ninguna fila NULL puede caer en un DELETE acotado"
+
+    # Y el pruning sin acotar sí las alcanza, que es como se corrigen cuando un
+    # barrido completo las vuelve a escribir con su categoría.
+    assert db.prune_missing_store_products(STORE, {f"s{n}" for n in range(8)})["deleted"] == 2
+
+
+def test_un_alcance_vacio_no_borra_nada(db):
+    """Sin ninguna categoría cerrada no hay universo contra el cual comparar."""
+    _sembrar(db, [f"s{n}" for n in range(10)], source_category=_cat)
+
+    resultado = db.prune_missing_store_products(STORE, {"s0"}, categories=set())
+
+    assert resultado["skipped"] is True
+    assert "ninguna categoría" in resultado["reason"]
+    assert len(_skus_en_base(db)) == 10
+
+
+def test_el_dry_run_acotado_informa_lo_que_haria_el_run_real(db):
+    _sembrar(db, [f"s{n}" for n in range(10)], source_category=_cat)
+    vistos = {"s0", "s2", "s4", "s6"}
+
+    seco = db.prune_missing_store_products(STORE, vistos, dry_run=True, categories={"catA"})
+    assert len(_skus_en_base(db)) == 10
+
+    real = db.prune_missing_store_products(STORE, vistos, categories={"catA"})
+    assert (seco["deleted"], seco["orphans"]) == (real["deleted"], real["orphans"])

@@ -61,8 +61,9 @@ class FakeDB:
             "deleted": 3, "orphans": 1, "skipped": False, "reason": None
         }
 
-    def prune_missing_store_products(self, store_id, seen_skus, dry_run=False):
-        self.prune_calls.append((store_id, set(seen_skus), dry_run))
+    def prune_missing_store_products(self, store_id, seen_skus, dry_run=False,
+                                     categories=None):
+        self.prune_calls.append((store_id, set(seen_skus), dry_run, categories))
         return self.prune_result
 
 
@@ -72,6 +73,9 @@ def _result(store="coto", *, ok=3, failed=0, items=120, skus=("a", "b")):
         store_id=f"{store}_online",
         items_scraped=items,
         seen_skus=set(skus),
+        # El alcance del pruning: las categorías que cerraron bien. Las fallidas
+        # no están acá, así que quedan fuera del borrado.
+        ok_categories={f"cat_ok{i}" for i in range(ok)},
         categories_total=ok + failed,
         categories_ok=ok,
         categories_failed=failed,
@@ -135,20 +139,33 @@ def test_sin_pruning_no_degrada_el_status():
 # ------------------------------------------------------------------- pruning
 
 
-def test_barrido_incompleto_no_poda():
+def test_barrido_incompleto_poda_solo_las_categorias_que_cerraron():
     """
-    El invariante central: `seen_skus` sólo es podable si es el universo COMPLETO.
-    Con categorías caídas, todo lo que no se recorrió parece discontinuado.
+    El invariante central sigue en pie —`seen_skus` sólo es podable si es el
+    universo completo— pero vale POR CATEGORÍA, y el alcance del borrado ahora lo
+    respeta. Antes una sola categoría caída dejaba a la tienda entera sin podar;
+    con 30 categorías por tienda eso es acumular filas muertas para siempre.
     """
     db = FakeDB()
-    assert orchestrator._maybe_prune(db, _result(ok=2, failed=1), "coto_online", "on") is None
+    orchestrator._maybe_prune(db, _result(ok=2, failed=1), "coto_online", "on")
+
+    (_store, _skus, _dry, categories), = db.prune_calls
+    assert categories == {"cat_ok0", "cat_ok1"}, "la categoría caída queda fuera del DELETE"
+
+
+def test_sin_ninguna_categoria_cerrada_no_poda():
+    """Sin alcance no hay pruning posible: todo parecería discontinuado."""
+    db = FakeDB()
+    assert orchestrator._maybe_prune(db, _result(ok=0, failed=3), "coto_online", "on") is None
     assert db.prune_calls == []
 
 
 def test_barrido_completo_poda():
     db = FakeDB()
     orchestrator._maybe_prune(db, _result(), "coto_online", "on")
-    assert db.prune_calls == [("coto_online", {"a", "b"}, False)]
+    assert db.prune_calls == [
+        ("coto_online", {"a", "b"}, False, {"cat_ok0", "cat_ok1", "cat_ok2"})
+    ]
 
 
 def test_modo_dry_run_propaga_la_bandera():
@@ -264,8 +281,10 @@ def test_exit_1_si_una_tienda_queda_partial(monkeypatch, tmp_path):
     rc, db = _run_main(monkeypatch, tmp_path, runners, tel)
     assert rc == orchestrator.EXIT_DEGRADED
     assert tel.by_step("dia").status == STATUS_PARTIAL
-    # Y la tienda degradada no se podó, aunque la otra sí.
-    assert [c[0] for c in db.prune_calls] == ["coto_online"]
+    # La tienda degradada SÍ se poda ahora, pero sólo sobre la categoría que cerró
+    # bien. Sigue siendo PARTIAL: el tablero tiene que mostrar que algo se perdió.
+    assert [c[0] for c in db.prune_calls] == ["coto_online", "dia_online"]
+    assert dict((c[0], c[3]) for c in db.prune_calls)["dia_online"] == {"cat_ok0"}
 
 
 def test_una_tienda_que_explota_no_tumba_a_la_otra(monkeypatch, tmp_path):

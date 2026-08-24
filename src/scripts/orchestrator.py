@@ -131,9 +131,13 @@ def _classify_store(result: run_scrapers.StoreRunResult, prune: dict | None) -> 
     Traduce el desenlace de una tienda a SUCCESS / PARTIAL / FAILED.
 
     Que el pruning quede `skipped` cuenta como PARTIAL y no como SUCCESS: sus dos
-    frenos (cero SKUs vistos, o un borrado que se lleva más del 30% del catálogo)
+    frenos (cero SKUs vistos, o un borrado que se lleva más del 30% del alcance)
     sólo se disparan ante la firma de un scraper roto. Un tablero que muestre eso
     en verde es un tablero que esconde justo lo que hay que mirar.
+
+    No cambia con el pruning acotado por categoría: una categoría caída sigue
+    siendo PARTIAL, y tiene que seguir siéndolo. Lo que cambia es que ya no arrastra
+    consigo el pruning omitido de toda la tienda.
     """
     if result.categories_ok == 0:
         return STATUS_FAILED
@@ -187,19 +191,28 @@ def _maybe_prune(
     """Poda las filas obsoletas, si corresponde. `None` significa "no se intentó"."""
     if prune_mode == "off":
         return None
-    if not result.complete:
+    if not result.ok_categories:
         # El invariante que hace seguro el pruning: `seen_skus` tiene que ser el
-        # universo COMPLETO de lo que la tienda ofrece hoy. Con categorías caídas,
-        # todo lo que no se llegó a recorrer parece discontinuado.
-        logger.warning(
-            "Pruning de '%s' omitido: barrido incompleto (%d/%d categorías).",
-            store_id, result.categories_ok, result.categories_total,
-        )
+        # universo completo de lo que la tienda ofrece hoy, DENTRO del alcance que
+        # se poda. Sin ninguna categoría cerrada no hay alcance, y todo parecería
+        # discontinuado.
+        logger.warning("Pruning de '%s' omitido: ninguna categoría terminó su barrido.",
+                       store_id)
         return None
 
-    logger.info("Pruning de '%s' (modo: %s)...", store_id, prune_mode)
+    if not result.complete:
+        logger.warning(
+            "Pruning de '%s' acotado a %d/%d categorías: las %d que fallaron quedan "
+            "fuera del borrado, en vez de dejar sin podar a toda la tienda.",
+            store_id, result.categories_ok, result.categories_total,
+            result.categories_failed,
+        )
+
+    logger.info("Pruning de '%s' (modo: %s, %d categorías en alcance)...",
+                store_id, prune_mode, len(result.ok_categories))
     return db.prune_missing_store_products(
-        store_id, result.seen_skus, dry_run=(prune_mode == "dry-run")
+        store_id, result.seen_skus, dry_run=(prune_mode == "dry-run"),
+        categories=result.ok_categories,
     )
 
 

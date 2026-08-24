@@ -119,28 +119,22 @@ tiendas.
 
 ## Deuda técnica y riesgos conocidos
 
-### 10. Día y Carrefour truncan categorías en silencio
-Mismo patrón que el bug de `formatPrice: null` que ya se corrigió en Coto:
-`scrape_category_slice()` devuelve `None` ante un error y el llamador lo
-interpreta como **fin de categoría**. La categoría cierra corta y se reporta
-exitosa, lo que habilita el pruning a borrar como discontinuado todo lo que el
-barrido no alcanzó a recorrer.
+### 10 y 11 — RESUELTOS
+La truncación silenciosa y el pruning que se apagaba con una sola categoría
+caída se corrigieron juntos, porque el primero agrava al segundo: al declarar
+las categorías caídas como tales, el gate `complete` dejaba sin podar a la
+tienda entera. Quedó documentado en las etapas 1 y 2 de CLAUDE.md.
 
-En Coto se resolvió relanzando la excepción (`_run_store` ya tolera una
-categoría caída). No se tocó acá porque no se manifestó, pero es el mismo riesgo
-y es el candidato natural para el próximo paso.
+Los tres scrapers siguen ahora una regla única —`break` sólo ante página válida
+y vacía, todo lo demás levanta `CategoryScrapeError`—, y el pruning se acota a
+las categorías cuyo barrido cerró bien vía `store_products.source_category`.
 
-### 11. El pruning se apaga con una sola categoría caída
-`StoreRunResult.complete` exige `categories_failed == 0`
-(`src/scripts/run_scrapers.py`). Con 5 categorías por tienda era improbable
-fallar; con 30 lo es bastante menos, y una sola caída deja la tienda sin podar
-para siempre — acumulando filas `in_stock = TRUE` de productos que ya no
-existen.
-
-**No aflojar `complete` sin pensarlo**: su rigidez es lo que evita borrar
-catálogo vivo tras un barrido parcial, y `MAX_PRUNE_RATIO` protege el caso
-contrario, no éste. Una tolerancia por porcentaje de categorías OK es la forma
-probable, pero merece su propia discusión.
+**Por qué NO se aflojó `complete` por porcentaje**, que era la hipótesis de este
+ítem: una tolerancia del estilo "podar si el 90% de las categorías anduvo" borra
+catálogo vivo en proporción a lo que falló — el mismo daño de la truncación, más
+chico. `MAX_PRUNE_RATIO` no lo ataja porque protege el caso contrario. Acotar el
+DELETE en vez de aflojar el gate hace correcto al pruning en lugar de
+heurístico, y no cede nada a cambio.
 
 ### 12. `unified_products.tags` es por EAN, no por tienda
 Un producto presente en las tres tiendas se queda con los tags de la última que

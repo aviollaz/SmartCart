@@ -134,7 +134,9 @@ class CarrefourScraper:
                 f"[CARREFOUR] La sección {from_idx}-{to_idx} no devolvió JSON: {exc}"
             ) from exc
 
-    def process_products(self, response_json, category_tags: list[str] | None = None, taxonomy_label: str | None = None):
+    def process_products(self, response_json, category_tags: list[str] | None = None,
+                         taxonomy_label: str | None = None,
+                         source_category: str | None = None):
         # La validación vive en src/scrapers/vtex.py, compartida con Día: las dos
         # tiendas corren la misma persisted query y fallan igual cuando el hash
         # se rota. Y ahora LEVANTA en vez de devolver None — detectar el problema
@@ -231,6 +233,9 @@ class CarrefourScraper:
 
             product = {
                 "store_sku": p.get("productId"),
+                # La categoría con la que se barrió: es lo que le permite al
+                # pruning acotarse a las que terminaron bien.
+                "source_category": source_category,
                 # El SKU real de VTEX, distinto del productId en este catálogo
                 # (producto 100650 = item 17305). Es el que espera
                 # /checkout/cart/add?sku= para armar el carrito por URL.
@@ -279,7 +284,8 @@ class CarrefourScraper:
             logger.info("[CARREFOUR] Recopilando %s - Índices %s a %s...",
                         category_query, from_idx, to_idx)
             raw_data = self.scrape_category_slice(category_query, from_idx, to_idx)
-            products = self.process_products(raw_data, category_tags, taxonomy_label)
+            products = self.process_products(raw_data, category_tags, taxonomy_label,
+                                             category_query)
 
             if not products:
                 logger.info("[CARREFOUR] Final de la categoría '%s' alcanzado.", category_query)

@@ -53,6 +53,10 @@ class StoreRunResult:
     store_id: str                           # "coto_online"
     items_scraped: int = 0                  # filas efectivamente persistidas
     seen_skus: set = field(default_factory=set)
+    # Las claves de categoría cuyo barrido cerró bien. Es el ALCANCE del pruning:
+    # sólo se borran filas cuya `source_category` está acá, así que una categoría
+    # caída ya no le cuesta el pruning al resto de la tienda.
+    ok_categories: set = field(default_factory=set)
     categories_total: int = 0
     categories_ok: int = 0
     categories_failed: int = 0
@@ -61,10 +65,11 @@ class StoreRunResult:
     @property
     def complete(self) -> bool:
         """
-        Si el barrido cubrió TODAS las categorías. Es lo único que habilita el pruning.
+        Si el barrido cubrió TODAS las categorías.
 
-        Con un recorrido parcial, todo lo que no se llegó a ver es indistinguible
-        de lo discontinuado, y podar sobre eso borra catálogo vivo.
+        Ya NO es lo que habilita el pruning —eso ahora lo decide `ok_categories`,
+        categoría por categoría—, pero sigue siendo lo que separa un barrido limpio
+        de uno con pérdidas para la telemetría y el resumen.
         """
         return self.categories_total > 0 and self.categories_failed == 0
 
@@ -87,12 +92,14 @@ def _run_store(
 
     La caída de UNA categoría no aborta la tienda: se loguea, se cuenta como
     fallida y se sigue con la siguiente. Rescatar las categorías que sí anduvieron
-    vale la pena — pero el `complete` que sale de acá queda en False, así que esa
-    tienda no se poda. Ese es el punto: tolerar el fallo sin dejar que contamine la
-    decisión de borrar.
+    vale la pena, y ahora tampoco cuesta el pruning: `ok_categories` acumula sólo
+    las que cerraron bien y el borrado se acota a ellas. Tolerar el fallo sin dejar
+    que contamine la decisión de borrar, que es el punto, ya no obliga a apagar el
+    pruning de la tienda entera.
 
     El set de SKUs se arma acá y no dentro de `save_store_products` porque sólo
-    tiene sentido como el universo de un recorrido COMPLETO.
+    tiene sentido junto al alcance que lo acompaña: es el universo de lo que las
+    categorías de `ok_categories` ofrecen hoy.
     """
     categories = list(categories)
     result = StoreRunResult(store=store, store_id=store_id, categories_total=len(categories))
@@ -110,6 +117,7 @@ def _run_store(
                 logger.warning("[%s] categoría '%s' no devolvió productos.", label, category)
 
             result.categories_ok += 1
+            result.ok_categories.add(category)
         except Exception as exc:
             # Un 500 de la tienda, un hash de persisted query rotado o Postgres
             # caído a mitad del barrido. Ninguno de los tres justifica perder las
@@ -211,15 +219,20 @@ def main():
 
         if args.no_prune:
             continue
+        if not result.ok_categories:
+            logger.warning("Pruning de '%s' omitido: ninguna categoría terminó su barrido.",
+                           store)
+            continue
         if not result.complete:
             logger.warning(
-                "Pruning de '%s' omitido: el barrido quedó incompleto (%d/%d categorías).",
+                "Pruning de '%s' acotado a %d/%d categorías: las que fallaron quedan "
+                "fuera del borrado.",
                 store, result.categories_ok, result.categories_total,
             )
-            continue
 
         pruned[store] = db.prune_missing_store_products(
-            result.store_id, result.seen_skus, dry_run=args.prune_dry_run
+            result.store_id, result.seen_skus, dry_run=args.prune_dry_run,
+            categories=result.ok_categories,
         )
 
     if not args.skip_embeddings:
@@ -246,7 +259,8 @@ def main():
             if p["skipped"]:
                 linea += f"  | pruning OMITIDO ({p['reason']})"
             else:
-                linea += f"  | -{p['deleted']} obsoletas, -{p['orphans']} sin ofertas"
+                linea += (f"  | -{p['deleted']} obsoletas, -{p['orphans']} sin ofertas"
+                          f" (sobre {len(result.ok_categories)} categorías)")
         print(linea)
     print(f"  tiempo -> {time.time() - started:.0f}s")
     print("=" * 60)

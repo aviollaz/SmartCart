@@ -209,6 +209,9 @@ class CotoScraper:
 
                     product = {
                         "store_sku": prod_data.get("sku_id"),
+                        # La categoría con la que se barrió: es lo que le permite
+                        # al pruning acotarse a las que terminaron bien.
+                        "source_category": category_id,
                         "ean": str(prod_data.get("product_main_ean")) if prod_data.get("product_main_ean") else None,
                         "name": name,
                         "brand": brand,
