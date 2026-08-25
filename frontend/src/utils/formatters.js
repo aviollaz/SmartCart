@@ -11,17 +11,59 @@ export function formatPrice(value) {
   return PRICE_FORMATTER.format(value);
 }
 
-/** "$X,XX x L" / "x Kg" / "x un" a partir de unit_info + min_price, solo
- * cuando hay datos reales suficientes para calcularlo (no se inventa). */
+// Base de comparación por tamaño: por 100 g / 100 ml para envases chicos, por
+// kilo / litro a partir de 1000. Es el corte que ya usa el backend para escribir
+// un tamaño (src/substitutions.py: 1000 g -> "1 Kg"), así que las dos mitades del
+// proyecto hablan igual de una medida.
+//
+// Una sola base global rompe en un extremo o en el otro: por kilo, un alfajor de
+// 30 g a $2.500 anuncia "$83.333,33 por kg", un número un orden de magnitud
+// arriba del precio del propio producto que se lee como un error; por 100 ml, un
+// bidón de 5 L da una cifra ilegible de chica. El corte coincide con el límite
+// del vocabulario canónico ('g'/'ml' ya vienen normalizados a la unidad chica),
+// así que no hace falta ningún dato extra para decidirlo.
+const UNIT_BASES = {
+  g: { grande: "kg", chica: "100 g" },
+  ml: { grande: "L", chica: "100 ml" },
+};
+const UNIT_BASE_CUTOFF = 1000;
+
+/**
+ * Precio por unidad de medida: la primitiva de comparación de una app cuyo
+ * propósito es comparar precios. "$X,XX por kg" / "por 100 g" / "por L".
+ *
+ * Sólo cuando hay datos reales para calcularlo — no se inventa.
+ *
+ * `unit_type === 'un'` devuelve null y NO cae a "precio por unidad": 'un' es lo
+ * que devuelve normalize_magnitude() cuando SE DIO POR VENCIDO (src/size_parser.py),
+ * y en ese caso total_volume_weight es el placeholder 1.0. Un "precio por unidad"
+ * derivado de eso es el precio del producto disfrazado de una medición que nadie
+ * hizo. Una unidad desconocida también sale por null, por el mismo motivo que
+ * documenta la etapa 2 de CLAUDE.md: una fila que se escapó del vocabulario tiene
+ * que caerse de la feature en silencio, no imprimir una unidad equivocada.
+ *
+ * MULTIPACKS: el peso NO se multiplica, y no es una omisión. El frontend no puede
+ * detectar un multipack — `units_per_pack` viaja en ProductResponse pero el
+ * scraper nunca lo escribe, así que llega siempre null —, y portar
+ * extract_pack_count() a JS tampoco alcanzaría: su propio docstring dice que el
+ * número al lado del "xN" es a veces el total del pack y a veces el de cada
+ * unidad, sin nada que los distinga. Al no multiplicar, el error sólo puede ir
+ * hacia CARO (N× de más cuando el tamaño guardado era el unitario), nunca hacia
+ * barato. Es la misma asimetría de los flags dietarios y de los swaps: errar caro
+ * resigna un ahorro, errar barato rompe la promesa. El arreglo de fondo es del
+ * backend — decidir pack-vs-unidad en el ingest, donde está la evidencia.
+ */
 export function formatUnitPrice(product) {
   const { min_price: minPrice, unit_info: unitInfo } = product;
   if (!unitInfo || !minPrice || minPrice <= 0) return null;
-  const weight = unitInfo.total_volume_weight;
-  const unitType = unitInfo.unit_type;
-  if (!weight || weight <= 0 || !unitType) return null;
 
-  const pricePerUnit = minPrice / weight;
-  return `${formatPrice(pricePerUnit)} x ${unitType}`;
+  const weight = unitInfo.total_volume_weight;
+  const base = UNIT_BASES[unitInfo.unit_type];
+  if (!base || !weight || weight <= 0 || !Number.isFinite(weight)) return null;
+
+  const grande = weight >= UNIT_BASE_CUTOFF;
+  const pricePerBase = (minPrice / weight) * (grande ? UNIT_BASE_CUTOFF : 100);
+  return `${formatPrice(pricePerBase)} por ${grande ? base.grande : base.chica}`;
 }
 
 export function storeLabel(storeId) {

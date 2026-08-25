@@ -57,17 +57,32 @@ deje de persistir en silencio.
 
 Límite conocido, no bug: el ranking es local al navegador por construcción.
 
-### 2. Precio por unidad de medida (por 100 g / por litro)
-Para una app cuyo propósito **es** comparar precios, esta es la primitiva de
-comparación y hoy no está expuesta en ningún lado. En UK es obligatorio por ley
-mostrarlo.
+### 2. Precio por unidad de medida — RESUELTO en el frontend, abierto en el ingest
+Corrigiendo la premisa de este ítem: **no era cierto que no estuviera expuesto**.
+`formatUnitPrice()` existía y `ProductCard` ya lo mostraba — pero mal: dividía por
+`total_volume_weight` y escribía `"$0,02 x g"`, sin normalizar a ninguna base
+legible.
 
-Sale de una división: `total_volume_weight` y `unit_type` ya están normalizados
-(y el invariante `'g'|'ml'|'un'` de la etapa 2 de CLAUDE.md es justamente lo que
-lo hace calculable). Ojo con `unit_type = 'un'`, donde no aplica, y con los
-multipacks — ver la discusión de `extract_pack_count()` en la etapa 7: el número
-al lado del `xN` a veces es el total del pack y a veces el tamaño unitario, así
-que un precio por gramo derivado de un multipack puede mentir.
+Ahora usa una base por tipo de unidad con el corte en 1000: por 100 g / 100 ml
+abajo, por kilo / litro de ahí en adelante (el mismo corte que usa
+`src/substitutions.py` para escribir un tamaño). Una sola base global rompe en un
+extremo o en el otro: por kilo, un alfajor de 30 g a $2.500 anuncia "$83.333,33
+por kg", un número que se lee como un error. Devuelve `null` para
+`unit_type = 'un'` y para cualquier unidad fuera del vocabulario: `'un'` es lo que
+devuelve `normalize_magnitude()` cuando se dio por vencido, y ahí
+`total_volume_weight` es el placeholder `1.0`.
+
+**Abierto: los multipacks.** El frontend no puede resolverlo. `units_per_pack`
+viaja en `ProductResponse` pero el scraper **nunca lo escribe** (está en el SELECT
+y no en el INSERT de `database.py`), así que llega siempre `NULL` — es una trampa
+para el que lo lea y concluya "no hay multipacks". Y portar `extract_pack_count()`
+a JS tampoco alcanzaría: el número al lado del `xN` es indecidible desde el
+nombre. Como no se multiplica el peso, el error sólo puede ir hacia **caro** (N×
+de más cuando el tamaño guardado era el unitario), que es la dirección que el
+proyecto acepta en todos lados. El arreglo de fondo es del backend: decidir
+pack-vs-unidad en el ingest, donde está la evidencia del payload scrapeado,
+poblar `units_per_pack` y exponer un `unit_price` calculado en `ProductResponse`
+— una sola implementación, al lado de `src/size_parser.py`.
 
 ### 3. Progreso hacia el mínimo de compra, en vivo
 Hoy el usuario descubre que el carrito es inviable **recién al optimizar**, que
