@@ -40,3 +40,43 @@ export function applySwaps(items, swaps) {
   }
   return next;
 }
+
+/**
+ * Suma un carrito entero al actual, para el "Repetir" del historial.
+ *
+ * Es un merge y no un reemplazo a propósito. `restoreItems` existe y sería más
+ * corto, pero borra lo que el usuario ya tenía — y el mismo botón vive en dos
+ * lados: en /carrito sólo aparece con el carrito vacío, pero en la home el
+ * carrito puede estar lleno. Un botón que en una pantalla significa "agregar" y
+ * en otra "descartar todo" es peor que cualquiera de las dos cosas, y no hay
+ * nada en el botón que avise. El merge además se deshace con los steppers que ya
+ * están; el reemplazo necesitaría una UndoBar propia.
+ *
+ * Va en una sola escritura y no en N llamadas a addItem por el mismo motivo que
+ * applySwaps: N llamadas son N renders y N escrituras a localStorage.
+ *
+ * Cuando el producto ya estaba en el carrito se conserva el nombre ACTUAL: ese
+ * salió de un ProductResponse vivo, mientras que el del historial puede tener
+ * meses.
+ *
+ * Devuelve el mismo objeto recibido si no había nada que agregar, para que React
+ * pueda saltearse el re-render.
+ */
+export function mergeItems(items, incoming) {
+  const uids = Object.keys(incoming || {});
+  if (uids.length === 0) return items;
+
+  const next = { ...items };
+  for (const unifiedId of uids) {
+    const entrante = incoming[unifiedId];
+    const cantidad = entrante?.quantity || 0;
+    if (cantidad <= 0) continue;
+
+    const existente = next[unifiedId];
+    next[unifiedId] = {
+      name: existente?.name || entrante?.name || unifiedId,
+      quantity: (existente?.quantity || 0) + cantidad,
+    };
+  }
+  return next;
+}

@@ -22,3 +22,22 @@ export function getProductsByCategory(categoryName, limit = 50, dietary) {
   appendDietaryParams(params, dietary);
   return apiFetch(`/category/${encodeURIComponent(categoryName)}?${params.toString()}`);
 }
+
+/**
+ * Trae los productos de una lista de unified_id, en el mismo orden en que se
+ * piden.
+ *
+ * Lo usa el historial, que guarda unified_ids en localStorage y necesita
+ * resolverlos contra el catálogo de HOY. /price-preview no alcanza: devuelve
+ * precio pero ningún metadato.
+ *
+ * Un id ausente de la respuesta NO es un error de red: significa que el producto
+ * ya no existe en el catálogo, porque lo borró el pruning del scraper. Ese es el
+ * contrato del endpoint y es la razón por la que existe.
+ */
+export function getProductsByIds(unifiedIds) {
+  return apiFetch("/products/by-ids", {
+    method: "POST",
+    body: JSON.stringify({ unified_ids: unifiedIds }),
+  });
+}

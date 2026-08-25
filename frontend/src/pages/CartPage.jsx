@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useCart } from "../context/CartContext";
 import { useProfile } from "../context/ProfileContext";
+import { useHistory } from "../context/HistoryContext";
 import { optimizeCart } from "../api/optimize";
 import { storeName } from "../utils/formatters";
 import { CartLineItem } from "../components/cart/CartLineItem";
@@ -11,12 +12,16 @@ import { ProfileDrawer } from "../components/profile/ProfileDrawer";
 import { OptimizeButton } from "../components/optimize/OptimizeButton";
 import { InfeasibleNotice } from "../components/optimize/InfeasibleNotice";
 import { OptimizeResultsPanel } from "../components/optimize/OptimizeResultsPanel";
+import { PurchaseHistorySection } from "../components/history/PurchaseHistorySection";
 
 export function CartPage({ onOpenLocation }) {
   const { items, incrementItem, decrementItem, removeItem, replaceItem, replaceItems, restoreItems } =
     useCart();
   const { cards, memberships, deliveryCosts, coordinates, location, anon_user_id, setStoreCoverage } =
     useProfile();
+  // Sólo el lado de escritura: `entries` de acá abajo ya nombra a los ítems del
+  // carrito, y PurchaseHistorySection hace su propio useHistory() para leer.
+  const { recordPurchase } = useHistory();
   const entries = Object.entries(items);
 
   const [optimizeStatus, setOptimizeStatus] = useState("idle"); // idle | loading | success | infeasible | error
@@ -56,6 +61,24 @@ export function CartPage({ onOpenLocation }) {
         setOptimizeResult(response.data);
         setOptimizeStatus("success");
 
+        // `items` es el cierre de este useCallback: el carrito TAL COMO se
+        // optimizó, no lo que haya pasado a ser mientras el request estaba en
+        // vuelo. Es la misma fuente de la que salió cartPayload, así que el
+        // historial no puede describir un carrito que nunca se cotizó.
+        //
+        // Se graba también en las re-optimizaciones que dispara un swap: grabar
+        // sólo las manuales perdería el carrito final —el que incluye los
+        // reemplazos aceptados—, que es justamente el que importa. Las corridas
+        // repetidas las absorbe la ventana de sesión de purchaseHistory.js.
+        //
+        // El carrito inviable (400) NO se graba: no es una compra, y ensuciaría
+        // el ranking con carritos que el usuario nunca pudo comprar.
+        recordPurchase({
+          items,
+          total: response.data.total_spent_net,
+          stores: Object.keys(response.data.split || {}),
+        });
+
         // El optimizador vuelve a consultar la cobertura con cada corrida, así
         // que su veredicto es más fresco que el guardado en el onboarding. Solo
         // se persiste un "no entrega" afirmativo: la respuesta sin coordenadas
@@ -78,7 +101,7 @@ export function CartPage({ onOpenLocation }) {
       setOptimizeStatus("error");
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [items, memberships, cards, deliveryCosts, coordinates, anon_user_id, location]);
+  }, [items, memberships, cards, deliveryCosts, coordinates, anon_user_id, location, recordPurchase]);
 
   useEffect(() => {
     if (reoptimizeRef.current) {
@@ -166,6 +189,11 @@ export function CartPage({ onOpenLocation }) {
             </ul>
           )}
         </section>
+
+        {/* Con el carrito vacío, el historial es lo único accionable de la
+            pantalla; con productos adentro sería ruido al lado del flujo de
+            optimización. */}
+        {entries.length === 0 && <PurchaseHistorySection />}
 
         <ProfileDrawer onOpenLocation={onOpenLocation} />
 

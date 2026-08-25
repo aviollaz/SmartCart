@@ -11,15 +11,51 @@ base; los demás salen de mediciones o de código leído.
 
 ## Producto
 
-### 1. "Comprar de nuevo" / mis habituales
-Entre el 60% y el 80% de un carrito de supermercado es recompra, así que el
-historial personal es la señal más fuerte que existe en el rubro — más que
-cualquier mejora del embedding. No necesita ML.
+### 1. "Comprar de nuevo" / mis habituales — RESUELTO
+El historial se guarda en `smartcart_history_v1` (`HistoryContext` +
+`utils/purchaseHistory.js`) y se lee de dos formas: un ranking de productos por
+frecuencia ("Comprar de nuevo", grilla de `ProductCard` reales) y la lista de los
+últimos carritos con un botón Repetir. Vive en la home y en `/carrito` cuando
+está vacío. Documentado en la sección de frontend de CLAUDE.md.
 
-`CartContext` ya persiste el carrito en `localStorage`, así que el salto es
-guardar **historial** de carritos optimizados, no solo el estado actual.
-Cuidado con una cosa: `smartcart_profile_v1` está versionado y el historial
-puede crecer sin techo, así que conviene un límite de N carritos.
+**La decisión no obvia es la ventana de sesión.** Una sola sesión de compra pega
+varias veces contra `/optimize` —aceptar una sugerencia re-optimiza sola, un
+cierre de tienda también, deshacer también, y "cambio una cantidad y vuelvo a
+optimizar" es el flujo normal—, así que anexar una entrada por corrida no es
+sólo ruidoso: sobrepondera justo los carritos que el usuario más manoseó, y una
+tarde de indecisión le gana para siempre a tres meses de compras. Una corrida
+dentro de los 30 minutos **reemplaza** a la anterior. Como SmartCart no tiene
+checkout, no existe ninguna acción que signifique "ya compré": el tiempo es la
+única señal. La ventana se queda corta a propósito — partir una sesión en dos es
+molesto y visible, unir dos compras distintas destruye la primera en silencio.
+
+Alternativas descartadas, por si alguna vuelve a tentar: **hash del contenido**
+del carrito (falla justo donde importa, porque un swap cambia el contenido y los
+swaps son la principal fuente de corridas repetidas); **contar cada uid una vez
+por entrada** (no ayuda: lo duplicado es la entrada); **un botón "ya compré"**
+(la señal más limpia de todas, pero pide una acción en el momento exacto en que
+el usuario no tiene motivo para darla, así que la feature se quedaría sin datos);
+**grabar al hacer click en el link de checkout** (sólo Día y Carrefour tienen
+magic link, así que sub-registraría sistemáticamente los carritos con mucho Coto
+— un sesgo en la dimensión tienda, peor que el que arregla).
+
+Hizo falta un endpoint nuevo, `POST /products/by-ids`: `/price-preview` devuelve
+precio pero ningún metadato, y su filtro por `in_stock` vuelve ambigua la
+ausencia de un id. En el endpoint nuevo **un id ausente significa exactamente que
+el pruning lo borró**, y "existe pero hoy nadie lo tiene" se reporta aparte con
+`store_count == 0`. Ese contrato es lo que permite avisar "esto ya no está" sin
+mentirle al que sólo se quedó sin stock.
+
+Sobre el versionado, corrigiendo la premisa que tenía este ítem: la clave del
+perfil lleva `_v1` pero **no se versiona** — la migración es un efecto con spread
+(CLAUDE.md, etapa 9). Para el historial bumpear no es sólo poco convencional, es
+destructivo: no hay copia en el servidor ni tabla por usuario, así que ninguna
+acción del usuario reconstruye lo perdido. El tope de 20 carritos sí quedó, y no
+sólo por tamaño: la escritura de `useLocalStorage` se traga los errores, así que
+un historial sin techo que reviente la cuota del origen haría que el **carrito**
+deje de persistir en silencio.
+
+Límite conocido, no bug: el ranking es local al navegador por construcción.
 
 ### 2. Precio por unidad de medida (por 100 g / por litro)
 Para una app cuyo propósito **es** comparar precios, esta es la primitiva de
@@ -41,6 +77,15 @@ es la peor fricción del flujo y además es la KPI que mide el analyzer
 `DEFAULT_MIN_SPEND_LIMITS` vive en `src/optimizer.py` y el frontend ya llama a
 `POST /price-preview` para la advertencia de cobertura. Falta convertir la
 restricción dura en un indicador durante el armado.
+
+Dos notas de cuando se hizo el #1, que comparte substrato con este ítem (los dos
+baten `/price-preview` sobre una lista de ítems). Primero: los mínimos hay que
+exponerlos desde el backend, no copiar los números al frontend — un id duplicado
+es tolerable, un número que cambia no. Segundo, y más importante: **el mínimo
+rige sólo para las tiendas ACTIVAS del split**, no para todas, así que una barra
+de progreso por tienda miente — un carrito puede ser perfectamente viable con dos
+de las tres barras a cero. El indicador honesto es global ("te faltan $X para que
+alguna tienda te sirva"), no por tienda.
 
 ### 4. Sustituciones pre-aprobadas
 `src/strategic_swaps.py` ya calcula candidatos comparables; lo que falta no es
