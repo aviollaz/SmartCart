@@ -160,12 +160,17 @@ def test_sin_ninguna_categoria_cerrada_no_poda():
     assert db.prune_calls == []
 
 
-def test_barrido_completo_poda():
+def test_barrido_completo_poda_toda_la_tienda():
+    """
+    Con todas las categorías cubiertas vale el contrato original y NO se acota.
+    Acotar igual sería peor: dejaría fuera para siempre a las filas con
+    `source_category` en NULL —las anteriores a la columna, y las de categorías
+    que salieron de src/shelves.py—, que ningún barrido va a volver a escribir
+    justamente porque ya no se ofrecen.
+    """
     db = FakeDB()
     orchestrator._maybe_prune(db, _result(), "coto_online", "on")
-    assert db.prune_calls == [
-        ("coto_online", {"a", "b"}, False, {"cat_ok0", "cat_ok1", "cat_ok2"})
-    ]
+    assert db.prune_calls == [("coto_online", {"a", "b"}, False, None)]
 
 
 def test_modo_dry_run_propaga_la_bandera():

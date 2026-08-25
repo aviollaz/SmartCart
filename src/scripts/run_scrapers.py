@@ -74,6 +74,26 @@ class StoreRunResult:
         return self.categories_total > 0 and self.categories_failed == 0
 
     @property
+    def prune_scope(self) -> set | None:
+        """
+        El alcance que hay que pasarle a `prune_missing_store_products`.
+
+        `None` (podar toda la tienda) cuando el barrido cubrió TODAS las
+        categorías: ahí `seen_skus` sí es el universo completo de la tienda y vale
+        el contrato original. Acotar igual sería peor, no más seguro — dejaría
+        fuera para siempre a las filas cuya `source_category` es NULL (las
+        anteriores a esa columna, y las de categorías que salieron de
+        `src/shelves.py`), que ningún barrido va a volver a escribir justamente
+        porque ya no se ofrecen. Medido tras un barrido completo de Carrefour:
+        138 filas en esa situación.
+
+        El set de categorías OK cuando el barrido fue parcial: ahí el universo
+        completo sólo vale por categoría, y acotar es lo que permite podar igual
+        en vez de dejar a la tienda entera sin podar por una sola caída.
+        """
+        return None if self.complete else self.ok_categories
+
+    @property
     def first_error(self) -> str | None:
         return self.errors[0] if self.errors else None
 
@@ -232,7 +252,7 @@ def main():
 
         pruned[store] = db.prune_missing_store_products(
             result.store_id, result.seen_skus, dry_run=args.prune_dry_run,
-            categories=result.ok_categories,
+            categories=result.prune_scope,
         )
 
     if not args.skip_embeddings:
@@ -259,8 +279,9 @@ def main():
             if p["skipped"]:
                 linea += f"  | pruning OMITIDO ({p['reason']})"
             else:
-                linea += (f"  | -{p['deleted']} obsoletas, -{p['orphans']} sin ofertas"
-                          f" (sobre {len(result.ok_categories)} categorías)")
+                linea += f"  | -{p['deleted']} obsoletas, -{p['orphans']} sin ofertas"
+                if result.prune_scope is not None:
+                    linea += f" (acotado a {len(result.prune_scope)} categorías)"
         print(linea)
     print(f"  tiempo -> {time.time() - started:.0f}s")
     print("=" * 60)

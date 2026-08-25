@@ -157,6 +157,20 @@ class PricePreviewRequest(BaseModel):
     items: List[CartItem]
     user_memberships: Optional[List[str]] = []
 
+# Tope de ids por request a /products/by-ids. No hay un limite natural como el
+# `limit` de /search: aca el llamador manda la lista, asi que sin tope un cliente
+# roto puede pedir el catalogo entero en un round-trip. 100 es holgado para los
+# dos usos reales (la grilla de habituales muestra ~12) y mantiene el `= ANY` en
+# un tamano donde la query de ofertas sigue siendo un index scan.
+#
+# Si alguna vez se agrega una vista que precargue un carrito historico entero,
+# revisar este numero antes que el cliente: un carrito grande lo pasa.
+MAX_PRODUCTS_BY_IDS = 100
+
+
+class ProductsByIdsRequest(BaseModel):
+    unified_ids: List[str] = Field(..., min_length=1, max_length=MAX_PRODUCTS_BY_IDS)
+
 # Estado global para mantener el modelo cargado en memoria
 ml_models = {}
 
@@ -335,6 +349,93 @@ def _build_store_offer(sp: dict) -> dict:
     }
 
 
+# Mismo orden que resolveDisplayImage() en frontend/src/utils/formatters.js.
+IMAGE_STORE_PRIORITY = ("coto_online", "dia_online", "carrefour_online")
+
+
+def _fetch_offers_by_product(cur, product_ids: list) -> dict:
+    """
+    {unified_product_id: [oferta, ...]} para una lista de productos.
+
+    La query estaba escrita a mano e identica en /search y /category; se extrajo
+    al agregar /products/by-ids, que la necesitaba por tercera vez.
+
+    NO filtra por in_stock a proposito, igual que antes: `available_at_stores`
+    trae todas las ofertas y el que cuenta solo las disponibles es `store_count`
+    (ver el LEFT JOIN de cada endpoint). Los dos numeros pueden discrepar y esa
+    discrepancia es informacion, no un bug.
+    """
+    if not product_ids:
+        return {}
+
+    cur.execute("""
+        SELECT unified_product_id, store_id, product_url, base_price, in_stock,
+               promotions_json, image_url, last_updated
+        FROM store_products
+        WHERE unified_product_id = ANY(%s)
+    """, (product_ids,))
+
+    offers_by_product: Dict[str, List[Dict[str, Any]]] = {}
+    for sp in cur.fetchall():
+        offers_by_product.setdefault(sp["unified_product_id"], []).append(_build_store_offer(sp))
+    return offers_by_product
+
+
+def _build_product_response(row: dict, offers: list) -> dict:
+    """
+    Arma un ProductResponse a partir de una fila de unified_products y sus
+    ofertas ya construidas por _build_store_offer().
+
+    Estaba escrito a mano adentro de GET /category y se extrajo al agregar
+    POST /products/by-ids: min_price y la eleccion de imagen son la unica parte
+    de la respuesta que NO sale derecho de una columna, y dos copias significan
+    que el mismo producto puede mostrar precio distinto segun por donde entro el
+    usuario.
+
+    `distance` va en 0.0 fija por la misma razon que en /category: ninguno de los
+    dos endpoints tiene nocion de relevancia, y el campo es obligatorio en
+    ProductResponse. Volverlo Optional cambiaria el contrato de /search a cambio
+    de nada.
+
+    GET /search NO usa esta funcion a proposito: no manda min_price ni image_url,
+    y ese hueco esta documentado en CLAUDE.md (etapa 6) como preexistente y
+    deliberado. Unificarlo aca le cambiaria la respuesta de refilon.
+
+    Ojo con min_price: es el minimo de los precios de LISTA, promos ignoradas.
+    Es una propiedad conocida que el frontend compensa en resolveDisplayPrice();
+    "mejorarla" en un endpoint solo haria que el mismo producto tenga dos
+    precios segun la pantalla desde la que se llegue.
+    """
+    min_price = min([o["base_price"] for o in offers if o["base_price"] > 0], default=0.0)
+
+    best_image = None
+    for preferido in IMAGE_STORE_PRIORITY:
+        oferta = next((o for o in offers if o["store_id"] == preferido and o.get("image_url")), None)
+        if oferta:
+            best_image = oferta["image_url"]
+            break
+
+    return {
+        "unified_id": row["id"],
+        "ean": row["ean"],
+        "name": row["name"],
+        "brand": row["brand"],
+        "category": row["category"],
+        "min_price": min_price,
+        "image_url": best_image,
+        "is_gluten_free": bool(row["is_gluten_free"]),
+        "is_vegan": bool(row["is_vegan"]),
+        "unit_info": {
+            "units_per_pack": row["units_per_pack"],
+            "unit_type": row["unit_type"],
+            "total_volume_weight": float(row["total_volume_weight"]) if row["total_volume_weight"] is not None else None
+        },
+        "distance": 0.0,
+        "store_count": int(row["store_count"]),
+        "available_at_stores": offers,
+    }
+
+
 @app.get("/search", response_model=List[ProductResponse])
 def search_products(
     q: str = Query(..., description="Texto de búsqueda libre (ej. 'Puré de papas')", min_length=1),
@@ -427,25 +528,14 @@ def search_products(
                 
                 # 3. Obtener ofertas asociadas de store_products para los productos unificados encontrados
                 product_ids = [p["id"] for p in nearest_products]
-                
-                cur.execute("""
-                    SELECT unified_product_id, store_id, product_url, base_price, in_stock, promotions_json, image_url, last_updated
-                    FROM store_products
-                    WHERE unified_product_id = ANY(%s)
-                """, (product_ids,))
+                offers_by_product = _fetch_offers_by_product(cur, product_ids)
 
-                store_products = cur.fetchall()
-
-        # 4. Agrupar ofertas por unified_product_id
-        offers_by_product: Dict[str, List[Dict[str, Any]]] = {}
-        for sp in store_products:
-            prod_id = sp["unified_product_id"]
-            if prod_id not in offers_by_product:
-                offers_by_product[prod_id] = []
-
-            offers_by_product[prod_id].append(_build_store_offer(sp))
-
-        # 5. Estructurar la respuesta final de búsqueda
+        # 4. Estructurar la respuesta final de búsqueda
+        #
+        # A diferencia de /category y /products/by-ids, este endpoint NO pasa por
+        # _build_product_response(): no manda min_price ni image_url, y ese hueco
+        # esta documentado en CLAUDE.md (etapa 6) como preexistente y deliberado.
+        # Unificarlo aca seria cambiarle la respuesta de refilon.
         results = []
         for p in nearest_products:
             prod_id = p["id"]
@@ -982,63 +1072,98 @@ def get_products_by_category(
                     return []
 
                 product_ids = [p["id"] for p in nearest_products]
-                
-                # LA CLAVE ESTÁ ACÁ: Nos aseguramos de que 'image_url' esté en el SELECT
-                cur.execute("""
-                    SELECT unified_product_id, store_id, product_url, base_price, in_stock, promotions_json, image_url, last_updated
-                    FROM store_products
-                    WHERE unified_product_id = ANY(%s)
-                """, (product_ids,))
-                store_products = cur.fetchall()
+                offers_by_product = _fetch_offers_by_product(cur, product_ids)
 
-        offers_by_product = {}
-        for sp in store_products:
-            prod_id = sp["unified_product_id"]
-            if prod_id not in offers_by_product:
-                offers_by_product[prod_id] = []
-
-            offers_by_product[prod_id].append(_build_store_offer(sp))
-
-        results = []
-        for p in nearest_products:
-            prod_id = p["id"]
-            offers = offers_by_product.get(prod_id, [])
-            
-            # --- CALCULAR PRECIO MÍNIMO ---
-            min_price = min([o["base_price"] for o in offers if o["base_price"] > 0], default=0.0)
-            
-            # --- PRIORIZAR IMAGEN DE COTO, LUEGO DÍA, LUEGO CARREFOUR ---
-            # Mismo orden que resolveDisplayImage() en el frontend.
-            best_image = None
-            for preferido in ("coto_online", "dia_online", "carrefour_online"):
-                oferta = next((o for o in offers if o["store_id"] == preferido and o.get("image_url")), None)
-                if oferta:
-                    best_image = oferta["image_url"]
-                    break
-
-            results.append({
-                "unified_id": prod_id,
-                "ean": p["ean"],
-                "name": p["name"],
-                "brand": p["brand"],
-                "category": p["category"],
-                "min_price": min_price,
-                "image_url": best_image,
-                "is_gluten_free": bool(p["is_gluten_free"]),
-                "is_vegan": bool(p["is_vegan"]),
-                "unit_info": {
-                    "units_per_pack": p["units_per_pack"],
-                    "unit_type": p["unit_type"],
-                    "total_volume_weight": float(p["total_volume_weight"]) if p["total_volume_weight"] is not None else None
-                },
-                "distance": 0.0,
-                "store_count": int(p["store_count"]),
-                "available_at_stores": offers
-            })
-        return results
+        return [
+            _build_product_response(p, offers_by_product.get(p["id"], []))
+            for p in nearest_products
+        ]
     except Exception as e:
         logger.error(f"Error en búsqueda por categoría: {e}")
         raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/products/by-ids", response_model=List[ProductResponse])
+def get_products_by_ids(request: ProductsByIdsRequest):
+    """
+    Devuelve los productos pedidos por unified_id, en el mismo orden en que se
+    pidieron.
+
+    Existe para el historial de compras del frontend, que guarda unified_ids en
+    localStorage y necesita volver a resolverlos contra el catalogo de hoy.
+    /price-preview no alcanza: devuelve precio pero ningun metadato, y /optimize
+    puede contestar 400 por minimo de compra, asi que ninguno de los dos sirve de
+    lookup.
+
+    **Un unified_id AUSENTE de la respuesta significa exactamente una cosa: la
+    fila ya no existe en unified_products, o sea que el pruning la borro (etapa 2
+    de CLAUDE.md).** Ese contrato es el motivo entero de que este endpoint
+    exista, y de el se desprenden las dos reglas que NO hay que "simplificar":
+
+    - **No filtra por in_stock.** Si descartara los productos sin stock, un id
+      ausente pasaria a significar o "lo dieron de baja para siempre" o "hoy no
+      hay", y la UI no tendria como distinguirlos: le diria al usuario que un
+      producto no se vende mas cuando en realidad vuelve manana. Ese es
+      justamente el problema que ya tiene /price-preview, y que useUnavailable-
+      CartItems.js documenta teniendo que NO marcar los ausentes por ambiguos.
+      "Existe pero hoy no lo tiene nadie" es un estado real y distinto —
+      prune_missing_store_products solo borra la fila unificada cuando no le
+      queda ninguna oferta— y se reporta con store_count = 0.
+    - **No acepta filtros dietarios.** Cualquier filtro capaz de descartar un id
+      rompe el contrato de arriba. Un lookup por id no tiene facetas: el llamador
+      ya sabe que productos quiere.
+
+    `distance` va en 0.0 fija, igual que /category: no hay query, no hay
+    relevancia que reportar.
+
+    Tampoco falla hacia adelante devolviendo []: a diferencia de coto_logistics o
+    analytics, una respuesta vacia en silencio es indistinguible de "todos tus
+    habituales fueron dados de baja", que es la peor mentira posible para esta
+    feature. El que falla abierto es el frontend (no renderiza la seccion); la
+    API dice la verdad.
+    """
+    try:
+        # dict.fromkeys deduplica conservando el orden: un id repetido no puede
+        # producir dos filas, porque el frontend keyea la grilla por unified_id
+        # y serian dos claves de React iguales.
+        ordered_ids = list(dict.fromkeys(request.unified_ids))
+
+        db = SmartCartDB()
+        with psycopg.connect(db.conn_string, row_factory=dict_row) as conn:
+            with conn.cursor() as cur:
+                cur.execute("""
+                    SELECT u.id, u.ean, u.name, u.brand, u.category, u.units_per_pack,
+                           u.unit_type, u.total_volume_weight, u.is_gluten_free,
+                           u.is_vegan, 0.0 AS distance,
+                           count(DISTINCT sp.store_id) AS store_count
+                    FROM unified_products u
+                    LEFT JOIN store_products sp
+                           ON sp.unified_product_id = u.id AND sp.in_stock
+                    WHERE u.id = ANY(%s)
+                    GROUP BY u.id, u.ean, u.name, u.brand, u.category, u.units_per_pack,
+                             u.unit_type, u.total_volume_weight, u.is_gluten_free, u.is_vegan
+                """, (ordered_ids,))
+                rows_by_id = {row["id"]: row for row in cur.fetchall()}
+
+                if not rows_by_id:
+                    return []
+
+                offers_by_product = _fetch_offers_by_product(cur, list(rows_by_id.keys()))
+
+        # El orden se restituye en Python y no con un ORDER BY array_position():
+        # el dict ya esta armado, asi que sale gratis, y evita mandar el array de
+        # ids dos veces. El orden del request lleva informacion — es el ranking
+        # del llamador —, devolver el de Postgres lo obligaria a reordenar.
+        return [
+            _build_product_response(rows_by_id[uid], offers_by_product.get(uid, []))
+            for uid in ordered_ids
+            if uid in rows_by_id
+        ]
+
+    except Exception as e:
+        logger.error(f"Error en la busqueda por ids: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
 
 if __name__ == "__main__":
     import uvicorn

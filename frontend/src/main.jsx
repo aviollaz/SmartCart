@@ -8,13 +8,18 @@ import './index.css'
 import App from './App.jsx'
 import { CartProvider } from './context/CartContext.jsx'
 import { ProfileProvider } from './context/ProfileContext.jsx'
+import { HistoryProvider } from './context/HistoryContext.jsx'
 
 createRoot(document.getElementById('root')).render(
   <StrictMode>
     <BrowserRouter>
       <CartProvider>
         <ProfileProvider>
-          <App />
+          {/* El más interno: no necesita nada de los otros dos, pero desde acá
+              puede leerlos si alguna vez hace falta, y nadie arriba lo necesita. */}
+          <HistoryProvider>
+            <App />
+          </HistoryProvider>
         </ProfileProvider>
       </CartProvider>
     </BrowserRouter>

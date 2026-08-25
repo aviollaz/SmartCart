@@ -1,6 +1,6 @@
 import { createContext, useCallback, useContext, useMemo } from "react";
 import { useLocalStorage } from "../hooks/useLocalStorage";
-import { applySwaps } from "../utils/cartOperations";
+import { applySwaps, mergeItems as mergeCartItems } from "../utils/cartOperations";
 
 const CartContext = createContext(null);
 
@@ -96,6 +96,16 @@ export function CartProvider({ children }) {
   // no puede saber cuánto había antes.
   const restoreItems = useCallback((snapshot) => setItems(snapshot || {}), [setItems]);
 
+  /**
+   * Suma un carrito entero al actual, sin pisar lo que ya había. Es lo que usa
+   * el "Repetir" del historial; la discusión de por qué es merge y no
+   * reemplazo está en utils/cartOperations.js.
+   */
+  const mergeItems = useCallback(
+    (snapshot) => setItems((prev) => mergeCartItems(prev, snapshot || {})),
+    [setItems]
+  );
+
   const clear = useCallback(() => setItems({}), [setItems]);
 
   const itemCount = useMemo(
@@ -113,6 +123,7 @@ export function CartProvider({ children }) {
       replaceItem,
       replaceItems,
       restoreItems,
+      mergeItems,
       clear,
       itemCount,
     }),
@@ -125,6 +136,7 @@ export function CartProvider({ children }) {
       replaceItem,
       replaceItems,
       restoreItems,
+      mergeItems,
       clear,
       itemCount,
     ]
