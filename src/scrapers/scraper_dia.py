@@ -3,12 +3,12 @@ import logging
 import time
 import random
 
-from src.category_tags import category_label
 from src.database import SmartCartDB
 from src.dietary_parser import detect_dietary_flags
 from src.scrapers.errors import CategoryScrapeError
 from src.scrapers.vtex import extract_search_payload
-from src.shelves import keys_for_store, shelf_tags
+from src.shelves import keys_for_store, shelf_for_key
+from src.taxonomy import category_path
 from src.size_parser import extract_real_volume, normalize_magnitude
 
 logger = logging.getLogger(__name__)
@@ -98,8 +98,8 @@ class DiaScraper:
                 f"[DÍA] La sección {from_idx}-{to_idx} no devolvió JSON: {exc}"
             ) from exc
 
-    def process_products(self, response_json, category_tags: list[str] | None = None,
-                         taxonomy_label: str | None = None,
+    def process_products(self, response_json, shelf: str | None = None,
+                         taxonomy_path: str | None = None,
                          source_category: str | None = None):
         # `extract_search_payload` levanta si la respuesta no es un resultado de
         # búsqueda válido — el caso del sha256Hash rotado, que contesta 200 con
@@ -108,7 +108,6 @@ class DiaScraper:
         # productos y se reportaba como categoría agotada.
         search = extract_search_payload(response_json, "DÍA")
 
-        category_tags = category_tags or []
         products_data = search.get("products") or []
         parsed_products = []
 
@@ -164,25 +163,6 @@ class DiaScraper:
                     total_volume_weight, unidad_medida
                 )
 
-            # --- EXTRACCIÓN Y NORMALIZACIÓN DE CATEGORÍA ---
-            # Preferimos la hoja del dump de taxonomía (misma fuente que los
-            # tags); si el slug no está ahí, caemos al path que manda VTEX.
-            category_name = taxonomy_label or "Sin Categoría"
-
-            if not taxonomy_label:
-                raw_categories = p.get("categories", [])
-                if raw_categories:
-                    # VTEX envía rutas como "/Frescos/Leches/Leches descremadas/"
-                    # Tomamos la primera ruta, eliminamos las barras de los extremos y separamos por "/"
-                    path_parts = [part for part in raw_categories[0].strip("/").split("/") if part]
-
-                    # Intentamos agarrar el segundo nivel (ej: "Leches"), si no existe, agarramos el primero
-                    if len(path_parts) >= 2:
-                        category_name = path_parts[1]
-                    elif len(path_parts) == 1:
-                        category_name = path_parts[0]
-            # -----------------------------------------------
-
             images = first_item.get("images", [])
             image_url = images[0].get("imageUrl") if images else None
 
@@ -201,7 +181,7 @@ class DiaScraper:
             dietary_sources = [
                 p.get("productName"),
                 p.get("brand"),
-                category_tags,
+                taxonomy_path,
                 p.get("clusterHighlights"),
                 [prop.get("values") for prop in p.get("properties", [])],
             ]
@@ -220,13 +200,13 @@ class DiaScraper:
                 "ean": first_item.get("ean"),
                 "name": p.get("productName"),
                 "brand": p.get("brand"),
-                "category": category_name,
-                "tags": category_tags,
+                # La góndola canónica: la única noción de categoría del proyecto
+                # (ver src/shelves.py).
+                "shelf": shelf,
                 "url": p.get("link"),
                 "image_url": image_url,
                 "base_price": base_price,
                 "in_stock": True,
-                "is_weighable": False,
                 "total_volume_weight": total_volume_weight,
                 "unit_type": unit_type,
                 "is_gluten_free": is_gluten_free,
@@ -248,15 +228,17 @@ class DiaScraper:
         all_category_products = []
         seen_skus = set()
 
-        # El dump de taxonomía está indexado por el mismo slug que recibimos
-        # acá, así que la ruta jerárquica se resuelve una sola vez por categoría.
-        category_tags = shelf_tags("dia", category_query)
-        taxonomy_label = category_label("dia", category_query)
+        # La góndola canónica de este slug (src/shelves.py) es la categoría con
+        # la que se guarda el producto: idéntica en las tres cadenas, que es lo
+        # que hace comparables sus catálogos. La ruta de taxonomía se resuelve
+        # para usarla como evidencia dietaria, no se persiste.
+        shelf = shelf_for_key("dia", category_query)
+        taxonomy_path = category_path("dia", category_query)
 
         for _ in range(MAX_PAGES):
             logger.info("[DÍA] Recopilando %s - Índices %s a %s...", category_query, from_idx, to_idx)
             raw_data = self.scrape_category_slice(category_query, from_idx, to_idx)
-            products = self.process_products(raw_data, category_tags, taxonomy_label,
+            products = self.process_products(raw_data, shelf, taxonomy_path,
                                              category_query)
 
             if not products:

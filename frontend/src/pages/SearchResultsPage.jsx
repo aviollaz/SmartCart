@@ -1,7 +1,8 @@
 import { useCallback, useEffect, useState } from "react";
 import { useParams, useSearchParams } from "react-router-dom";
-import { searchProducts, getProductsByCategory } from "../api/products";
+import { searchProducts, getProductsByShelf } from "../api/products";
 import { useProductFilters } from "../hooks/useProductFilters";
+import { useShelves } from "../hooks/useShelves";
 import { storeLabel } from "../utils/formatters";
 import { FiltersSidebar } from "../components/plp/FiltersSidebar";
 import { SortDropdown } from "../components/plp/SortDropdown";
@@ -10,7 +11,8 @@ import { ProductGrid } from "../components/plp/ProductGrid";
 const NO_DIETARY_FILTERS = { glutenFree: false, vegan: false };
 
 export function SearchResultsPage() {
-  const { bucket } = useParams();
+  const { shelf } = useParams();
+  const { labelBySlug } = useShelves();
   const [searchParams] = useSearchParams();
   const query = searchParams.get("q");
 
@@ -19,8 +21,8 @@ export function SearchResultsPage() {
   const [error, setError] = useState(null);
   const [dietary, setDietary] = useState(NO_DIETARY_FILTERS);
 
-  const mode = bucket ? "category" : "search";
-  const term = bucket || query;
+  const mode = shelf ? "shelf" : "search";
+  const term = shelf || query;
 
   const toggleDietary = useCallback((key) => {
     setDietary((prev) => ({ ...prev, [key]: !prev[key] }));
@@ -40,8 +42,8 @@ export function SearchResultsPage() {
     setError(null);
 
     const request =
-      mode === "category"
-        ? getProductsByCategory(term, undefined, dietary)
+      mode === "shelf"
+        ? getProductsByShelf(term, undefined, dietary)
         : searchProducts(term, undefined, dietary);
     request
       .then((data) => {
@@ -61,13 +63,16 @@ export function SearchResultsPage() {
 
   const filters = useProductFilters(results);
 
-  const title = mode === "category" ? bucket : `Resultados para "${query}"`;
+  // El slug de la URL no es presentable ("yerba-mate"): la etiqueta sale de
+  // GET /categories, que ya está cacheado por sesión. Mientras carga se muestra
+  // el slug, que es feo pero no queda vacío.
+  const title = mode === "shelf" ? labelBySlug[shelf] || shelf : `Resultados para "${query}"`;
   // Sin este aviso, la grilla filtrada por cobertura se ve simplemente más
   // chica y parece que faltan productos.
   const excludedLabel = filters.unavailableStores.map(storeLabel).join(" y ");
   const anyDietaryActive = dietary.glutenFree || dietary.vegan;
   const emptyMessage = anyDietaryActive
-    ? `No encontramos productos para "${term}" con los filtros de dieta aplicados.`
+    ? `No encontramos productos en ${title} con los filtros de dieta aplicados.`
     : `No encontramos productos para "${term}" todavía.`;
 
   return (

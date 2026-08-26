@@ -58,12 +58,11 @@ class FakeCursor:
         return self._result
 
 
-def _row(uid, name, weight=1000.0, unit="g", tags=("almacen", "lacteos", "leches")):
+def _row(uid, name, weight=1000.0, unit="g", shelf="leches"):
     return {
         "id": uid,
         "name": name,
-        "category": "Lácteos",
-        "tags": list(tags),
+        "shelf": shelf,
         "total_volume_weight": weight,
         "unit_type": unit,
         "name_embedding": f"[emb-{uid}]",

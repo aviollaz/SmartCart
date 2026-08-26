@@ -44,12 +44,20 @@ def test_fastapi_endpoints():
             for promo in store['promotions']:
                 logger.info(f"      - {promo['description']} (Tipo: {promo['type']})")
 
-        # Validaciones de la especificación
-        assert "unified_id" in first_item
-        assert "ean" in first_item
-        assert "name" in first_item
-        assert "unit_info" in first_item
-        assert "distance" in first_item
-        assert "available_at_stores" in first_item
+        # Validaciones de la especificación.
+        #
+        # min_price, image_url y unit_price se assertean explícitamente porque
+        # /search era el único endpoint que NO pasaba por
+        # _build_product_response() y no los mandaba. Que este test no los
+        # mirara es por qué el hueco sobrevivió tanto: la respuesta era válida
+        # contra el modelo Pydantic (los tres son Optional) y simplemente venía
+        # incompleta.
+        for campo in ("unified_id", "ean", "name", "shelf", "shelf_label",
+                      "min_price", "image_url", "unit_info", "unit_price",
+                      "distance", "store_count", "available_at_stores"):
+            assert campo in first_item, f"/search no manda '{campo}'"
+
+        assert first_item["min_price"] is not None
+        assert first_item["shelf"], "el producto quedó sin góndola"
 
         logger.info("¡Todas las pruebas del API pasaron con éxito!")

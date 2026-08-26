@@ -21,6 +21,8 @@ from typing import Iterator
 
 import psycopg
 
+from src.schema import ensure_schema as apply_schema
+
 logger = logging.getLogger(__name__)
 
 # Fail-open ante un error es la mitad del problema: sin timeout, una base que no
@@ -33,41 +35,6 @@ STATUS_RUNNING = "RUNNING"
 STATUS_SUCCESS = "SUCCESS"
 STATUS_PARTIAL = "PARTIAL"
 STATUS_FAILED = "FAILED"
-
-# En este proyecto no hay migraciones: el esquema base se creó a mano y las
-# columnas nuevas se agregan de forma idempotente en runtime (ver
-# `SmartCartDB._ensure_schema` y `EmbeddingPipeline.ensure_vector_extension_and_index`).
-# Acá el patrón es el mismo pero con la tabla entera, porque un job desatendido no
-# puede depender de que alguien se acuerde de correr un CREATE TABLE a mano.
-_DDL = """
-CREATE TABLE IF NOT EXISTS scraper_execution_logs (
-    id                   BIGSERIAL PRIMARY KEY,
-    run_id               UUID        NOT NULL,
-    supermercado         TEXT        NOT NULL,
-    start_time           TIMESTAMPTZ NOT NULL,
-    end_time             TIMESTAMPTZ,
-    duration_seconds     NUMERIC(10,2),
-    items_scraped        INTEGER     NOT NULL DEFAULT 0,
-    categories_ok        INTEGER     NOT NULL DEFAULT 0,
-    categories_failed    INTEGER     NOT NULL DEFAULT 0,
-    pruned_rows          INTEGER,
-    pruned_orphans       INTEGER,
-    prune_skipped_reason TEXT,
-    status               TEXT        NOT NULL,
-    error_message        TEXT,
-    hostname             TEXT,
-    CONSTRAINT scraper_execution_logs_status_chk
-        CHECK (status IN ('RUNNING','SUCCESS','PARTIAL','FAILED'))
-);
-"""
-
-_INDEXES = (
-    "CREATE INDEX IF NOT EXISTS idx_scraper_exec_logs_run "
-    "ON scraper_execution_logs (run_id);",
-    "CREATE INDEX IF NOT EXISTS idx_scraper_exec_logs_time "
-    "ON scraper_execution_logs (supermercado, start_time DESC);",
-)
-
 
 @dataclass
 class StepRecord:
@@ -110,13 +77,19 @@ class ScraperTelemetry:
     # ---------------------------------------------------------------- esquema
 
     def ensure_schema(self) -> bool:
-        """Crea tabla e índices si faltan. Devuelve si la telemetría queda usable."""
+        """
+        Aplica el DDL de src/schema.py (que incluye `scraper_execution_logs`) y
+        devuelve si la telemetría queda usable.
+
+        La tabla se definía acá, y era el único CREATE TABLE del repo: el resto
+        del esquema estaba hecho a mano contra la base de desarrollo. Se movió
+        junto con las otras dos, pero el patrón que este módulo estrenó —DDL
+        idempotente en código, porque un job desatendido no puede depender de que
+        alguien se acuerde de correrlo a mano— es el que quedó para todo.
+        """
         try:
             with psycopg.connect(self.conn_string, connect_timeout=CONNECT_TIMEOUT_S) as conn:
-                with conn.cursor() as cur:
-                    cur.execute(_DDL)
-                    for idx in _INDEXES:
-                        cur.execute(idx)
+                apply_schema(conn)
             return True
         except Exception:
             logger.exception(

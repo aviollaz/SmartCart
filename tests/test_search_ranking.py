@@ -26,6 +26,10 @@ from src.database import SmartCartDB
 
 logger = logging.getLogger(__name__)
 
+# Una góndola real de src/shelves.py: la tabla es cerrada, así que hardcodear el
+# slug no puede quedar desactualizado sin que tests/test_shelves.py lo note.
+GONDOLA = "leches"
+
 QUERIES = ["yogur bebible", "galletitas", "leche descremada", "aceite", "gaseosa"]
 
 
@@ -151,11 +155,11 @@ def test_category_es_determinista(client):
     grande, Postgres devolvía 50 filas en el orden que tuviera a mano y dos
     llamadas iguales podían traer productos distintos.
     """
-    primera = client.get("/category/Lácteos", params={"limit": 20}).json()
-    segunda = client.get("/category/Lácteos", params={"limit": 20}).json()
+    primera = client.get(f"/category/{GONDOLA}", params={"limit": 20}).json()
+    segunda = client.get(f"/category/{GONDOLA}", params={"limit": 20}).json()
 
     if not primera:
-        pytest.skip("no hay productos en la categoría Lácteos")
+        pytest.skip(f"no hay productos en la góndola {GONDOLA}")
 
     assert [p["unified_id"] for p in primera] == [p["unified_id"] for p in segunda]
 
@@ -165,9 +169,9 @@ def test_category_ordena_por_disponibilidad(client):
     En /category no hay relevancia que resignar (su `distance` es 0.0 fija), así
     que el orden por cantidad de tiendas es estricto, sin bonus ni tope.
     """
-    resultados = client.get("/category/Lácteos", params={"limit": 20}).json()
+    resultados = client.get(f"/category/{GONDOLA}", params={"limit": 20}).json()
     if not resultados:
-        pytest.skip("no hay productos en la categoría Lácteos")
+        pytest.skip(f"no hay productos en la góndola {GONDOLA}")
 
     counts = [p["store_count"] for p in resultados]
     assert counts == sorted(counts, reverse=True)

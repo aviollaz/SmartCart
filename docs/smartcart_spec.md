@@ -37,30 +37,37 @@ Para mantener la experiencia fluida y evitar sobrecargar la matriz del solver co
 
 ---
 
-## 2.1. Árbol de Categorías Real (Mega-Menú)
+## 2.1. Góndolas (Mega-Menú)
 
-Además de `GET /categories` (lista plana de las 4 categorías normalizadas que existen en `unified_products.category`: Lácteos, Golosinas, Almacén, Otros), la API expone `GET /categories/tree`, que devuelve la taxonomía real de 2-3 niveles combinando las categorías ya scrapeadas de Coto y Día (`src/scrapers/coto_categories.json` y `dia_categories.json`), pensada para alimentar un mega-menú de navegación tipo e-commerce.
-
-El árbol se construye una sola vez al arrancar la API (`src/category_tree.py`, cacheado en memoria) mergeando las categorías de ambas tiendas en capas: texto normalizado, contención de tokens significativos, similaridad semántica (reutilizando el modelo `all-MiniLM-L6-v2` ya cargado para `/search`) y una tabla chica de alias manuales para los casos puntuales que ninguna de las anteriores resuelve.
+`GET /categories` devuelve las góndolas del catálogo agrupadas en secciones. Sale
+de `src/shelves.py` y no toca la base: esa tabla **es** la taxonomía del proyecto
+—decide qué se scrapea, qué categoría tiene cada producto y qué puede sustituir a
+qué—, así que el menú no puede desincronizarse de lo que hay cargado.
 
 ```json
-{
-  "Almacén": {
-    "label": "Almacén",
-    "has_direct_category_match": true,
-    "subcategories": {
-      "Golosinas": { "label": "Golosinas", "leaves": ["Alfajores", "Chocolates", "..."] }
-    }
+[
+  {
+    "section": "Desayuno y merienda",
+    "shelves": [
+      { "slug": "alfajores", "label": "Alfajores" },
+      { "slug": "yerba-mate", "label": "Yerba y mate" }
+    ]
   },
-  "Bebidas": {
-    "label": "Bebidas",
-    "has_direct_category_match": false,
-    "subcategories": { "...": "..." }
-  }
-}
+  { "section": "Bebidas", "shelves": [{ "slug": "aguas", "label": "Aguas" }] }
+]
 ```
 
-**Regla de ruteo para el frontend:** `has_direct_category_match` indica si ese top-level existe literalmente como valor de `unified_products.category` (hoy solo Lácteos, Golosinas y Almacén). Un click en esos top-levels debe resolverse vía `GET /category/{label}`. Cualquier otro click (subcategoría, leaf, o un top-level sin match directo — la mayoría, dado que el catálogo cargado hoy es acotado) debe resolverse vía `GET /search?q=<label>`, reutilizando la búsqueda semántica existente en lugar de requerir un match exacto de categoría.
+**Regla de ruteo para el frontend:** no hay ninguna. Todo click resuelve por
+`GET /category/{slug}`, y toda hoja tiene productos por construcción. Un slug que
+no esté en la tabla contesta **404**, no una lista vacía: "no hay productos" y
+"esa góndola no existe" son cosas distintas.
+
+Esto reemplazó a `GET /categories/tree`, que mergeaba por embeddings las
+taxonomías completas de Coto y Día (Carrefour nunca entró) en un árbol de ~15
+top-levels y cientos de hojas sobre un catálogo de 20 góndolas. Casi todo lo que
+el usuario clickeaba no tenía productos y caía a `GET /search?q=<label>` —una
+búsqueda semántica del nombre de una categoría que el catálogo no contenía—, y de
+ahí salía la vieja bandera `has_direct_category_match`, que ya no existe.
 
 ---
 
@@ -74,14 +81,15 @@ Este formato consolidado representa la estructura limpia y corregida que se cons
   "ean": "7790742348005",
   "name": "Leche Multidefensas 1% LA SERENISIMA Sachet 1l",
   "brand": "LA SERENISIMA",
-  "category": "Lácteos",
+  "shelf": "leches",
+  "shelf_label": "Leches",
   "image_url": "https://static.cotodigital3.com.ar/sitios/fotos/large/00539100/00539126.jpg",
   "min_price": 1975.0,
   "unit_info": {
-    "units_per_pack": 1,
-    "unit_type": "Ltr",
-    "total_volume_weight": 1.0
+    "unit_type": "ml",
+    "total_volume_weight": 1000.0
   },
+  "unit_price": { "value": 1975.0, "base": "L" },
   "distance": 0.0,
   "available_at_stores": [
     {
@@ -89,7 +97,6 @@ Este formato consolidado representa la estructura limpia y corregida que se cons
       "product_url": "https://www.cotodigital3.com.ar/...",
       "base_price": 1975.0,
       "in_stock": true,
-      "last_updated": "2026-07-20T18:30:00Z",
       "image_url": "https://static.cotodigital3.com.ar/...",
       "promotions": [
         {
@@ -109,7 +116,6 @@ Este formato consolidado representa la estructura limpia y corregida que se cons
       "product_url": "https://diaonline.supermercadosdia.com.ar/...",
       "base_price": 1975.0,
       "in_stock": true,
-      "last_updated": "2026-07-20T18:31:00Z",
       "image_url": "https://diaio.vtexassets.com/...",
       "promotions": []
     }
@@ -117,26 +123,49 @@ Este formato consolidado representa la estructura limpia y corregida que se cons
 }
 ```
 
-### 3.1. Tags estrictos de góndola
+### 3.1. La góndola canónica (`unified_products.shelf`)
 
-Además de `category` (los 4 buckets gruesos de `SmartCartDB.CATEGORY_MAP`), `unified_products` guarda `tags TEXT[]`: la ruta jerárquica completa de la categoría, slugificada.
+Cada producto guarda **un** slug de góndola, el de `src/shelves.py`, y es la única
+noción de categoría del proyecto: lo escribe el scraper resolviendo la clave con
+la que barrió, lo filtra `GET /category/{slug}`, lo muestra el mega-menú y sobre
+él se decide qué puede sustituir a qué.
 
 ```
-"Almacén -> Golosinas -> Alfajores"  ->  ["almacen", "golosinas", "alfajores"]
+Coto      "catv00003266"                 ->  "leches"
+Día       "frescos/leches"               ->  "leches"
+Carrefour "lacteos-y-productos-frescos/leches"  ->  "leches"
 ```
 
-La ruta sale del dump de taxonomía de cada tienda (`src/scrapers/*_categories.json`), que está indexado por la misma clave que los scrapers ya iteran: el `category_id` de Coto y el slug de Día. No hay requests extra ni heurísticas sobre el nombre del producto.
+**Las tres cadenas escriben el mismo slug**, y ahí está todo el valor: "misma
+góndola" es una igualdad (`u.shelf = %s`, índice btree) y no queda vocabulario
+que conciliar. `shelf_label` viaja al lado en la respuesta para que el cliente no
+tenga que traducir el slug.
 
-El motivo es que `category` no sirve como guarda de "misma góndola": mapea etiquetas hoja a través de un dict de 9 claves, así que sobre el catálogo completo el 98 % de las categorías reales cae en `Otros`, mezclando mayonesa con condimentos para carne. Los tags, en cambio, vienen de ramas distintas de la taxonomía y no pueden colisionar.
+Reemplazó a dos columnas que decían lo mismo peor:
 
-La comparación de góndolas está centralizada en `category_tags.same_aisle_filter()`, que arma la cláusula SQL y la consumen tanto las sugerencias de `api.py` como la heurística de cierre de tienda (`strategic_swaps.py`). Usa el operador de **solapamiento** de Postgres (`&&`, índice GIN) sobre los segmentos **no top-level** (`category_tags.filter_tags()`), no containment ni prefijo de rama. La razón es que las tiendas anidan a distinta profundidad:
+* **`category`** — 4 buckets a los que un dict de 12 claves mapeaba etiquetas
+  *hoja*. Medido sobre el catálogo real: **5.140 de 6.401 productos (80%)** caían
+  en `Otros`, mezclando mayonesa con condimento para carne y dejando a
+  `GET /category` cubriendo una fracción chica del catálogo.
+* **`tags TEXT[]`** — la ruta completa de la taxonomía, slugificada, comparada con
+  el operador de solapamiento de Postgres (`&&`, índice GIN) sobre los segmentos
+  no top-level. Funcionaba, pero era **por EAN**: un producto vendido por las tres
+  cadenas se quedaba con los tags de la última que lo escribiera, o sea con el
+  vocabulario de una sola tienda. Y dos cadenas que nombran distinto el mismo
+  estante (Carrefour archiva el vinagre en `aceites-y-vinagres`, Día en
+  `aceites-y-aderezos`) no solapaban, así que el producto quedaba sin sustituto
+  posible y nada lo avisaba.
 
-| | `tags` | segmentos de comparación |
-|---|---|---|
-| Leche Coto | `[frescos, lacteos, leches]` | `[lacteos, leches]` |
-| Leche Día | `[frescos, leches]` | `[leches]` |
+Un producto **sin** góndola no matchea nada: es la dirección segura, la misma que
+el proyecto elige en todos lados (perder un swap resigna un ahorro, proponer uno
+de otro pasillo rompe la promesa). En la práctica no puede pasar por el camino
+normal: los scrapers sólo iteran claves de la tabla y `save_store_products` exige
+la clave.
 
-Solapan en `leches` y son sustituibles; un filtro por prefijo de rama fallaría acá. Descartar el top-level es lo que evita que `almacen` matchee contra medio catálogo. Cuando un producto todavía no tiene tags, la comparación cae al filtro por `category` anterior.
+Los dumps de taxonomía (`src/scrapers/*_categories.json`) siguen en el repo, pero
+ya no se persisten con el producto: los usan el parser dietario, como texto de
+evidencia, y `tests/test_shelves.py`, para verificar que toda clave de `SHELVES`
+exista de verdad en la taxonomía de su tienda.
 
 ### 3.2. Atributos dietarios
 

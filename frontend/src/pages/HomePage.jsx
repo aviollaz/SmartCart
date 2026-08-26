@@ -1,8 +1,14 @@
 import { Link } from "react-router-dom";
-import { DIRECT_MATCH_SHORTCUTS } from "../utils/constants";
+import { useShelves } from "../hooks/useShelves";
 import { PurchaseHistorySection } from "../components/history/PurchaseHistorySection";
 
 export function HomePage() {
+  // Los atajos son las góndolas reales del catálogo, las mismas del mega-menú.
+  // Antes eran cuatro etiquetas hardcodeadas (`DIRECT_MATCH_SHORTCUTS`) que
+  // espejaban a mano una constante del backend, y espejaban mal: incluían
+  // "Otros", el bucket de descarte donde caía el 80% del catálogo.
+  const { shelves } = useShelves();
+
   return (
     <div className="mx-auto w-full max-w-5xl px-4 py-12">
       <div className="text-center">
@@ -15,13 +21,13 @@ export function HomePage() {
         </p>
 
         <div className="flex flex-wrap items-center justify-center gap-3">
-          {DIRECT_MATCH_SHORTCUTS.map((category) => (
+          {shelves.map((shelf) => (
             <Link
-              key={category}
-              to={`/categoria/${encodeURIComponent(category)}`}
+              key={shelf.slug}
+              to={`/categoria/${shelf.slug}`}
               className="rounded-full border border-brand-violet-700 px-4 py-2 text-sm font-medium text-brand-violet-700 hover:bg-brand-violet-100"
             >
-              {category}
+              {shelf.label}
             </Link>
           ))}
         </div>

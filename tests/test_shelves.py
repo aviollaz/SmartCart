@@ -6,115 +6,93 @@ Lo que se protege acá es la premisa del catálogo: barrer las mismas góndolas 
 las tres tiendas. Una clave mal tipeada no rompe nada en runtime — el scraper
 loguea "no devolvió productos" y sigue — así que sin estos tests la tienda queda
 sin esa góndola y el optimizador simplemente deja de tener con qué comparar.
-"""
-import itertools
 
+Desde que la góndola es la única taxonomía del proyecto, la tabla también decide
+qué categoría tiene cada producto, qué se puede sustituir por qué y qué muestra
+el mega-menú, así que estos tests cubren bastante más que el barrido.
+"""
 import pytest
 
-from src.category_tags import filter_tags, load_taxonomy
 from src.shelves import (
+    SECTIONS,
     SHELVES,
+    STORE_IDS,
     STORES,
     keys_for_store,
+    sections,
     shelf_for_key,
-    shelf_tags,
+    shelf_label,
 )
-
-PARES = list(itertools.combinations(STORES, 2))
+from src.taxonomy import load_taxonomy
 
 
 @pytest.mark.parametrize("store", STORES)
 def test_todas_las_claves_existen_en_la_taxonomia(store):
-    """Una clave que no está en el dump se scrapea sin tags y sin avisar."""
+    """
+    Una clave que no está en el dump se barre igual y no devuelve nada: el
+    scraper loguea "sin productos" y sigue, así que el typo queda invisible
+    hasta que alguien nota que esa góndola está vacía.
+    """
     taxonomia = load_taxonomy(store)
     desconocidas = [k for k in keys_for_store(store) if k not in taxonomia]
 
     assert not desconocidas, f"claves de {store} ausentes del dump: {desconocidas}"
 
 
-@pytest.mark.parametrize("shelf", SHELVES)
-def test_cada_gondola_cubre_las_tres_tiendas(shelf):
+@pytest.mark.parametrize("slug", SHELVES)
+def test_cada_gondola_cubre_las_tres_tiendas(slug):
     """
     El sentido de la tabla es la alineación: una góndola que le falta a una
     tienda es exactamente el caso que no se puede comparar entre cadenas.
     """
-    gondola = SHELVES[shelf]
-
     for store in STORES:
-        assert gondola.get(store), f"'{shelf}' no tiene claves de {store}"
+        assert SHELVES[slug].keys_for(store), f"'{slug}' no tiene claves de {store}"
 
 
-@pytest.mark.parametrize("shelf,store", [(s, t) for s in SHELVES for t in STORES])
-def test_cada_clave_pertenece_a_una_sola_gondola(shelf, store):
+@pytest.mark.parametrize("slug,store", [(s, t) for s in SHELVES for t in STORES])
+def test_cada_clave_pertenece_a_una_sola_gondola(slug, store):
     """
-    Una clave repetida en dos góndolas haría ambiguo el tag canónico:
-    `shelf_for_key` devuelve la primera y el producto quedaría etiquetado con
-    una góndola que no es la que se quiso barrer.
+    Una clave repetida en dos góndolas haría ambigua la góndola del producto:
+    `shelf_for_key` devolvería una sola y el producto quedaría archivado en una
+    que no es la que se quiso barrer.
     """
-    for key in SHELVES[shelf][store]:
-        assert shelf_for_key(store, key) == shelf
+    for key in SHELVES[slug].keys_for(store):
+        assert shelf_for_key(store, key) == slug
 
 
 @pytest.mark.parametrize("store", STORES)
 def test_las_claves_no_se_repiten_entre_gondolas(store):
-    todas = [k for g in SHELVES.values() for k in g[store]]
+    todas = [k for shelf in SHELVES.values() for k in shelf.keys_for(store)]
 
     assert len(todas) == len(set(todas)), f"claves duplicadas en {store}: {todas}"
 
 
-@pytest.mark.parametrize("shelf,par", [(s, p) for s in SHELVES for p in PARES])
-def test_cada_gondola_solapa_entre_tiendas(shelf, par):
-    """
-    La razón de ser del tag canónico.
-
-    Sin él sólo 7 de las 20 góndolas solapaban en los tres pares: cada cadena
-    nombra distinto el mismo estante ("Mate" / "Yerba mate" / "Yerba"), y
-    `filter_tags` + el `&&` de Postgres comparan literales. Un solapamiento
-    vacío significa que ningún producto de esa góndola puede sustituir al de la
-    otra tienda — la sugerencia no aparece y nada indica que falta.
-    """
-    gondola = SHELVES[shelf]
-    a, b = par
-
-    tags_a = {t for k in gondola[a] for t in filter_tags(shelf_tags(a, k))}
-    tags_b = {t for k in gondola[b] for t in filter_tags(shelf_tags(b, k))}
-
-    assert tags_a & tags_b, f"'{shelf}': {a} y {b} no comparten ningún tag"
-
-
 @pytest.mark.parametrize("store", STORES)
-def test_el_tag_canonico_esta_en_cada_clave(store):
+def test_toda_clave_barrida_resuelve_a_una_gondola(store):
+    """
+    Lo que hace comparable el catálogo: las tres tiendas escriben el MISMO slug
+    para el mismo estante, así que `unified_products.shelf` se compara por
+    igualdad y no hay vocabulario que conciliar.
+
+    Antes esto se resolvía con un solapamiento (`&&`) sobre la ruta de taxonomía
+    de cada tienda, y sólo 7 de las 20 góndolas solapaban en los tres pares: la
+    yerba es "Mate" en Coto, "Yerba mate" en Día y "Yerba" en Carrefour. Un
+    solapamiento vacío significaba que ningún producto de esa góndola podía
+    sustituir al de la otra tienda, y nada lo indicaba.
+    """
     for key in keys_for_store(store):
-        assert shelf_for_key(store, key) in shelf_tags(store, key)
+        assert shelf_for_key(store, key) in SHELVES
 
 
-def test_el_tag_canonico_no_se_duplica():
-    """Cuando la hoja de la tienda ya se llama igual que la góndola."""
-    tags = shelf_tags("dia", "almacen/golosinas-y-alfajores/alfajores")
-
-    assert tags.count("alfajores") == 1
-
-
-def test_gondolas_distintas_no_solapan():
+def test_clave_ajena_a_la_tabla_no_recibe_gondola():
     """
-    El tag canónico agrega alcance, no lo afloja: sigue sin poder sugerirse una
-    mermelada para reemplazar un aceite.
-    """
-    aceites = filter_tags(shelf_tags("dia", "almacen/aceites-y-aderezos"))
-    mermeladas = filter_tags(shelf_tags("coto", "catv00001408"))
-
-    assert not set(aceites) & set(mermeladas)
-
-
-def test_clave_ajena_a_la_tabla_no_recibe_tag_de_gondola():
-    """
-    Una categoría que no está en la tabla (ej. un scrapeo manual) conserva el
-    comportamiento anterior en vez de recibir una góndola inventada.
+    Una categoría de fuera de la tabla (un scrapeo manual) no recibe una góndola
+    inventada. `save_store_products` la rechaza, que es la dirección segura: un
+    producto sin góndola desaparece de GET /category y se queda sin sustitutos.
     """
     carnes = "catv00001460"  # Frescos -> Carniceria -> Carnes
 
     assert shelf_for_key("coto", carnes) is None
-    assert shelf_tags("coto", carnes) == ["frescos", "carniceria", "carnes"]
 
 
 @pytest.mark.parametrize("store", STORES)
@@ -122,3 +100,50 @@ def test_keys_for_store_no_devuelve_duplicados(store):
     claves = keys_for_store(store)
 
     assert len(claves) == len(set(claves))
+
+
+# ---------------------------------------------------------------------------
+# Presentación: lo que consume el mega-menú
+# ---------------------------------------------------------------------------
+
+@pytest.mark.parametrize("slug", SHELVES)
+def test_el_slug_es_la_clave_del_diccionario(slug):
+    """El slug se guarda en la base: que la fila y su clave difieran sería una
+    góndola imposible de pedir por GET /category/{slug}."""
+    assert SHELVES[slug].slug == slug
+
+
+def test_las_etiquetas_son_unicas():
+    """Dos góndolas con la misma etiqueta son indistinguibles en el menú."""
+    labels = [shelf.label for shelf in SHELVES.values()]
+
+    assert len(labels) == len(set(labels))
+
+
+@pytest.mark.parametrize("slug", SHELVES)
+def test_cada_gondola_esta_en_una_seccion_conocida(slug):
+    """Una sección fuera de SECTIONS no rompe el menú (cae al ícono genérico)
+    pero sí queda al final, fuera del orden pensado."""
+    assert SHELVES[slug].section in SECTIONS
+
+
+def test_sections_cubre_todas_las_gondolas_sin_repetir():
+    agrupadas = [s["slug"] for section in sections() for s in section["shelves"]]
+
+    assert sorted(agrupadas) == sorted(SHELVES)
+
+
+def test_sections_respeta_el_orden_declarado():
+    assert [s["section"] for s in sections()] == list(SECTIONS)
+
+
+def test_shelf_label_traduce_el_slug():
+    assert shelf_label("yerba-mate") == "Yerba y mate"
+    assert shelf_label("no-existe") is None
+    assert shelf_label(None) is None
+
+
+def test_store_ids_cubre_las_tres_tiendas():
+    """`STORE_IDS` es lo que usan run_scrapers y el optimizador para nombrar la
+    misma tienda; una tienda de STORES sin id no se puede persistir."""
+    assert set(STORE_IDS) == set(STORES)

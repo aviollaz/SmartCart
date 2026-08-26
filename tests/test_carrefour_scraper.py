@@ -72,9 +72,13 @@ def test_url_absoluta():
 
 def test_process_products_extrae_los_campos_del_producto():
     scraper = CarrefourScraper()
-    tags = ["almacen", "aceites-y-vinagres"]
 
-    parsed = scraper.process_products(_respuesta([_producto_vtex()]), tags, "Aceites y vinagres")
+    parsed = scraper.process_products(
+        _respuesta([_producto_vtex()]),
+        "aceites-y-aderezos",
+        "Almacén -> Aceites y vinagres",
+        "almacen/aceites-y-vinagres",
+    )
 
     assert len(parsed) == 1
     p = parsed[0]
@@ -83,9 +87,10 @@ def test_process_products_extrae_los_campos_del_producto():
     assert p["base_price"] == 5750.0
     assert p["url"].startswith("https://www.carrefour.com.ar/")
     assert p["image_url"].endswith("aceite.jpg")
-    assert p["tags"] == tags
-    # La etiqueta de la taxonomía gana sobre el path que manda VTEX.
-    assert p["category"] == "Aceites y vinagres"
+    # La góndola canónica, no la hoja de la taxonomía de Carrefour: es el mismo
+    # slug que escriben Coto y Día para el mismo estante.
+    assert p["shelf"] == "aceites-y-aderezos"
+    assert p["source_category"] == "almacen/aceites-y-vinagres"
     # Tamaño parseado del nombre, no de la property.
     assert (p["total_volume_weight"], p["unit_type"]) == (1500.0, "ml")
 

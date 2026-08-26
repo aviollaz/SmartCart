@@ -35,6 +35,7 @@ from typing import Callable, Iterable
 
 from src.database import SmartCartDB
 from src.scrapers import scraper_carrefour, scraper_coto, scraper_dia
+from src.shelves import STORE_IDS
 
 logger = logging.getLogger(__name__)
 
@@ -153,19 +154,19 @@ def _run_store(
 
 def run_coto(db: SmartCartDB) -> StoreRunResult:
     scraper = scraper_coto.CotoScraper()
-    return _run_store(db, "coto", "coto_online", "COTO", scraper_coto.MVP_CATEGORIES,
+    return _run_store(db, "coto", STORE_IDS["coto"], "COTO", scraper_coto.MVP_CATEGORIES,
                       scraper.scrape_category, 2.0)
 
 
 def run_dia(db: SmartCartDB) -> StoreRunResult:
     scraper = scraper_dia.DiaScraper()
-    return _run_store(db, "dia", "dia_online", "DÍA", scraper_dia.MVP_CATEGORIES,
+    return _run_store(db, "dia", STORE_IDS["dia"], "DÍA", scraper_dia.MVP_CATEGORIES,
                       scraper.scrape_entire_category, 3.5)
 
 
 def run_carrefour(db: SmartCartDB) -> StoreRunResult:
     scraper = scraper_carrefour.CarrefourScraper()
-    return _run_store(db, "carrefour", "carrefour_online", "CARREFOUR",
+    return _run_store(db, "carrefour", STORE_IDS["carrefour"], "CARREFOUR",
                       scraper_carrefour.MVP_CATEGORIES, scraper.scrape_entire_category, 3.5)
 
 
@@ -173,9 +174,9 @@ def run_carrefour(db: SmartCartDB) -> StoreRunResult:
 # propio bucle con telemetría en vez de re-declarar la lista de tiendas. Sumar una
 # tienda es una entrada acá, no dos listas que se desincronizan.
 STORE_RUNNERS: dict[str, tuple[Callable[[SmartCartDB], StoreRunResult], str]] = {
-    "coto": (run_coto, "coto_online"),
-    "dia": (run_dia, "dia_online"),
-    "carrefour": (run_carrefour, "carrefour_online"),
+    "coto": (run_coto, STORE_IDS["coto"]),
+    "dia": (run_dia, STORE_IDS["dia"]),
+    "carrefour": (run_carrefour, STORE_IDS["carrefour"]),
 }
 
 

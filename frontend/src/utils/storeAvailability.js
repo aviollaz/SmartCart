@@ -6,11 +6,13 @@
  * sigue siendo comprable, así que se le quita solo la oferta muerta y se
  * descarta el producto entero únicamente si era exclusivo de esa tienda.
  *
- * `min_price` se anula a propósito. GET /category lo calcula en el backend
- * incluyendo a todas las tiendas, así que describe una oferta que ya no está
- * listada. Hoy resolveDisplayPrice() solo lo usa de fallback (cuando no queda
- * ninguna oferta con precio), pero anularlo sigue siendo lo correcto: es un
- * dato falso para el producto recortado.
+ * `min_price` y `unit_price` se anulan a propósito: los dos los calcula el
+ * backend sobre TODAS las ofertas, así que describen una que ya no está listada.
+ * El backend no puede evitarlo —no conoce la cobertura, que vive en
+ * ProfileContext— y el error va en la dirección peligrosa: anunciar un precio
+ * por kilo de una tienda que no entrega es prometer algo que no se puede
+ * comprar. Sin ellos la card cae a las ofertas que quedaron (resolveDisplayPrice)
+ * y el precio por unidad simplemente no se muestra.
  */
 export function stripUnavailableStores(products, unavailableStores) {
   // Se devuelve el mismo array (misma referencia) cuando no hay nada que sacar:
@@ -25,7 +27,7 @@ export function stripUnavailableStores(products, unavailableStores) {
     if (kept.length === offers.length) {
       result.push(product);
     } else if (kept.length > 0) {
-      result.push({ ...product, available_at_stores: kept, min_price: null });
+      result.push({ ...product, available_at_stores: kept, min_price: null, unit_price: null });
     }
     // kept.length === 0 → producto exclusivo de una tienda que no entrega: se omite.
   }

@@ -81,7 +81,7 @@ export function ProductCard({ product }) {
   const { unavailableStores } = useProfile();
   const cartEntry = items[product.unified_id];
   const displayPrice = resolveDisplayPrice(product);
-  const unitPriceLabel = formatUnitPrice({ ...product, min_price: displayPrice });
+  const unitPriceLabel = formatUnitPrice(product);
   const displayImage = resolveDisplayImage(product);
 
   // Promo que ya está aplicada en el precio de la card (descuento directo, el

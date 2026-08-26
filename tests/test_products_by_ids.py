@@ -76,14 +76,14 @@ def test_id_duplicado_devuelve_una_sola_fila():
 
 
 def test_paridad_de_campos_con_category():
-    """min_price, image_url y store_count tienen que salir identicos por los dos
-    endpoints. Es lo que impide que _build_product_response vuelva a ser dos
-    implementaciones."""
+    """min_price, image_url, unit_price y store_count tienen que salir identicos
+    por los dos endpoints. Es lo que impide que _build_product_response vuelva a
+    ser dos implementaciones."""
     with TestClient(app) as client:
-        categoria = client.get("/categories").json()[0]
-        desde_categoria = client.get(f"/category/{categoria}?limit=5").json()
+        gondola = client.get("/categories").json()[0]["shelves"][0]["slug"]
+        desde_categoria = client.get(f"/category/{gondola}?limit=5").json()
         if not desde_categoria:
-            pytest.skip(f"La categoria '{categoria}' no tiene productos")
+            pytest.skip(f"La gondola '{gondola}' no tiene productos")
 
         ids = [p["unified_id"] for p in desde_categoria]
         por_id = {p["unified_id"]: p for p in
@@ -91,7 +91,8 @@ def test_paridad_de_campos_con_category():
 
         for esperado in desde_categoria:
             obtenido = por_id[esperado["unified_id"]]
-            for campo in ("min_price", "image_url", "store_count", "name", "distance"):
+            for campo in ("min_price", "image_url", "unit_price", "store_count",
+                          "name", "distance", "shelf", "shelf_label"):
                 assert obtenido[campo] == esperado[campo], f"{campo} difiere entre los dos endpoints"
 
 
@@ -110,7 +111,7 @@ def test_los_limites_de_la_lista_los_rechaza_pydantic():
 def _row(**overrides):
     fila = {
         "id": "prod_1", "ean": "1", "name": "Producto", "brand": "Marca",
-        "category": "Almacén", "units_per_pack": None, "unit_type": "g",
+        "shelf": "alfajores", "unit_type": "g",
         "total_volume_weight": 500.0, "is_gluten_free": False, "is_vegan": False,
         "store_count": 0,
     }
@@ -118,8 +119,9 @@ def _row(**overrides):
     return fila
 
 
-def _oferta(store_id, base_price=100.0, image_url=None):
-    return {"store_id": store_id, "base_price": base_price, "image_url": image_url}
+def _oferta(store_id, base_price=100.0, image_url=None, promo_unit_price=None):
+    return {"store_id": store_id, "base_price": base_price, "image_url": image_url,
+            "promo_unit_price": promo_unit_price}
 
 
 def test_sin_ofertas_el_precio_es_cero_y_no_hay_imagen():

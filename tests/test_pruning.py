@@ -51,8 +51,8 @@ def _sembrar(db, skus, source_category=None):
             for sku in skus:
                 uid = f"prod_test_pruning_{sku}"
                 cur.execute(
-                    """INSERT INTO unified_products (id, ean, name, brand, unit_type, category)
-                       VALUES (%s, %s, %s, 'MarcaTest', 'un', 'Otros')
+                    """INSERT INTO unified_products (id, ean, name, brand, unit_type, shelf)
+                       VALUES (%s, %s, %s, 'MarcaTest', 'un', 'alfajores')
                        ON CONFLICT (id) DO NOTHING""",
                     (uid, sku, f"Producto de prueba {sku}"),
                 )

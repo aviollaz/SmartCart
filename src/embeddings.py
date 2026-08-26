@@ -4,6 +4,7 @@ from typing import List, Tuple
 import psycopg
 from sentence_transformers import SentenceTransformer
 from src.database import SmartCartDB
+from src.schema import ensure_schema
 
 # Configuración de Logging
 logging.basicConfig(
@@ -24,31 +25,20 @@ class EmbeddingPipeline:
 
     def ensure_vector_extension_and_index(self):
         """
-        Asegura que la extensión vector esté habilitada y que exista el índice HNSW para búsquedas rápidas.
+        Aplica el DDL idempotente de src/schema.py, que incluye la extensión
+        pgvector, la columna `name_embedding` y su índice HNSW.
+
+        Antes esas tres sentencias vivían acá sueltas. Se movieron con el resto del
+        esquema: el DDL repartido era lo que hacía que ninguna parte del repo
+        pudiera contestar qué columnas tiene la base.
         """
-        logger.info("Asegurando la existencia de la extensión pgvector y el índice HNSW...")
+        logger.info("Asegurando el esquema (pgvector, name_embedding, indice HNSW)...")
         try:
             with psycopg.connect(self.db.conn_string) as conn:
-                with conn.cursor() as cur:
-                    # Habilitar la extensión pgvector
-                    cur.execute("CREATE EXTENSION IF NOT EXISTS vector;")
-                    
-                    # Asegurar que la columna name_embedding exista (ya existe pero por las dudas)
-                    cur.execute("""
-                        ALTER TABLE unified_products 
-                        ADD COLUMN IF NOT EXISTS name_embedding vector(384);
-                    """)
-                    
-                    # Crear el índice espacial HNSW con distancia coseno
-                    logger.info("Creando o verificando índice HNSW en unified_products(name_embedding)...")
-                    cur.execute("""
-                        CREATE INDEX IF NOT EXISTS idx_unified_products_name_embedding_hnsw
-                        ON unified_products USING hnsw (name_embedding vector_cosine_ops);
-                    """)
-                conn.commit()
-            logger.info("Extensión e índice configurados correctamente.")
+                ensure_schema(conn)
+            logger.info("Esquema al dia.")
         except Exception as e:
-            logger.error(f"Error al asegurar extensión e índice: {e}")
+            logger.error(f"Error al asegurar el esquema: {e}")
             raise
 
     def get_products_pending_embeddings(self) -> List[Tuple[str, str, str]]:

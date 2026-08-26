@@ -30,7 +30,7 @@ function App() {
         <Routes>
           <Route path="/" element={<HomePage />} />
           <Route path="/buscar" element={<SearchResultsPage />} />
-          <Route path="/categoria/:bucket" element={<SearchResultsPage />} />
+          <Route path="/categoria/:shelf" element={<SearchResultsPage />} />
           <Route
             path="/carrito"
             element={<CartPage onOpenLocation={() => setLocationOpen(true)} />}

@@ -57,41 +57,42 @@ deje de persistir en silencio.
 
 Límite conocido, no bug: el ranking es local al navegador por construcción.
 
-### 2. Precio por unidad de medida — expuesto, con dos cosas pendientes
-Corrigiendo la premisa original de este ítem: **no era cierto que no estuviera
-expuesto**. `formatUnitPrice()` ya existía y `ProductCard` ya lo mostraba — pero
-mal: dividía por `total_volume_weight` y escribía `"$0,02 x g"`, sin normalizar a
-ninguna base legible. Eso ya está arreglado, junto con devolver `null` para
-`unit_type = 'un'` y para cualquier unidad fuera del vocabulario (`'un'` es lo que
-devuelve `normalize_magnitude()` cuando se dio por vencido, y ahí
-`total_volume_weight` es el placeholder `1.0`).
+### 2. Precio por unidad de medida — RESUELTO (con una excepción anotada)
+El número lo calcula ahora el backend: `unit_price` (`{value, base}`) sale de
+`_build_unit_price()` en `src/api.py` y viaja en `ProductResponse`.
+`formatUnitPrice()` en el frontend ya no calcula nada, sólo formatea.
 
-**Pendiente 1: pasar a base única por kilo / litro.** Hoy hay un corte en 1000
-(por 100 g / 100 ml abajo, por kilo / litro de ahí en adelante). La decisión es
-sacarlo y usar siempre kilo para `'g'` y litro para `'ml'`. Medido sobre el
-catálogo real: cambia la etiqueta del **89%** de los productos, la mediana queda
-en **$14.929/kg** (perfectamente legible) y **275 productos (4,5%)** pasan de
-$100.000/kg — el extremo es un azafrán de 0,375 g que muestra $9.710.526/kg.
+**Se movió al backend porque ahí está el dato**, y eso arregló dos bugs con una
+sola causa. El cliente dividía `min_price`, que es el mínimo de los precios de
+LISTA, así que la card anunciaba el precio con promo al lado de un precio por
+kilo derivado de otro número; y `GET /search` ni siquiera mandaba `min_price`,
+o sea que en resultados de búsqueda —por donde el usuario entra al catálogo— el
+precio por unidad directamente no aparecía. Lo segundo se arregló haciendo que
+`/search` pase por `_build_product_response()` como los otros dos endpoints, que
+de paso le dio `min_price` e `image_url`.
 
-Se acepta ese costo a propósito. El argumento a favor del corte era que un número
-enorme en un envase chico se lee como un error de tipeo, y es cierto; pero dos
-bases distintas conviviendo en la misma grilla rompen justamente la comparabilidad
-que es el motivo entero del ítem. Una sola base gana.
+**Pendiente 1 (base única) — hecho.** Se sacó el corte en 1000: siempre por kilo
+para `'g'` y por litro para `'ml'`. Se aceptaron los costos medidos: cambia la
+etiqueta del **89%** de los productos y **275 (4,5%)** pasan de $100.000/kg, con
+un azafrán de 0,375 g mostrando $9.710.526/kg. El argumento a favor del corte
+—un número enorme en un envase chico se lee como error de tipeo— es cierto, pero
+dos bases conviviendo en la misma grilla rompen justamente la comparabilidad que
+es el motivo entero del ítem. La mediana quedó en **$14.929/kg**.
 
-**Pendiente 2: los multipacks.** El frontend no puede resolverlo, y el arreglo de
-fondo es del ingest — decidir pack-vs-unidad donde está la evidencia del payload
-scrapeado, al lado de `src/size_parser.py`. Portar `extract_pack_count()` a JS no
-alcanzaría: el número al lado del `xN` es indecidible desde el nombre (a veces es
-el total del pack, a veces el tamaño de cada unidad). Como el peso no se
-multiplica, el error sólo puede ir hacia **caro** (N× de más cuando el tamaño
-guardado era el unitario), que es la dirección que el proyecto acepta en todos
-lados.
+Nota: `substitutions.format_size()` **conserva** su corte en 1000. No es una
+inconsistencia: escribe un *tamaño* ("1 Kg"), no una base de comparación.
 
-Corrigiendo un error de hecho que quedó escrito acá la vez pasada: se decía que
-`units_per_pack` "llega siempre `NULL`", y es **falso**. La columna tiene
-`DEFAULT 1`, así que las 6.401 filas dicen **`1`**. Es peor que `NULL`: un `NULL`
-se lee como "no se sabe", mientras que un `1` afirma "no es un pack" — y **287
-productos (4,5%) sí lo son**. Ver el ítem 14.
+**Pendiente 2 (multipacks) — sigue abierto, y probablemente se quede así.** El
+peso no se multiplica. El número al lado del `xN` es indecidible desde el nombre
+(a veces es el total del pack, a veces el tamaño de cada unidad; ver el docstring
+de `extract_pack_count`), así que multiplicar inflaría justo las filas que ya
+traían el total, y un peso inflado **abarata** el precio por kilo. Al no
+multiplicar el error sólo puede ir hacia **caro**, que es la dirección que el
+proyecto acepta en todos lados. Resolverlo de verdad pide evidencia que el
+payload scrapeado no tiene.
+
+Lo de `units_per_pack` que este ítem arrastraba se cerró en el 14: la columna ya
+no existe.
 
 ### 3. Progreso hacia el mínimo de compra, en vivo
 Hoy el usuario descubre que el carrito es inviable **recién al optimizar**, que
@@ -205,83 +206,81 @@ chico. `MAX_PRUNE_RATIO` no lo ataja porque protege el caso contrario. Acotar el
 DELETE en vez de aflojar el gate hace correcto al pruning en lugar de
 heurístico, y no cede nada a cambio.
 
-### 12. `unified_products.tags` es por EAN, no por tienda
-Un producto presente en las tres tiendas se queda con los tags de la última que
-lo escriba (orden coto → dia → carrefour). El tag canónico de góndola
-(`src/shelves.py`) hace que el segmento que importa para el `&&` sea el mismo en
-las tres, así que hoy no duele — pero si se scrapean categorías **fuera** de la
-tabla de góndolas, vuelve a doler.
+### 12, 13 y 14 — RESUELTOS juntos: una sola taxonomía
+Los tres eran el mismo problema visto desde tres lados: la base guardaba **tres
+representaciones paralelas** de "a qué góndola pertenece este producto", y las
+tres eran peores que la que ya existía en `src/shelves.py`.
 
-### 13. `CATEGORY_MAP` quedó chico para el catálogo actual
-Sus 4 buckets (`Lácteos`/`Golosinas`/`Almacén`/`Otros`) mapean *hojas* con un
-dict de 9 claves, así que con 6.336 productos la enorme mayoría cae en `Otros` y
-`GET /category/{name}` los deja afuera. El mega-menú ya rutea casi todo a
-`GET /search` vía `has_direct_category_match`, y la sustitución usa `tags`, así
-que está contenido — pero el endpoint hoy cubre una fracción chica del catálogo.
+* **12** — `unified_products.tags` era por EAN: un producto de las tres cadenas
+  se quedaba con los tags de la última que lo escribiera, o sea con el
+  vocabulario de una sola tienda.
+* **13** — `unified_products.category` mapeaba *hojas* con un dict de 12 claves a
+  4 buckets, y medido sobre la base: **5.140 de 6.401 (80%)** caían en `Otros`,
+  así que `GET /category/{name}` cubría una fracción chica del catálogo.
+* **14** — `units_per_pack` no la escribía nadie y, por tener `DEFAULT 1`, no
+  llegaba vacía sino **afirmando "no es un pack"** sobre 6.401 productos, 287 de
+  los cuales sí lo son.
 
+Las tres se reemplazaron por **`unified_products.shelf`**: el slug de góndola de
+`src/shelves.py`, idéntico en las tres cadenas por construcción. Medición que
+habilitó la migración: las 20 góndolas cubren **6.401 de 6.401** productos con
+exactamente un slug cada uno, y ese slug **ya estaba adentro de `tags`**, así que
+el backfill fue un `UPDATE` y no hizo falta rescrapear nada
+(`src/scripts/migrate_shelves.py`, que además dropea las tres columnas y aborta
+si quedó una sola fila sin góndola — dropear `tags` es lo que vuelve
+irreversible el backfill).
 
-### 14. `units_per_pack` no la escribe nadie — sacarla de la API
-Rastreada de punta a punta: **no está en el `INSERT INTO unified_products` ni en su
-`ON CONFLICT DO UPDATE SET`** (`src/database.py:161-186`), ningún scraper emite la
-clave, y `src/scripts/backfill_units.py` sólo toca `unit_type` y
-`total_volume_weight`. La leen 4 `SELECT` de `src/api.py` (`/search`, `/category`,
-`/products/by-ids`), que la copian a `UnitInfo` — y ahí muere: **ningún consumidor
-la usa para decidir nada**, ni el backend ni el frontend.
+Lo que se cayó con ellas, y por qué no se extraña:
 
-Como la columna tiene `DEFAULT 1`, no llega vacía sino afirmando "no es un pack"
-para los 6.401 productos, 287 de los cuales sí son packs. Un dato falso con cara
-de dato bueno es peor que un `NULL`, y ya hizo perder tiempo una vez.
+* `SmartCartDB.CATEGORY_MAP` y toda la normalización de categoría en el ingest.
+* `src/category_tree.py` (260 líneas) y `GET /categories/tree`: mergeaban por
+  embeddings las taxonomías COMPLETAS de Coto y Día —Carrefour nunca entró— para
+  un menú de ~15 top-levels y cientos de hojas sobre un catálogo de 20 góndolas.
+  Casi todo lo que se clickeaba no tenía productos y caía a `GET /search?q=<label>`,
+  una búsqueda semántica del nombre de una categoría que el catálogo no tenía.
+  El mega-menú ahora dibuja las góndolas: dos niveles, y toda hoja tiene
+  productos. Con eso murió también `has_direct_category_match`.
+* `src/category_tags.py` quedó reducido a `src/taxonomy.py` (cargar los dumps).
+  El filtro de "misma góndola" pasó de un solapamiento `&&` sobre arrays con
+  fallback a `category`, a una igualdad `u.shelf = %s` sobre un btree.
 
-La decisión es **sacarla de la API** en vez de poblarla: el `unit_price` calculado
-que pide el ítem 2 va a nacer en el backend con la evidencia del ingest, no de
-esta columna. Toca los 4 `SELECT`/`GROUP BY` de `src/api.py`, el campo de
-`UnitInfo`, el fixture de `tests/test_products_by_ids.py` y el ejemplo de
-`docs/smartcart_spec.md`.
+**La discusión del 0.90 de la etapa 4 de CLAUDE.md se conserva** aunque el módulo
+que la motivó ya no exista: sigue siendo el precedente que dice que un desajuste
+de vocabulario se arregla con una tabla explícita y no bajando un umbral.
 
-Dos avisos para el que lo agarre:
+### 15 y 16 — RESUELTOS
+El 15 no era un bug sino cronología: `source_category` estaba en NULL en las
+3.252 filas de Coto y las 1.529 de Día porque la columna se agregó el 2026-08-24
+y esas filas se habían escrito por última vez el 2026-08-21. Cualquier barrido
+completo las llena, y eso es lo que corresponde correr después de la migración.
 
-- **No dropear la columna primero.** Los tres endpoints la SELECTean hoy; dropearla
-  sin sacar los SELECT hace que `psycopg` tire `UndefinedColumn` y los tres
-  contesten 500. Primero el código, después (si se quiere) la base.
-- **El gate de multipacks no depende de esto.** `src/substitutions.py:122`
-  recalcula `extract_pack_count(name)` al vuelo, así que sacar la columna no toca
-  la sustitución.
-
-### 15. `source_category` en NULL para Coto y Día — no es un bug, falta un barrido
-Medido: NULL en **3.252/3.252** filas de Coto, **1.529/1.529** de Día y **138/4.065**
-de Carrefour. La explicación es la cronología, no un scraper roto: la columna se
-agregó el **2026-08-24** (commit `3598b73`) y las filas de Coto y Día se escribieron
-por última vez el **2026-08-21**. Carrefour sí se barrió después, y tiene el dato
-salvo las 138 filas que ese barrido no alcanzó — el mismo número que ya documenta
-la etapa 2 de CLAUDE.md. Los tres scrapers emiten la clave (`scraper_coto.py:214`,
-`scraper_dia.py:214`, `scraper_carrefour.py:238`) y está en el
-`ON CONFLICT DO UPDATE SET`, así que **cualquier barrido las llena**.
-
-Consecuencia mientras tanto, que conviene entender antes de "arreglar" nada:
-
-- Si un barrido de Coto o Día vuelve **PARCIAL**, el pruning acotado no borra nada:
-  la comparación es `source_category = ANY(%s)` y una fila `NULL` nunca la
-  satisface. Seguro, pero inerte.
-- Si vuelve **completo**, poda igual, porque ahí `prune_scope` es `None` y el DELETE
-  no se acota.
-
-Nota al margen para cortar una búsqueda inútil: **`source_category_id` no existe**
-— ni en el esquema ni en el repo. La columna que sí está y aparece en NULL para
-Coto es `store_item_id`, y ahí el NULL es **correcto**: es el `itemId` de VTEX que
-arma el link de checkout de Día y Carrefour, y Coto no es VTEX.
-
-### 16. Ningún test verifica que los scrapers emitan `source_category`
-El riesgo silencioso que destapó el ítem 15. `save_store_products` lee la clave con
-`prod.get('source_category')` (defensivo), y los dos scrapers VTEX tienen el
-parámetro con default `None`. O sea que un scraper que dejara de mandarla **no
-rompería nada**: escribiría `NULL` en silencio, y a partir de ahí todo barrido
-parcial podaría **cero** filas reportando `deleted: 0` con `skipped: False` —
+El 16 era el riesgo silencioso que el 15 destapó, y ese sí necesitaba código.
+Ahora `save_store_products` exige `prod['source_category']` y `prod['shelf']` en
+vez de leerlas con `.get()` defensivo, y `tests/test_scraper_ingest_keys.py`
+asserta que los tres scrapers las emitan, reusando los fixtures de
+`test_scraper_truncation.py`. Sin eso, un scraper que dejara de mandar
+`source_category` escribía NULL en silencio y a partir de ahí **todo barrido
+parcial podaba cero filas** reportando `deleted: 0` con `skipped: False`,
 indistinguible de "no se dio de baja nada".
 
-Los únicos `source_category` en `tests/` son el fixture propio de `test_pruning.py`
-y un docstring de `test_orchestrator.py`; ninguno mira la salida real de un
-scraper. Falta una aserción de que cada uno pone la clave. Es barato: los tests de
-`test_scraper_truncation.py` ya montan respuestas falsas por tienda.
+### Bonus del mismo barrido: el esquema existe en el repo
+No estaba en el TODO porque nadie lo había mirado: **no había ningún
+`CREATE TABLE` de `unified_products` ni de `store_products` en el proyecto**. El
+esquema base se había hecho a mano contra el Postgres de desarrollo, así que un
+clone nuevo no arrancaba y los defaults de columna eran indescubribles leyendo el
+código — que es exactamente cómo `units_per_pack DEFAULT 1` pudo mentir durante
+meses sin que nada lo delatara.
+
+Ahora está todo en `src/schema.py`: idempotente y declarativo (`CREATE TABLE IF
+NOT EXISTS` + `ADD COLUMN IF NOT EXISTS` + `CREATE INDEX IF NOT EXISTS`), una
+sola definición, aplicada por `SmartCartDB`, `EmbeddingPipeline`,
+`ScraperTelemetry` y el `lifespan` de la API. Sigue sin haber migraciones
+versionadas y es a propósito; lo que hay es un esquema que converge. **El módulo
+no borra nada**: los DROP viven en el script de migración, que se corre a mano.
+
+De paso salieron otras dos cosas que se traían y se tiraban: `is_weighable`, que
+los tres scrapers calculaban y ningún INSERT guardaba, y `image_url`/`in_stock`
+en el SELECT de `get_market_prices_for_cart`, que el flattener no lee.
 
 ### 17. Pesos absurdos del parser de tamaños
 3 productos (**0,05%**) con `total_volume_weight` imposible en una góndola: una
@@ -309,13 +308,20 @@ jugos, fiambres, huevos, manteca y margarina**.
 Costo de referencia: las 20 actuales son ~30 min de barrido completo más
 embeddings. Agregar una góndola es una fila en la tabla.
 
-### 19. Alias de góndola para categorías fuera de la tabla
-`shelf_tags()` resuelve el problema de vocabulario **solo** para las claves que
-están en `SHELVES`. Una categoría scrapeada por fuera vuelve a depender de que
-las cadenas nombren igual el mismo estante, que es la brecha que documenta la
-etapa 7 de CLAUDE.md (Carrefour archiva el vinagre en `aceites-y-vinagres` y Día
-en `aceites-y-aderezos`; no solapan).
+### 19. Alias de góndola para categorías fuera de la tabla — CERRADO por construcción
+Ya no hay "categorías fuera de la tabla" que puedan llegar a la base: los
+scrapers iteran `keys_for_store()`, `save_store_products` exige la góndola, y
+`tests/test_shelves.py` verifica que toda clave de `SHELVES` exista de verdad en
+el dump de taxonomía de su tienda. Una clave inventada falla el test en vez de
+escribir un producto sin góndola.
 
-**No aflojar el `&&` a un umbral de similaridad** — ver la discusión del 0.90 en
-la etapa 4: pares genuinamente duplicados y pares meramente hermanos ocupan la
-misma banda de similaridad, así que ningún umbral los separa.
+La brecha que este ítem describía era real mientras la comparación corría sobre
+los `tags` de cada tienda (Carrefour archiva el vinagre en `aceites-y-vinagres`
+y Día en `aceites-y-aderezos`; no solapan). Con `shelf` no hay vocabulario que
+conciliar. Se deja escrito el criterio, que sigue valiendo para cualquier
+atributo nuevo que dependa de cómo nombra las cosas cada cadena:
+
+**No reemplazar una comparación exacta por un umbral de similaridad** — ver la
+discusión del 0.90 en la etapa 4 de CLAUDE.md: pares genuinamente duplicados y
+pares meramente hermanos ocupan la misma banda de similaridad, así que ningún
+umbral los separa. La forma correcta es una tabla explícita.
