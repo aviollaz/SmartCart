@@ -17,10 +17,17 @@ export function searchProducts(query, limit = 20, dietary) {
   return apiFetch(`/search?${params.toString()}`);
 }
 
-export function getProductsByCategory(categoryName, limit = 50, dietary) {
+/**
+ * Los productos de una góndola, por su slug (ver `getShelfSections`).
+ *
+ * El slug es una clave cerrada de src/shelves.py, así que un valor inventado
+ * contesta 404 y no una lista vacía: "no hay productos" y "esa góndola no
+ * existe" son cosas distintas.
+ */
+export function getProductsByShelf(shelfSlug, limit = 50, dietary) {
   const params = new URLSearchParams({ limit: String(limit) });
   appendDietaryParams(params, dietary);
-  return apiFetch(`/category/${encodeURIComponent(categoryName)}?${params.toString()}`);
+  return apiFetch(`/category/${encodeURIComponent(shelfSlug)}?${params.toString()}`);
 }
 
 /**

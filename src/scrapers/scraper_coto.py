@@ -4,10 +4,10 @@ import re
 import time
 import random
 
-from src.category_tags import category_label
 from src.dietary_parser import detect_dietary_flags
 from src.scrapers.errors import CategoryScrapeError
-from src.shelves import keys_for_store, shelf_tags
+from src.shelves import keys_for_store, shelf_for_key
+from src.taxonomy import category_path
 from src.size_parser import extract_real_volume, normalize_magnitude
 
 logger = logging.getLogger(__name__)
@@ -109,11 +109,12 @@ class CotoScraper:
         all_products = []
         seen_ids = set()
 
-        # La ruta jerárquica de esta categoría ya está en el dump de taxonomía,
-        # indexada por el mismo id que recibimos acá: se resuelve una sola vez
-        # y se adjunta a cada producto como tags estrictos de góndola.
-        category_tags = shelf_tags("coto", category_id)
-        taxonomy_label = category_label("coto", category_id)
+        # La góndola canónica de este id (src/shelves.py) es la categoría con la
+        # que se guarda el producto: idéntica en las tres cadenas, que es lo que
+        # hace comparables sus catálogos. La ruta de taxonomía se resuelve para
+        # usarla como evidencia dietaria, no se persiste.
+        shelf = shelf_for_key("coto", category_id)
+        taxonomy_path = category_path("coto", category_id)
 
         for _ in range(MAX_PAGES):
             url = (
@@ -144,17 +145,6 @@ class CotoScraper:
                     
                 data = response.json()
                 
-                # --- EXTRACCIÓN DE CATEGORÍA ---
-                # Preferimos la hoja de la taxonomía (estable y consistente con
-                # los tags); el display_name de la respuesta queda de fallback
-                # para ids que no estén en el dump.
-                category_name = taxonomy_label or "Sin Categoría"
-                if not taxonomy_label:
-                    groups = data.get("response", {}).get("groups", [])
-                    if groups:
-                        category_name = groups[0].get("display_name", "Sin Categoría")
-                # -------------------------------
-
                 results = data.get("response", {}).get("results", [])
                 
                 if not results:
@@ -205,7 +195,7 @@ class CotoScraper:
                     # Coto no expone descripción ni atributos en este payload,
                     # así que la evidencia dietaria disponible es el nombre,
                     # la marca y la ruta de categoría.
-                    is_gluten_free, is_vegan = detect_dietary_flags(name, brand, category_tags)
+                    is_gluten_free, is_vegan = detect_dietary_flags(name, brand, taxonomy_path)
 
                     product = {
                         "store_sku": prod_data.get("sku_id"),
@@ -215,13 +205,13 @@ class CotoScraper:
                         "ean": str(prod_data.get("product_main_ean")) if prod_data.get("product_main_ean") else None,
                         "name": name,
                         "brand": brand,
-                        "category": category_name,
-                        "tags": category_tags,
+                        # La góndola canónica: la única noción de categoría del
+                        # proyecto (ver src/shelves.py).
+                        "shelf": shelf,
                         "url": build_coto_url(name, resolve_coto_product_id(item, prod_data)),
                         "image_url": prod_data.get("image_url"),
                         "base_price": base_price,
                         "in_stock": prod_data.get("in_stock", True),
-                        "is_weighable": bool(prod_data.get("product_weighable", 0)),
                         "total_volume_weight": total_volume_weight,
                         "unit_type": unit_type,
                         "is_gluten_free": is_gluten_free,

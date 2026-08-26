@@ -1,4 +1,3 @@
-import re
 import time
 import logging
 from contextlib import asynccontextmanager
@@ -19,8 +18,9 @@ from src.analytics import (
 from src.database import SmartCartDB
 from src.optimizer import optimize_cart, DEFAULT_DELIVERY_COSTS, DEFAULT_MIN_SPEND_LIMITS
 from src.flattener import flatten_cart_prices, evaluate_best_promo, parse_promotions_json
-from src.category_tree import build_category_tree
 from src.coto_logistics import check_coverage, resolve_coto_logistics
+from src.schema import ensure_schema
+from src.shelves import SHELVES, sections as shelf_sections, shelf_label
 from src.strategic_swaps import find_strategic_swaps
 from src.substitutions import build_semantic_suggestions
 
@@ -54,9 +54,22 @@ logger = logging.getLogger(__name__)
 # Modelos Pydantic para documentar y validar la API
 
 class UnitInfo(BaseModel):
-    units_per_pack: Optional[int] = Field(None, example=4)
-    unit_type: Optional[str] = Field(None, example="gr")
+    unit_type: Optional[str] = Field(None, example="g")
     total_volume_weight: Optional[float] = Field(None, example=320.0)
+
+
+class UnitPrice(BaseModel):
+    """
+    Precio por unidad de medida: la primitiva de comparación de una app cuyo
+    propósito es comparar precios.
+
+    Nace acá y no en el frontend porque acá está el dato. El cliente sólo tenía
+    `min_price` —el mínimo de los precios de LISTA— así que dividía por el peso
+    un precio distinto del que la card muestra, y en GET /search ni siquiera lo
+    recibía. Ver `_build_unit_price()`.
+    """
+    value: float = Field(..., example=14929.0)
+    base: str = Field(..., example="kg", description="'kg' o 'L'")
 
 class StorePromotion(BaseModel):
     promo_id: Optional[str] = None
@@ -73,7 +86,6 @@ class StoreOffer(BaseModel):
     product_url: Optional[str] = Field(None, example="https://www.cotodigital3.com.ar/...")
     base_price: float = Field(..., example=2500.0)
     in_stock: bool = Field(..., example=True)
-    last_updated: Optional[str] = None
     image_url: Optional[str] = None
     promotions: List[StorePromotion] = []
     # Precio neto por unidad llevando UNA sola, ya con la mejor promo aplicable.
@@ -90,7 +102,11 @@ class ProductResponse(BaseModel):
     ean: Optional[str] = Field(None, example="7790000000123")
     name: str = Field(..., example="Hamburguesa Paty Clásica")
     brand: Optional[str] = Field(None, example="Paty")
-    category: Optional[str] = Field(None, example="congelados_hamburguesas")
+    # La góndola canónica de src/shelves.py: la única noción de categoría del
+    # proyecto, idéntica en las tres cadenas. `shelf` es el slug (la clave con la
+    # que se pide GET /category/{slug}) y `shelf_label` su etiqueta legible.
+    shelf: Optional[str] = Field(None, example="yerba-mate")
+    shelf_label: Optional[str] = Field(None, example="Yerba y mate")
     image_url: Optional[str] = None
     min_price: Optional[float] = None
     # OJO con la semántica: False significa "sin evidencia", NO "contiene gluten"
@@ -99,6 +115,7 @@ class ProductResponse(BaseModel):
     is_gluten_free: bool = False
     is_vegan: bool = False
     unit_info: UnitInfo
+    unit_price: Optional[UnitPrice] = None
     distance: float = Field(..., description="Distancia de coseno con respecto a la búsqueda (menor es más similar)")
     # Cuántas tiendas ofrecen el producto con stock. Es lo que desempata el
     # ranking (ver STORE_BONUS) y lo que permite verificar el feature desde la
@@ -108,19 +125,13 @@ class ProductResponse(BaseModel):
     store_count: Optional[int] = None
     available_at_stores: List[StoreOffer] = []
 
-class CategorySubcategoryResponse(BaseModel):
-    label: str
-    leaves: List[str] = []
+class ShelfResponse(BaseModel):
+    slug: str = Field(..., example="yerba-mate")
+    label: str = Field(..., example="Yerba y mate")
 
-class CategoryTopLevelResponse(BaseModel):
-    label: str
-    has_direct_category_match: bool = Field(
-        ...,
-        description="True si este top-level existe literalmente en unified_products.category "
-                    "(Lácteos/Golosinas/Almacén), permitiendo resolverlo vía GET /category/{label}. "
-                    "Si es False, el frontend debe resolver el click vía GET /search?q=<label>."
-    )
-    subcategories: Dict[str, CategorySubcategoryResponse] = {}
+class SectionResponse(BaseModel):
+    section: str = Field(..., example="Desayuno y merienda")
+    shelves: List[ShelfResponse] = []
 
 class CartItem(BaseModel):
     unified_id: str
@@ -204,9 +215,9 @@ SEARCH_EF_SEARCH = 200
 # dura, así que un bonus moderado compra disponibilidad con relevancia literal.
 # Con 0.05 el 31% del top-20 cambia y un producto puede saltar del puesto 79,
 # cruzando entero el gap de relevancia entre el rank 20 y el 100 (0.105) — en
-# los hechos, ordenar por cantidad de tiendas. Es el mismo tipo de umbral que
-# category_tree.py documenta en su discusión del 0.90: se acota por el daño que
-# no debe causar, no se sube hasta que "traiga más".
+# los hechos, ordenar por cantidad de tiendas. La disciplina es la del proyecto:
+# un umbral se acota por el daño que no debe causar, no se sube hasta que "traiga
+# más".
 STORE_BONUS = 0.01
 
 # Tope de tiendas extra que puede acumular el bonus. Con 3 tiendas en total, 2
@@ -222,20 +233,23 @@ async def lifespan(app: FastAPI):
     ml_models["model"] = SentenceTransformer("all-MiniLM-L6-v2")
     logger.info("Modelo SentenceTransformer cargado exitosamente.")
 
-    # Construcción del árbol de categorías (Coto+Día) para el mega-menú.
-    # Se calcula una sola vez acá (no en cada request) reutilizando el mismo
-    # modelo ya cargado arriba para el merge semántico de subcategorías.
-    logger.info("Construyendo árbol de categorías (Coto+Día)...")
-    ml_models["category_tree"] = build_category_tree(ml_models["model"])
-    logger.info(f"Árbol de categorías listo: {len(ml_models['category_tree'])} categorías de nivel superior.")
-
-    # Inicialización de la base de datos para validar conexión
+    # Conexión inicial + esquema. El DDL de src/schema.py es idempotente, así que
+    # correrlo acá no cuesta nada contra una base al día y hace que un backend
+    # levantado contra una base virgen funcione en vez de contestar
+    # UndefinedColumn: api.py abre sus conexiones a mano y nunca pasaba por
+    # `SmartCartDB._ensure_schema`, que es el único lugar donde el esquema se
+    # aseguraba.
+    #
+    # A diferencia de los caminos de escritura, acá se atrapa y se sigue: un
+    # backend con credenciales de sólo lectura no puede emitir DDL y aun así tiene
+    # que poder servir.
     try:
         db = SmartCartDB()
         with psycopg.connect(db.conn_string) as conn:
-            logger.info("Conexión inicial con la base de datos exitosa.")
+            ensure_schema(conn)
+        logger.info("Conexión inicial con la base de datos exitosa; esquema al día.")
     except Exception as e:
-        logger.error(f"Error al conectar con la base de datos en startup: {e}")
+        logger.error(f"Error al preparar la base de datos en startup: {e}")
 
     # Estado de la emisión de eventos a SmartCart Performance Analyzer. Se dice
     # en el arranque porque los dos modos de no-emisión —falta la API key, o el
@@ -341,7 +355,6 @@ def _build_store_offer(sp: dict) -> dict:
         "product_url": sp["product_url"],
         "base_price": base_price,
         "in_stock": bool(sp["in_stock"]),
-        "last_updated": sp["last_updated"].isoformat() if sp["last_updated"] else None,
         "image_url": sp.get("image_url"),
         "promotions": promotions,
         "promo_unit_price": promo_unit_price,
@@ -370,7 +383,7 @@ def _fetch_offers_by_product(cur, product_ids: list) -> dict:
 
     cur.execute("""
         SELECT unified_product_id, store_id, product_url, base_price, in_stock,
-               promotions_json, image_url, last_updated
+               promotions_json, image_url
         FROM store_products
         WHERE unified_product_id = ANY(%s)
     """, (product_ids,))
@@ -381,30 +394,97 @@ def _fetch_offers_by_product(cur, product_ids: list) -> dict:
     return offers_by_product
 
 
-def _build_product_response(row: dict, offers: list) -> dict:
+# Base única de comparación por unidad de medida: por kilo para 'g', por litro
+# para 'ml'. Las dos son x1000 porque el vocabulario canónico ya está normalizado
+# a la unidad chica (ver normalize_magnitude en src/size_parser.py).
+UNIT_PRICE_BASES = {"g": "kg", "ml": "L"}
+UNIT_PRICE_FACTOR = 1000
+
+
+def _display_price(offers: list) -> Optional[float]:
+    """
+    El precio que la grilla anuncia: el más barato entre tiendas, ya con la promo
+    que rige desde la primera unidad.
+
+    Es la misma regla que resolveBestOffer() en frontend/src/utils/formatters.js,
+    y tiene que serlo: es el precio que el usuario ve al lado del precio por kilo.
+    """
+    precios = [
+        o["promo_unit_price"] if o.get("promo_unit_price") else o["base_price"]
+        for o in offers
+    ]
+    validos = [p for p in precios if isinstance(p, (int, float)) and p > 0]
+    return min(validos) if validos else None
+
+
+def _build_unit_price(row: dict, offers: list) -> Optional[dict]:
+    """
+    Precio por unidad de medida, o None cuando no hay con qué calcularlo.
+
+    Vive en el backend porque acá está el dato. El frontend sólo tenía
+    `min_price` —el mínimo de los precios de LISTA— así que dividía por el peso
+    un precio distinto del que la card muestra, y GET /search ni siquiera lo
+    mandaba: en resultados de búsqueda el precio por kilo directamente no existía.
+
+    **Una sola base: por kilo y por litro, siempre.** Antes había un corte en 1000
+    (por 100 g abajo, por kilo arriba). El argumento a favor era que un número
+    enorme en un envase chico se lee como un error de tipeo, y es cierto —medido
+    sobre el catálogo real, la base única cambia la etiqueta del 89% de los
+    productos y deja 275 (4,5%) por encima de $100.000/kg, con un azafrán de
+    0,375 g mostrando $9.710.526/kg—, pero dos bases conviviendo en la misma
+    grilla rompen justamente la comparabilidad que es el motivo entero de mostrar
+    este número. La mediana queda en $14.929/kg, perfectamente legible.
+
+    Devuelve None para `unit_type = 'un'` y para cualquier unidad fuera del
+    vocabulario, y NO cae a "precio por unidad": 'un' es lo que devuelve
+    normalize_magnitude() cuando SE DIO POR VENCIDO, y ahí `total_volume_weight`
+    es el placeholder 1.0. Un precio por unidad derivado de eso es el precio del
+    producto disfrazado de una medición que nadie hizo.
+
+    MULTIPACKS: el peso NO se multiplica, y no es una omisión. El número al lado
+    del "xN" es a veces el total del pack y a veces el tamaño de cada unidad, sin
+    nada en el nombre que los distinga (ver `extract_pack_count` en
+    src/size_parser.py). Al no multiplicar, el error sólo puede ir hacia CARO
+    (N× de más cuando el tamaño guardado era el unitario), nunca hacia barato: la
+    misma asimetría de los flags dietarios y de los swaps.
+    """
+    base = UNIT_PRICE_BASES.get(row.get("unit_type") or "")
+    if not base:
+        return None
+
+    peso = row.get("total_volume_weight")
+    peso = float(peso) if peso is not None else 0.0
+    if peso <= 0:
+        return None
+
+    precio = _display_price(offers)
+    if not precio:
+        return None
+
+    return {"value": round(precio / peso * UNIT_PRICE_FACTOR, 2), "base": base}
+
+
+def _build_product_response(row: dict, offers: list, distance: float = 0.0) -> dict:
     """
     Arma un ProductResponse a partir de una fila de unified_products y sus
     ofertas ya construidas por _build_store_offer().
 
-    Estaba escrito a mano adentro de GET /category y se extrajo al agregar
-    POST /products/by-ids: min_price y la eleccion de imagen son la unica parte
-    de la respuesta que NO sale derecho de una columna, y dos copias significan
-    que el mismo producto puede mostrar precio distinto segun por donde entro el
-    usuario.
+    Lo usan los TRES endpoints de producto (/search, /category y
+    /products/by-ids). Estaba escrito a mano adentro de /category y se extrajo al
+    agregar /products/by-ids; /search se sumó al nacer `unit_price`, porque el
+    precio por unidad de medida tiene que existir sobre todo ahí —la búsqueda es
+    por donde el usuario entra al catálogo— y mantener una segunda copia del
+    armado garantizaba que el mismo producto se viera distinto según la pantalla.
+    De paso /search dejó de ser el único sin `min_price` ni `image_url`.
 
-    `distance` va en 0.0 fija por la misma razon que en /category: ninguno de los
-    dos endpoints tiene nocion de relevancia, y el campo es obligatorio en
-    ProductResponse. Volverlo Optional cambiaria el contrato de /search a cambio
-    de nada.
+    `distance` es el único parámetro que los distingue: /search manda la distancia
+    coseno CRUDA (nunca el score de ordenamiento, que le mezclaría el bonus por
+    disponibilidad y volvería el campo ilegible) y los otros dos un 0.0 fijo,
+    porque no tienen noción de relevancia.
 
-    GET /search NO usa esta funcion a proposito: no manda min_price ni image_url,
-    y ese hueco esta documentado en CLAUDE.md (etapa 6) como preexistente y
-    deliberado. Unificarlo aca le cambiaria la respuesta de refilon.
-
-    Ojo con min_price: es el minimo de los precios de LISTA, promos ignoradas.
-    Es una propiedad conocida que el frontend compensa en resolveDisplayPrice();
-    "mejorarla" en un endpoint solo haria que el mismo producto tenga dos
-    precios segun la pantalla desde la que se llegue.
+    Ojo con min_price: es el mínimo de los precios de LISTA, promos ignoradas. El
+    precio que la grilla muestra sale de las ofertas (ver `_display_price`), y
+    min_price quedó de fallback.
     """
     min_price = min([o["base_price"] for o in offers if o["base_price"] > 0], default=0.0)
 
@@ -420,17 +500,18 @@ def _build_product_response(row: dict, offers: list) -> dict:
         "ean": row["ean"],
         "name": row["name"],
         "brand": row["brand"],
-        "category": row["category"],
+        "shelf": row["shelf"],
+        "shelf_label": shelf_label(row["shelf"]),
         "min_price": min_price,
         "image_url": best_image,
         "is_gluten_free": bool(row["is_gluten_free"]),
         "is_vegan": bool(row["is_vegan"]),
         "unit_info": {
-            "units_per_pack": row["units_per_pack"],
             "unit_type": row["unit_type"],
             "total_volume_weight": float(row["total_volume_weight"]) if row["total_volume_weight"] is not None else None
         },
-        "distance": 0.0,
+        "unit_price": _build_unit_price(row, offers),
+        "distance": distance,
         "store_count": int(row["store_count"]),
         "available_at_stores": offers,
     }
@@ -489,7 +570,7 @@ def search_products(
 
                 cur.execute(f"""
                     WITH pool AS (
-                        SELECT id, ean, name, brand, category, units_per_pack, unit_type,
+                        SELECT id, ean, name, brand, shelf, unit_type,
                                total_volume_weight, is_gluten_free, is_vegan,
                                name_embedding <=> %s AS distance
                         FROM unified_products
@@ -498,7 +579,7 @@ def search_products(
                         ORDER BY distance ASC
                         LIMIT %s
                     )
-                    SELECT p.id, p.ean, p.name, p.brand, p.category, p.units_per_pack,
+                    SELECT p.id, p.ean, p.name, p.brand, p.shelf,
                            p.unit_type, p.total_volume_weight, p.is_gluten_free,
                            p.is_vegan, p.distance,
                            count(DISTINCT sp.store_id) AS store_count
@@ -509,7 +590,7 @@ def search_products(
                     -- que nada lo indique.
                     LEFT JOIN store_products sp
                            ON sp.unified_product_id = p.id AND sp.in_stock
-                    GROUP BY p.id, p.ean, p.name, p.brand, p.category, p.units_per_pack,
+                    GROUP BY p.id, p.ean, p.name, p.brand, p.shelf,
                              p.unit_type, p.total_volume_weight, p.is_gluten_free,
                              p.is_vegan, p.distance
                     -- GREATEST(... , 0) porque un producto sin ofertas da -1 y
@@ -532,35 +613,23 @@ def search_products(
 
         # 4. Estructurar la respuesta final de búsqueda
         #
-        # A diferencia de /category y /products/by-ids, este endpoint NO pasa por
-        # _build_product_response(): no manda min_price ni image_url, y ese hueco
-        # esta documentado en CLAUDE.md (etapa 6) como preexistente y deliberado.
-        # Unificarlo aca seria cambiarle la respuesta de refilon.
-        results = []
-        for p in nearest_products:
-            prod_id = p["id"]
-            results.append({
-                "unified_id": prod_id,
-                "ean": p["ean"],
-                "name": p["name"],
-                "brand": p["brand"],
-                "category": p["category"],
-                "is_gluten_free": bool(p["is_gluten_free"]),
-                "is_vegan": bool(p["is_vegan"]),
-                "unit_info": {
-                    "units_per_pack": p["units_per_pack"],
-                    "unit_type": p["unit_type"],
-                    "total_volume_weight": float(p["total_volume_weight"]) if p["total_volume_weight"] is not None else None
-                },
-                # Se devuelve la distancia CRUDA, no el score de ordenamiento:
-                # es la relevancia semántica, y mezclarle el bonus volvería el
-                # campo inservible para cualquier lectura futura.
-                "distance": float(p["distance"]),
-                "store_count": int(p["store_count"]),
-                "available_at_stores": offers_by_product.get(prod_id, [])
-            })
-            
-        return results
+        # Va por el mismo _build_product_response() que /category y
+        # /products/by-ids. Antes armaba el dict a mano y era el único endpoint
+        # sin min_price, sin image_url y —al nacer— sin unit_price, que es el
+        # campo que menos podía faltar justamente acá: la búsqueda es por donde el
+        # usuario entra al catálogo.
+        #
+        # La distancia se pasa CRUDA, no el score de ordenamiento: es la
+        # relevancia semántica, y mezclarle el bonus por disponibilidad volvería
+        # el campo inservible para cualquier lectura futura.
+        return [
+            _build_product_response(
+                p,
+                offers_by_product.get(p["id"], []),
+                distance=float(p["distance"]),
+            )
+            for p in nearest_products
+        ]
 
     except Exception as e:
         logger.error(f"Error interno durante la búsqueda semántica: {e}")
@@ -1000,42 +1069,46 @@ def get_coto_coverage(
     """
     return check_coverage(lat, lng)
 
-@app.get("/categories/tree", response_model=Dict[str, CategoryTopLevelResponse])
-def get_categories_tree():
-    """
-    Devuelve el árbol de categorías reales de Coto+Día (top-level -> subcategoría
-    -> leaves), mergeado por texto normalizado, contención de tokens y
-    similaridad semántica (ver src/category_tree.py). Pensado para alimentar
-    el mega-menú del frontend.
-
-    Regla de ruteo esperada en el frontend: un click en un top-level con
-    has_direct_category_match=True (Lácteos/Golosinas/Almacén) debe resolverse
-    vía GET /category/{label}; cualquier otro click (subcategoría, leaf, o un
-    top-level sin match directo) debe resolverse vía GET /search?q=<label>.
-    """
-    return ml_models.get("category_tree", {})
-
-@app.get("/categories")
+@app.get("/categories", response_model=List[SectionResponse])
 def get_categories():
-    """Devuelve una lista de todas las categorías únicas en la base de datos."""
-    try:
-        db = SmartCartDB()
-        with psycopg.connect(db.conn_string) as conn:
-            with conn.cursor() as cur:
-                cur.execute("SELECT DISTINCT category FROM unified_products WHERE category IS NOT NULL ORDER BY category")
-                return [row[0] for row in cur.fetchall()]
-    except Exception as e:
-        logger.error(f"Error obteniendo categorías: {e}")
-        return []
+    """
+    Las góndolas del catálogo, agrupadas en secciones. Alimenta el mega-menú.
 
-@app.get("/category/{category_name}", response_model=List[ProductResponse])
-def get_products_by_category(
-    category_name: str,
+    Sale de `src/shelves.py` y no toca la base: la tabla de góndolas ES la
+    taxonomía del proyecto, así que no hay ningún estado que consultar y la
+    respuesta no puede desincronizarse de lo que se scrapea.
+
+    Reemplazó a dos endpoints. `/categories` devolvía `SELECT DISTINCT category`,
+    o sea los 4 buckets de un dict de 12 claves con el 80% del catálogo en
+    "Otros", y no lo consumía nadie. `/categories/tree` mergeaba por embeddings
+    las taxonomías COMPLETAS de Coto y Día (Carrefour nunca entró) para armar un
+    menú de ~15 top-levels y cientos de hojas sobre un catálogo de 20 góndolas:
+    casi todo lo que el usuario clickeaba no tenía productos y caía a
+    `GET /search?q=<label>`. De ahí salía también `has_direct_category_match`, la
+    bandera que le decía al frontend cuál de las dos rutas usar; ya no existe,
+    porque ahora todo click resuelve por `GET /category/{slug}` y toda hoja tiene
+    productos por construcción.
+    """
+    return shelf_sections()
+
+@app.get("/category/{shelf_slug}", response_model=List[ProductResponse])
+def get_products_by_shelf(
+    shelf_slug: str,
     limit: int = 50,
     gluten_free: bool = Query(False, description="Devolver solo productos con declaración explícita 'sin TACC'"),
     vegan: bool = Query(False, description="Devolver solo productos con declaración explícita 'vegano'")
 ):
-    """Devuelve productos filtrados por una categoría exacta."""
+    """
+    Los productos de una góndola, por su slug (ver GET /categories).
+
+    Un slug de fuera de `src/shelves.py` contesta 404 en vez de una lista vacía:
+    la tabla de góndolas es cerrada y conocida, así que "no hay productos" y "ese
+    nombre no existe" son dos cosas distintas y el cliente no tiene por qué
+    adivinar cuál le pasó.
+    """
+    if shelf_slug not in SHELVES:
+        raise HTTPException(status_code=404, detail=f"No existe la góndola '{shelf_slug}'.")
+
     try:
         db = SmartCartDB()
         # Con alias: la query lleva un JOIN a store_products, así que las
@@ -1052,20 +1125,20 @@ def get_products_by_category(
                 # mano y dos llamadas iguales podían devolver productos
                 # distintos. El `name` desempata para que el orden sea estable.
                 cur.execute(f"""
-                    SELECT u.id, u.ean, u.name, u.brand, u.category, u.units_per_pack,
+                    SELECT u.id, u.ean, u.name, u.brand, u.shelf,
                            u.unit_type, u.total_volume_weight, u.is_gluten_free,
                            u.is_vegan, 0.0 AS distance,
                            count(DISTINCT sp.store_id) AS store_count
                     FROM unified_products u
                     LEFT JOIN store_products sp
                            ON sp.unified_product_id = u.id AND sp.in_stock
-                    WHERE u.category = %s
+                    WHERE u.shelf = %s
                     {dietary_clause}
-                    GROUP BY u.id, u.ean, u.name, u.brand, u.category, u.units_per_pack,
+                    GROUP BY u.id, u.ean, u.name, u.brand, u.shelf,
                              u.unit_type, u.total_volume_weight, u.is_gluten_free, u.is_vegan
                     ORDER BY store_count DESC, u.name ASC
                     LIMIT %s
-                """, (category_name, limit))
+                """, (shelf_slug, limit))
                 nearest_products = cur.fetchall()
 
                 if not nearest_products:
@@ -1132,7 +1205,7 @@ def get_products_by_ids(request: ProductsByIdsRequest):
         with psycopg.connect(db.conn_string, row_factory=dict_row) as conn:
             with conn.cursor() as cur:
                 cur.execute("""
-                    SELECT u.id, u.ean, u.name, u.brand, u.category, u.units_per_pack,
+                    SELECT u.id, u.ean, u.name, u.brand, u.shelf,
                            u.unit_type, u.total_volume_weight, u.is_gluten_free,
                            u.is_vegan, 0.0 AS distance,
                            count(DISTINCT sp.store_id) AS store_count
@@ -1140,7 +1213,7 @@ def get_products_by_ids(request: ProductsByIdsRequest):
                     LEFT JOIN store_products sp
                            ON sp.unified_product_id = u.id AND sp.in_stock
                     WHERE u.id = ANY(%s)
-                    GROUP BY u.id, u.ean, u.name, u.brand, u.category, u.units_per_pack,
+                    GROUP BY u.id, u.ean, u.name, u.brand, u.shelf,
                              u.unit_type, u.total_volume_weight, u.is_gluten_free, u.is_vegan
                 """, (ordered_ids,))
                 rows_by_id = {row["id"]: row for row in cur.fetchall()}

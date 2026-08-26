@@ -26,13 +26,11 @@ errar hacia caro sólo pierde un ahorro, errar hacia barato rompe la promesa sob
 la que está construida la app.
 
 Este módulo no importa a ninguno de sus dos consumidores, así que no hay ciclo:
-substitutions -> {category_tags, flattener, size_parser}, y tanto
-strategic_swaps como api importan de acá. Es el mismo movimiento que ya se hizo
-con `same_aisle_filter`, que vive en category_tags.py por esta razón exacta.
+substitutions -> {flattener, size_parser}, y tanto strategic_swaps como api
+importan de acá.
 """
 import logging
 
-from src.category_tags import same_aisle_filter
 from src.flattener import flatten_cart_prices
 from src.size_parser import extract_pack_count
 
@@ -142,14 +140,14 @@ def format_size(weight: float, unit: str) -> str:
 # ---------------------------------------------------------------------------
 
 def fetch_product_rows(cur, uids) -> dict:
-    """Nombre, tamaño y datos de góndola de cada producto, en una sola query."""
+    """Nombre, tamaño y góndola de cada producto, en una sola query."""
     uids = list(uids)
     if not uids:
         return {}
 
     cur.execute(
         """
-        SELECT id, name, category, tags, total_volume_weight, unit_type, name_embedding
+        SELECT id, name, shelf, total_volume_weight, unit_type, name_embedding
         FROM unified_products
         WHERE id = ANY(%s)
         """,
@@ -160,10 +158,24 @@ def fetch_product_rows(cur, uids) -> dict:
 
 def fetch_candidates(cur, anchor_row, target_stores, limit: int = CANDIDATES_PER_ANCHOR):
     """
-    Vecinos semánticos del producto que estén en stock en alguna de `target_stores`.
+    Vecinos semánticos del producto, en la MISMA góndola y con stock en alguna de
+    `target_stores`.
 
     Lee el `name_embedding` ya guardado y lo manda como parámetro: no toca el
     SentenceTransformer, así que esto no carga ni usa el modelo.
+
+    La góndola se compara por igualdad sobre `unified_products.shelf`. Antes esto
+    era un solapamiento (`&&`) sobre los tags de taxonomía con fallback a la
+    columna `category`, porque cada cadena nombraba distinto el mismo estante y
+    había tres vocabularios que conciliar — Carrefour archivaba el vinagre en
+    "aceites-y-vinagres" y Día en "aceites-y-aderezos", que no solapan, así que el
+    vinagre de una nunca podía compararse con el de la otra. Con la góndola
+    canónica de src/shelves.py no hay nada que conciliar.
+
+    Un producto SIN góndola no tiene candidatos, y se corta acá. Es la dirección
+    segura y la misma asimetría que el proyecto sigue en todos lados: perder un
+    swap resigna un ahorro, proponer uno de otro pasillo (mayonesa por condimento
+    para carne) rompe la promesa sobre la que está construida la app.
 
     El filtro por stock no es cosmético. `get_market_prices_for_cart` filtra
     `in_stock = TRUE`, así que un candidato sin stock se cae solo más adelante —
@@ -173,10 +185,12 @@ def fetch_candidates(cur, anchor_row, target_stores, limit: int = CANDIDATES_PER
     El DISTINCT ON evita que un producto vendido por dos tiendas ocupe dos
     lugares por el mismo motivo.
     """
-    aisle_clause, aisle_param = same_aisle_filter(anchor_row, alias="u")
+    shelf = anchor_row.get("shelf")
+    if not shelf:
+        return []
 
     cur.execute(
-        f"""
+        """
         SELECT * FROM (
             SELECT DISTINCT ON (u.id)
                    u.id, u.name, u.total_volume_weight, u.unit_type,
@@ -187,7 +201,7 @@ def fetch_candidates(cur, anchor_row, target_stores, limit: int = CANDIDATES_PER
               AND sp.in_stock = TRUE
               AND u.name_embedding IS NOT NULL
               AND u.id != %s
-              {aisle_clause}
+              AND u.shelf = %s
             ORDER BY u.id, distance ASC
         ) AS vecinos
         ORDER BY distance ASC
@@ -197,7 +211,7 @@ def fetch_candidates(cur, anchor_row, target_stores, limit: int = CANDIDATES_PER
             anchor_row["name_embedding"],
             list(target_stores),
             anchor_row["id"],
-            aisle_param,
+            shelf,
             limit,
         ),
     )
