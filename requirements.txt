@@ -1,5 +1,9 @@
 httpx[http2]
-psycopg[binary]
+# El extra `pool` habilita src/db_pool.py, que la API abre en su lifespan. Es
+# opcional en tiempo de ejecución (sin psycopg_pool se conecta directo, más
+# lento), pero deja de serlo apenas la base vive en la nube: ahí cada conexión
+# es un handshake TCP + TLS y /optimize abre varias por request.
+psycopg[binary,pool]
 pydantic
 pandas
 sentence-transformers

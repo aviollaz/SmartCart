@@ -5,6 +5,7 @@ import logging
 import psycopg
 from psycopg.rows import dict_row
 
+from src.db_pool import connection as pooled_connection
 from src.promotion_parser import PromoTransformer
 from src.schema import ensure_schema, resolve_conn_string
 
@@ -367,8 +368,14 @@ class SmartCartDB:
             WHERE unified_product_id = ANY(%s) AND in_stock = TRUE;
         """
         
+        # Único camino de lectura de este módulo que corre por request, y el que
+        # más conexiones abre: lo llama `flatten_cart_prices`, que /optimize
+        # invoca una vez para el carrito y la heurística de cierre de tienda una
+        # vez por cantidad distinta de cada simulación. Por eso va por el pool
+        # (ver src/db_pool.py) y no por `psycopg.connect` directo como el resto
+        # del módulo, que son caminos de scrapeo de una sola pasada.
         try:
-            with psycopg.connect(self.conn_string, row_factory=dict_row) as conn:
+            with pooled_connection(self.conn_string) as conn:
                 with conn.cursor() as cur:
                     cur.execute(query, (unified_ids,))
                     return cur.fetchall()

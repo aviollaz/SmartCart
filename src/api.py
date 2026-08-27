@@ -7,7 +7,6 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field
 import psycopg
-from psycopg.rows import dict_row
 from sentence_transformers import SentenceTransformer
 from src.analytics import (
     analytics_status,
@@ -16,6 +15,7 @@ from src.analytics import (
     send_cart_optimized_event,
 )
 from src.database import SmartCartDB
+from src.db_pool import close_pool, connection as pooled_connection, open_pool, pool_status
 from src.optimizer import optimize_cart, DEFAULT_DELIVERY_COSTS, DEFAULT_MIN_SPEND_LIMITS
 from src.flattener import flatten_cart_prices, evaluate_best_promo, parse_promotions_json
 from src.coto_logistics import check_coverage, resolve_coto_logistics
@@ -251,6 +251,13 @@ async def lifespan(app: FastAPI):
     except Exception as e:
         logger.error(f"Error al preparar la base de datos en startup: {e}")
 
+    # Pool de conexiones para el camino de request (ver src/db_pool.py). Va
+    # DESPUÉS del DDL y no antes: el pre-flight de arriba es de una sola pasada y
+    # tiene que poder fallar por su cuenta —una base caída en el arranque no
+    # impide servir— mientras que el pool se abre sin esperar conexiones, así que
+    # tampoco bloquea si la base todavía no está.
+    open_pool(SmartCartDB().conn_string)
+
     # Estado de la emisión de eventos a SmartCart Performance Analyzer. Se dice
     # en el arranque porque los dos modos de no-emisión —falta la API key, o el
     # analyzer no responde— son deliberadamente silenciosos en tiempo de request
@@ -272,6 +279,7 @@ async def lifespan(app: FastAPI):
 
     yield
     # Limpieza
+    close_pool()
     ml_models.clear()
     logger.info("Modelo descargado de memoria.")
 
@@ -305,6 +313,11 @@ def read_root():
         # llamada de red por request. Para saber si el analyzer está VIVO están
         # la línea "Analitica:" del arranque y su propio GET /health.
         "analytics": analytics_status(),
+        # Mismo motivo que la analítica: un pool que no se abrió —psycopg_pool
+        # ausente, base caída en el arranque— se ve exactamente igual que uno
+        # sano, porque `connection()` cae a conectar directo y la app anda. La
+        # diferencia sólo aparece midiendo latencia contra una base remota.
+        "db_pool": pool_status(),
     }
 
 def _build_store_offer(sp: dict) -> dict:
@@ -556,7 +569,7 @@ def search_products(
         # El pool tiene que ser más grande que `limit`, si no el rerank no puede
         # cambiar QUÉ productos se muestran, solo en qué orden — que es
         # exactamente la limitación por la que esto no se resuelve en el cliente.
-        with psycopg.connect(db.conn_string, row_factory=dict_row) as conn:
+        with pooled_connection(db.conn_string) as conn:
             with conn.cursor() as cur:
                 # Sin esto el pool queda topeado en 40 filas (default de
                 # pgvector) sin ningún error a la vista. Va por conexión.
@@ -923,7 +936,7 @@ def _enrich_successful_result(result: dict, request, cart_data: list,
     )
 
     # Una sola conexión para las cuatro features que tocan la base.
-    with psycopg.connect(db.conn_string, row_factory=dict_row) as conn:
+    with pooled_connection(db.conn_string) as conn:
         with conn.cursor() as cur:
             split = result.get("split", {})
 
@@ -1115,7 +1128,7 @@ def get_products_by_shelf(
         # columnas dietarias tienen que quedar calificadas o Postgres las
         # rechaza por ambiguas.
         dietary_clause = _dietary_filter_clause(gluten_free, vegan, alias="u")
-        with psycopg.connect(db.conn_string, row_factory=dict_row) as conn:
+        with pooled_connection(db.conn_string) as conn:
             with conn.cursor() as cur:
                 # Este endpoint no tiene noción de relevancia (su `distance` es
                 # 0.0 fija), así que ordenar por disponibilidad no resigna nada:
@@ -1202,7 +1215,7 @@ def get_products_by_ids(request: ProductsByIdsRequest):
         ordered_ids = list(dict.fromkeys(request.unified_ids))
 
         db = SmartCartDB()
-        with psycopg.connect(db.conn_string, row_factory=dict_row) as conn:
+        with pooled_connection(db.conn_string) as conn:
             with conn.cursor() as cur:
                 cur.execute("""
                     SELECT u.id, u.ean, u.name, u.brand, u.shelf,
