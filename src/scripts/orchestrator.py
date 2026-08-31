@@ -35,8 +35,8 @@ from pathlib import Path
 from dotenv import load_dotenv
 
 # Antes de instanciar SmartCartDB, que lee DATABASE_URL en su __init__.
-# `load_dotenv` no pisa lo que ya esté exportado, así que el `.env` que carga
-# run_pipeline.sh y este archivo conviven sin ambigüedad.
+# `load_dotenv` no pisa lo que ya esté exportado: en desarrollo manda el `.env`,
+# y en el workflow nocturno manda el secreto de GitHub Actions, sin ambigüedad.
 load_dotenv()
 
 import psycopg  # noqa: E402  (después de load_dotenv, a propósito)
@@ -72,10 +72,11 @@ def _install_signal_handlers() -> None:
     """
     Convierte SIGTERM y SIGINT en una excepción.
 
-    `timeout --signal=TERM` (lo que usa run_pipeline.sh) manda SIGTERM: sin esto el
-    proceso muere en el acto y la fila del paso en curso queda RUNNING para
-    siempre. Levantando una excepción, el context manager de la telemetría alcanza
-    a cerrarla con su motivo antes de que el proceso se vaya.
+    Un job de GitHub Actions cancelado o vencido por `timeout-minutes` manda
+    SIGINT y después SIGTERM: sin esto el proceso muere en el acto y la fila del
+    paso en curso queda RUNNING para siempre. Levantando una excepción, el context
+    manager de la telemetría alcanza a cerrarla con su motivo antes de que el
+    proceso se vaya.
     """
     def handler(signum, _frame):
         nombre = signal.Signals(signum).name

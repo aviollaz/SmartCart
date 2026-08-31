@@ -9,8 +9,8 @@ desde una EC2 recién lanzada— y se comparan las dos salidas. Si desde AWS vue
 (proxy residencial = costo recurrente, o el pipeline se queda local), y conviene
 enterarse antes de crear una RDS, no después.
 
-    python3 ops/aws/probe_endpoints.py                 # salida legible
-    python3 ops/aws/probe_endpoints.py --json > x.json # para diff entre corridas
+    python3 ops/oracle/probe_endpoints.py                 # salida legible
+    python3 ops/oracle/probe_endpoints.py --json > x.json # para diff entre corridas
 
 Única dependencia: httpx. En una EC2 pelada alcanza con
 `python3 -m pip install httpx` — a propósito NO importa nada de `src/`, así que
@@ -210,7 +210,7 @@ def main() -> int:
         else:
             print("VEREDICTO: las cuatro contestan. Comparar los ms contra la corrida")
             print("local: el barrido son miles de requests secuenciales, así que +200 ms")
-            print("por request se nota en la ventana del watchdog (PIPELINE_TIMEOUT).")
+            print("por request se nota en la ventana del job (timeout-minutes).")
 
     return 0 if all(r["ok"] for r in resultados) else 1
 

@@ -1,0 +1,38 @@
+# La API. Corre 24/7 detrás de nginx.
+#
+#   sudo systemctl enable --now smartcart-api.service
+#
+# Es lo que hace que SmartCart deje de necesitar tu notebook prendida.
+
+[Unit]
+Description=SmartCart — API FastAPI
+After=network-online.target postgresql.service
+Wants=network-online.target
+OnFailure=smartcart-alert@%n.service
+
+[Service]
+Type=simple
+User=smartcart
+Group=smartcart
+WorkingDirectory=/opt/smartcart
+EnvironmentFile=/opt/smartcart/.env
+
+# Escucha SÓLO en loopback: la única puerta a internet es nginx, que además pone
+# el TLS. Un uvicorn escuchando en 0.0.0.0 quedaría accesible por IP:8000
+# esquivando el proxy y el certificado.
+#
+# Un solo worker a propósito. Cada worker carga su propia copia de
+# all-MiniLM-L6-v2 (~1,5 GB residentes), así que multiplicar workers multiplica la
+# RAM sin comprar nada: el cuello de esta app son las consultas a Postgres y el
+# solver, no la concurrencia HTTP.
+ExecStart=/opt/smartcart/.venv/bin/uvicorn src.api:app --host 127.0.0.1 --port 8000
+
+Restart=always
+RestartSec=5
+
+# El arranque carga el modelo de sentence-transformers y aplica el DDL: puede
+# tardar bastante más que el default de systemd la primera vez.
+TimeoutStartSec=300
+
+[Install]
+WantedBy=multi-user.target

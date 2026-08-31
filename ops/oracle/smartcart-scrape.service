@@ -1,0 +1,50 @@
+# El barrido nocturno. Lo dispara smartcart-scrape.timer.
+#
+# Es deliberadamente sólo tres directivas de ejecución: no hay script wrapper
+# porque no hace falta. `WorkingDirectory`, `EnvironmentFile` y `User` son
+# exactamente lo que ops/run_pipeline.sh existía para darle a cron, y systemd las
+# da declarativamente. El camino nocturno quedó con cero líneas de bash.
+#
+# `EnvironmentFile` NO es un shell: parsea CLAVE=VALOR literal. Por eso la
+# contraseña de Postgres puede tener los símbolos que quiera — la advertencia que
+# arrastraba .env.example desapareció, no se documentó.
+#
+# Instalación en ops/oracle/README.md.
+
+[Unit]
+Description=SmartCart — barrido nocturno de supermercados
+# El pipeline es tráfico HTTPS saliente más una conexión a Postgres local.
+After=network-online.target postgresql.service
+Wants=network-online.target
+
+# Avisa si el barrido termina mal. Cubre los exit codes 1 (algún paso
+# PARTIAL/FAILED) y 2 (la base no respondió) sin una sola condición escrita por
+# nosotros: systemd ya sabe qué es "falló". Es lo único que se perdía al dejar
+# GitHub Actions, y es justo el problema que motivó la migración entera — un job
+# que deja de correr sin que nadie se entere.
+OnFailure=smartcart-alert@%n.service
+
+[Service]
+Type=oneshot
+User=smartcart
+Group=smartcart
+WorkingDirectory=/opt/smartcart
+EnvironmentFile=/opt/smartcart/.env
+ExecStart=/opt/smartcart/.venv/bin/python -m src.scripts.orchestrator
+
+# Sin TimeoutStartSec. El barrido completo son ~30 min hoy y va a crecer con las
+# góndolas; poner un tope acá mataría el proceso por fuera de su propio manejo de
+# señales y dejaría la fila de telemetría en RUNNING para siempre. El corte real
+# lo hace MAX_PAGES en cada scraper.
+TimeoutStartSec=0
+
+# La salida va a journald: `journalctl -u smartcart-scrape`. El orquestador
+# además escribe su archivo diario con el run_id en cada línea.
+StandardOutput=journal
+StandardError=journal
+
+# Sin [Install] a propósito. Lo que se habilita es smartcart-scrape.timer; si
+# esta unidad tuviera WantedBy=multi-user.target, un `systemctl enable` sobre
+# ella —el error natural, porque es la que tiene el nombre obvio— dispararía un
+# barrido completo en CADA arranque de la máquina. Sin la sección, sólo se puede
+# llegar acá por el timer o a mano.

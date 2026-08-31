@@ -21,8 +21,8 @@ MVP_CATEGORIES = keys_for_store("dia")
 # Tope duro de páginas por categoría. Es una red de seguridad, no el criterio de
 # corte: el corte real es la página sin productos. Sin esto un endpoint que
 # ignore el `from` y repita el primer tramo deja el barrido en bucle — es
-# exactamente el riesgo por el que ops/run_pipeline.sh envuelve todo en
-# `timeout`. Mismo rol que el MAX_PAGES de scraper_carrefour.py.
+# exactamente el riesgo por el que el workflow nocturno lleva `timeout-minutes`.
+# Mismo rol que el MAX_PAGES de scraper_carrefour.py.
 MAX_PAGES = 60
 
 class DiaScraper:

@@ -1,3 +1,4 @@
+import os
 import time
 import logging
 from contextlib import asynccontextmanager
@@ -290,10 +291,26 @@ app = FastAPI(
     lifespan=lifespan
 )
 
-# CORS Middleware para facilitar integraciones de Frontend/UI
+# Orígenes permitidos, separados por coma en CORS_ORIGINS. El default son los dos
+# puertos del dev server de Vite, así que en desarrollo no hay nada que configurar.
+#
+# Antes esto era `allow_origins=["*"]` junto con `allow_credentials=True`, que son
+# incompatibles: la especificación de CORS prohíbe el comodín cuando hay
+# credenciales y los navegadores rechazan esa combinación. Mientras todo fue
+# localhost no molestó —el frontend no manda credenciales—, pero con la API
+# publicada en internet queda abierta a cualquier origen. Una lista explícita es
+# además el único modo en que el comodín podía dejar de ser mentira.
+CORS_ORIGINS = [
+    origin.strip()
+    for origin in os.getenv(
+        "CORS_ORIGINS", "http://localhost:5173,http://127.0.0.1:5173"
+    ).split(",")
+    if origin.strip()
+]
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=CORS_ORIGINS,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],

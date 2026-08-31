@@ -1,0 +1,28 @@
+# Cuándo corre el barrido. Reemplaza al cron de WSL, que dependía de que la
+# máquina estuviera prendida — la VM de Oracle no se apaga sola.
+#
+#   sudo systemctl enable --now smartcart-scrape.timer
+#   systemctl list-timers smartcart-scrape.timer    # confirma el próximo disparo
+
+[Unit]
+Description=SmartCart — dispara el barrido nocturno a las 03:00
+
+[Timer]
+# Hora local de la máquina. Configurar la VM con
+# `sudo timedatectl set-timezone America/Argentina/Buenos_Aires` y esto es 03:00
+# de verdad, sin aritmética UTC. El cron de GitHub Actions no aceptaba zona
+# horaria y obligaba a razonar el offset a mano.
+OnCalendar=*-*-* 03:00:00
+
+# Si la VM estuvo caída a las 03:00, corre al arrancar en vez de saltearse el día.
+# Reemplaza toda la categoría de problemas "¿se lo perdió?" sin una sola condición
+# escrita por nosotros — y es exactamente lo que el cron de WSL no podía hacer.
+Persistent=true
+
+# Desfasa el arranque hasta 15 min. No es cosmético: los tres scrapers salen a
+# pegarle a los mismos endpoints todas las noches a la misma hora exacta, y un
+# horario picado se parece menos a un bot.
+RandomizedDelaySec=15min
+
+[Install]
+WantedBy=timers.target

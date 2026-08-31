@@ -99,8 +99,10 @@ def test_retencion_borra_lo_viejo_y_respeta_lo_reciente(tmp_path):
 def test_retencion_no_toca_archivos_ajenos(tmp_path):
     """
     Sólo los `orchestrator_*.log` con fecha parseable. Un nombre que no se entiende
-    se ignora en vez de borrarse — el directorio de logs es compartido con el
-    redirect de run_pipeline.sh (`pipeline_*.log`) y con el de cron.
+    se ignora en vez de borrarse: nunca borrar lo que no se entiende. Los nombres
+    de abajo son los que dejaban el wrapper de cron y su redirect, y se conservan
+    como casos de prueba aunque esos archivos ya no se generen — lo que se está
+    verificando es la regla, no esos nombres en particular.
     """
     ajenos = [
         tmp_path / "pipeline_19990101.log",

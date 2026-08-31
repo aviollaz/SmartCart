@@ -1,0 +1,33 @@
+# Notificador de fallo. Lo invoca `OnFailure=` de cualquier otra unidad, que le
+# pasa el nombre de la que falló como instancia (%n -> %i acá).
+#
+#   OnFailure=smartcart-alert@%n.service
+#
+# Es una plantilla (el `@` en el nombre) para que sirva igual al barrido y a la
+# API sin duplicarla. Un `curl` y nada más: cero ramas, cero estado.
+#
+# Por qué ntfy.sh: gratis, sin cuenta y sin API key. Suscribirse a un topic desde
+# la app de ntfy en el teléfono y listo. El topic es efectivamente el secreto —
+# cualquiera que lo adivine puede mandarte notificaciones—, así que conviene uno
+# largo y no adivinable, y por eso vive en el .env y no acá.
+#
+# Este notificador HAY QUE PROBARLO A PROPÓSITO (paso 7 del runbook): parar
+# Postgres y correr el barrido. Un aviso que nunca se disparó no existe.
+
+[Unit]
+Description=SmartCart — avisa que %i falló
+
+[Service]
+Type=oneshot
+User=smartcart
+Group=smartcart
+EnvironmentFile=/opt/smartcart/.env
+
+# `systemctl status` da el exit code y las últimas líneas, que es lo que hace
+# falta para decidir si hay que levantarse a mirar o puede esperar a mañana.
+ExecStart=/usr/bin/curl --fail --silent --show-error --max-time 20 \
+    -H "Title: SmartCart: fallo en %i" \
+    -H "Priority: high" \
+    -H "Tags: rotating_light" \
+    -d "Revisar: journalctl -u %i -n 50" \
+    ${SMARTCART_NTFY_URL}
