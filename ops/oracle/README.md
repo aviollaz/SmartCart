@@ -1,5 +1,20 @@
 # SmartCart en Oracle Cloud Always Free
 
+> ## ⚠️ Esto todavía NO está desplegado
+>
+> **Bloqueado por capacidad de Oracle, no por el diseño.** Crear la instancia A1
+> devuelve *out of capacity* de forma persistente en Santiago: lo único que entró
+> fue **1 OCPU y 1 GB de RAM**, y el resize a 6 GB también falla. Con 1 GB no
+> corre `all-MiniLM-L6-v2` — necesita ~1,5 GB y lo usan tanto la API como el paso
+> de embeddings del barrido.
+>
+> Mientras tanto el barrido corre en GitHub Actions contra Neon. Ver
+> **`ops/README.md`**, que tiene el estado y la condición de salida.
+>
+> Lo que sí quedó verificado desde la instancia de 1 GB: **los cuatro endpoints de
+> los súper contestan desde Santiago** (§3). Ese era el riesgo que podía cancelar
+> todo, y está descartado.
+
 Runbook para poner el backend entero —base, barrido nocturno y API— en una VM
 gratuita de Oracle.
 
@@ -100,7 +115,7 @@ Argentina.
 ```bash
 sudo apt install -y python3-pip
 pip install --break-system-packages "httpx[http2]"
-curl -sO https://raw.githubusercontent.com/aviollaz/SmartCart/main/ops/oracle/probe_endpoints.py
+curl -sO https://raw.githubusercontent.com/aviollaz/SmartCart/main/ops/probe_endpoints.py
 python3 probe_endpoints.py
 ```
 
@@ -119,8 +134,14 @@ sólo el status es parsear una página web creyendo que son datos.
 | `dia-graphql` | ~230-515 ms |
 | `carrefour-graphql` | ~230-570 ms |
 
-Desde Santiago se esperan ~30 ms más. **Si alguna vuelve 403, captcha o HTML,
-parar acá**: no hay arquitectura que arregle un bloqueo por IP.
+**Medido desde Santiago (2026-08-31), las cuatro OK**: Coto 516 ms, cobertura
+168 ms, Día 769 ms, Carrefour 624 ms. O sea **+120 a +220 ms**, bastante más que
+los ~30 que se habían estimado — el tráfico Chile↔Argentina no va directo. No
+importa: el barrido son ~560 requests, así que eso suma menos de 2 minutos sobre
+~30, y las pausas deliberadas de los scrapers le ganan a la red por diez a uno.
+
+**Si alguna vuelve 403, captcha o HTML, parar acá**: no hay arquitectura que
+arregle un bloqueo por IP.
 
 ## 4. Postgres
 

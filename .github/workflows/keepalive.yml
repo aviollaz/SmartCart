@@ -1,0 +1,48 @@
+# Mantiene vivo el schedule de scrape.yml.
+#
+# GitHub **deshabilita automáticamente los workflows programados tras 60 días sin
+# actividad en el repositorio**, y lo único que reinicia ese contador son los
+# commits nuevos: las corridas del propio schedule NO cuentan. O sea que un
+# proyecto que entra en pausa dos meses se encuentra con que el scrapeo dejó de
+# correr — sin error, sin alerta, exactamente el modo de falla silenciosa que esta
+# migración existe para eliminar (era el mismo problema del cron en WSL, por otra
+# causa).
+#
+# GitHub avisa por mail antes de deshabilitarlo, pero depender de leer ese mail es
+# depender de una acción humana en un momento cualquiera: la misma clase de señal
+# que el TODO descarta para el historial de compras.
+#
+# La solución estándar es un commit vacío periódico. Cuesta 12 commits al año de
+# ruido y compra que el barrido no se apague solo. Si el repo tiene actividad
+# normal esto no hace nada visible.
+
+name: Keepalive del schedule
+
+on:
+  schedule:
+    # Día 1 de cada mes. El límite son 60 días, así que mensual deja margen de 2x
+    # — suficiente para que una corrida demorada o salteada por carga de GitHub no
+    # gaste el colchón entero.
+    - cron: "0 5 1 * *"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  keepalive:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Commit vacío para reiniciar el contador de inactividad
+        run: |
+          git config user.name  "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git commit --allow-empty -m "chore: keepalive del schedule de Actions
+
+          GitHub deshabilita los workflows programados tras 60 dias sin commits.
+          Ver .github/workflows/keepalive.yml."
+          git push

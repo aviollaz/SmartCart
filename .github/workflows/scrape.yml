@@ -1,0 +1,117 @@
+# El barrido nocturno de SmartCart.
+#
+# Reemplaza al cron de WSL, que dependía de que la máquina estuviera prendida a
+# las 3am — y Windows cierra la VM sola tras un rato sin uso. Ningún script
+# arreglaba eso; acá el disparador no depende de ninguna máquina propia.
+#
+# El trabajo NO vive en este archivo: se delega en src/scripts/orchestrator.py,
+# el mismo módulo que corría bajo cron, con su logging, su telemetría, su
+# pre-flight de base y su manejo de señales. Este YAML sólo aporta disparador,
+# entorno y secreto.
+#
+# Ver ops/README.md por qué el destino es Neon + Actions y no la VM de Oracle.
+
+name: Scrapeo nocturno
+
+on:
+  schedule:
+    # 06:00 UTC = 03:00 en Argentina. El cron de Actions es SIEMPRE UTC y no
+    # acepta zona horaria, pero acá no muerde: Argentina no tiene horario de
+    # verano (UTC-3 todo el año), así que el offset es fijo y no hay dos veces al
+    # año en que esto corra a la hora equivocada.
+    #
+    # GitHub no garantiza la hora exacta: bajo carga la corrida puede demorarse
+    # 15 minutos o más. Para un refresco de catálogo nocturno es irrelevante.
+    - cron: "0 6 * * *"
+
+  workflow_dispatch:
+    inputs:
+      args:
+        # Un único campo de texto en vez de un input tipado por flag. La lista de
+        # flags ya la define build_arg_parser() en src/scripts/run_scrapers.py, y
+        # repetirla acá sería una segunda copia que se desincroniza — además de
+        # obligar a un condicional por flag para armar la línea de comando.
+        #
+        # Así, agregar un flag al orquestador no requiere tocar este archivo, y la
+        # validación sigue donde estaba: --store tiene `choices=`, así que un valor
+        # inventado falla con un mensaje de argparse.
+        description: "Flags para el orquestador (ej: --store dia --skip-embeddings)"
+        type: string
+        default: ""
+
+# Dos barridos simultáneos compiten por los mismos upserts y —peor— el segundo
+# podría podar con un `seen_skus` a medio armar. Es el equivalente del `flock -n`
+# que tenía la instalación de cron.
+concurrency:
+  group: scrapeo-nocturno
+  cancel-in-progress: false
+
+jobs:
+  scrape:
+    runs-on: ubuntu-latest
+
+    # El barrido son ~30 min medidos (unas 560 requests, dominadas por las pausas
+    # deliberadas de los scrapers, no por la red). 90 cubre una noche lenta y
+    # sigue cortando un scraper colgado. SUBIR ESTE NÚMERO ANTES de agregar
+    # góndolas: con el catálogo de alimentos completo el barrido se va a 2-3 h.
+    # Al cancelar, Actions manda SIGINT/SIGTERM, que el orquestador convierte en
+    # excepción para cerrar su fila de telemetría en vez de dejarla en RUNNING.
+    timeout-minutes: 90
+
+    env:
+      DATABASE_URL: ${{ secrets.DATABASE_URL }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      # torch pesa varios cientos de MB: sin el cache de pip de arriba, esto solo
+      # se lleva la mitad del tiempo del job.
+      - name: Instalar dependencias
+        run: pip install -r requirements.txt
+
+      # El modelo de sentence-transformers (~90 MB) se baja de HuggingFace la
+      # primera vez que se usa. Sin cache eso se repite todas las noches. La clave
+      # incluye el nombre del modelo para que cambiarlo (ítem 4 del TODO: modelo
+      # multilingüe) invalide el cache solo, en vez de servir el viejo en silencio.
+      - name: Cachear el modelo de embeddings
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/huggingface
+          key: hf-all-MiniLM-L6-v2-${{ runner.os }}
+
+      # La única rama del workflow, y se la gana. Sin el secreto, SmartCartDB()
+      # cae al default de docker-compose, _wait_for_db reintenta contra localhost
+      # 60 segundos y el job muere con "Postgres inalcanzable" — la pista
+      # equivocada para un secreto que falta.
+      - name: Verificar que el secreto está cargado
+        run: |
+          if [ -z "${DATABASE_URL}" ]; then
+            echo "::error::Falta el secreto DATABASE_URL. Ver ops/README.md."
+            exit 1
+          fi
+          echo "DATABASE_URL presente (${#DATABASE_URL} caracteres)."
+
+      # Los exit codes del orquestador son el contrato de monitoreo:
+      #   0 todo SUCCESS · 1 algún PARTIAL/FAILED · 2 la base no respondió
+      # Cualquiera distinto de 0 pone el job en rojo y GitHub manda mail.
+      #
+      # No hay paso de subir logs: setup_logging escribe a stdout además del
+      # archivo, así que el log completo ya está acá, con más retención que un
+      # artefacto (90 días en repos públicos).
+      #
+      # `args` va por `env` y no interpolado en el `run`: un `${{ }}` se sustituye
+      # ANTES de que exista el shell, o sea que su contenido se vuelve código.
+      # Disparar esto pide permiso de escritura en el repo, así que no es una
+      # puerta abierta — pero pasarlo por variable cuesta lo mismo y cierra la
+      # categoría entera. Sin comillas a propósito: hace falta el word splitting
+      # para que "--store dia" llegue como dos argumentos. En `schedule` no hay
+      # inputs, así que queda vacío y corre el barrido completo.
+      - name: Correr el pipeline
+        env:
+          ARGS: ${{ inputs.args }}
+        run: python -m src.scripts.orchestrator $ARGS

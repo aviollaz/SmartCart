@@ -1,0 +1,46 @@
+# Gate previo a confiarle el barrido a Actions: ¿los supermercados le contestan a
+# una IP de runner de GitHub?
+#
+#     gh workflow run probe.yml
+#
+# **Este gate es distinto del que ya se pasó desde la VM de Oracle.** Aquella
+# corrida probó IPs de Oracle en Santiago; los runners de GitHub son IPs de Azure
+# en otro país. Un bloqueo por rango de datacenter o por geografía puede afectar a
+# uno y no al otro, así que hay que pasarlo de nuevo acá — que es justamente donde
+# va a correr el barrido.
+#
+# El resultado se lee en el log del job y se compara a ojo contra las dos corridas
+# que ya tenemos. No se sube ningún artefacto: un JSON para diffear cuatro filas es
+# más maquinaria que la que el problema pide.
+#
+#   local (Argentina, 2026-08-28)  Coto 300 / cobertura 50 / Día 232 / Carrefour 229 ms
+#   Oracle (Santiago, 2026-08-31)  Coto 516 / cobertura 168 / Día 769 / Carrefour 624 ms
+#
+# Las cuatro OK en las dos. Lo que se mira acá es lo mismo: OK/FALLA y latencia.
+
+name: Probe endpoints supermercados
+
+on:
+  workflow_dispatch:
+
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      # Sólo httpx: el probe no importa nada de src/ a propósito, así que no hace
+      # falta instalar torch ni el resto de requirements.txt para esto.
+      - name: Instalar httpx
+        run: pip install "httpx[http2]"
+
+      # El script sale con 1 si alguna sonda falla, así que el job se pone en rojo
+      # solo: no hace falta evaluar el resultado acá.
+      - name: Sondear los cuatro endpoints
+        run: python ops/probe_endpoints.py
