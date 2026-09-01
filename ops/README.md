@@ -53,10 +53,22 @@ a otro:
 |---|---|---|---|---|---|
 | local (Argentina) | 2026-08-28 | 300 ms | 50 ms | 232 ms | 229 ms |
 | Oracle (Santiago) | 2026-08-31 | 516 ms | 168 ms | 769 ms | 624 ms |
-| GitHub Actions | *pendiente* | | | | |
+| GitHub Actions | 2026-08-31 | 1454 ms | 611 ms | 372 ms | 352 ms |
 
-Las dos primeras dieron las cuatro OK. La tercera se corre con
-`gh workflow run probe.yml` y **es bloqueante**: es donde va a vivir el barrido.
+**Las tres dieron las cuatro OK.** No hay bloqueo por IP de datacenter en ningún
+proveedor probado.
+
+El perfil de latencia cambia según dónde corras, y no de forma uniforme: **Coto es
+mucho más lento desde afuera de Argentina** (sirve su API desde infraestructura
+propia) mientras que **Día y Carrefour casi no se mueven** —corren sobre VTEX, que
+es una plataforma con CDN global— y desde los runners de GitHub llegan a ser más
+rápidos que desde Oracle. O sea que "más lejos" no predice el resultado: hay que
+medirlo.
+
+Ojo al leer esos números: el probe abre un cliente nuevo por sonda, así que cada
+una paga DNS + TCP + TLS en frío. El barrido real reusa la conexión con
+`httpx.Client` y sólo la primera request de cada host lo paga, así que la tabla
+sobreestima el costo.
 
 Sobre las latencias, ya medido: el barrido son unas **560 requests** (490 páginas
 más una vacía por categoría para detectar el final). Aun a +200 ms cada una eso
