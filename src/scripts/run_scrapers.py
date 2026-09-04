@@ -5,6 +5,7 @@ Uso:
     python -m src.scripts.run_scrapers                  # las tres tiendas + embeddings
     python -m src.scripts.run_scrapers --store coto     # solo una tienda
     python -m src.scripts.run_scrapers --skip-embeddings
+    python -m src.scripts.run_scrapers --only-embeddings # sólo vectorizar
     python -m src.scripts.run_scrapers --prune-dry-run  # ver qué se borraría
     python -m src.scripts.run_scrapers --no-prune       # no borrar nada
 
@@ -61,6 +62,11 @@ class StoreRunResult:
     categories_total: int = 0
     categories_ok: int = 0
     categories_failed: int = 0
+    # Las categorías que cerraron bien pero no trajeron NI UN producto. Cuentan
+    # como OK —el barrido terminó, y podar dentro de ellas es correcto— pero se
+    # cuentan aparte porque son la firma de una clave muerta, que es un fallo que
+    # no levanta ninguna excepción. Ver `empty_categories` abajo.
+    empty_categories: set = field(default_factory=set)
     errors: list = field(default_factory=list)
 
     @property
@@ -93,6 +99,10 @@ class StoreRunResult:
         en vez de dejar a la tienda entera sin podar por una sola caída.
         """
         return None if self.complete else self.ok_categories
+
+    @property
+    def categories_empty(self) -> int:
+        return len(self.empty_categories)
 
     @property
     def first_error(self) -> str | None:
@@ -135,6 +145,13 @@ def _run_store(
                 result.items_scraped += saved
                 result.seen_skus.update(p["store_sku"] for p in products if p.get("store_sku"))
             else:
+                # No es un error: la categoría contestó bien y está vacía. Pero
+                # es TAMBIÉN lo que se ve cuando la tienda renombró el slug y la
+                # clave vieja quedó viva sin productos, que es como dos góndolas
+                # de Día estuvieron vacías durante semanas con el barrido en
+                # verde. Se cuenta aparte para que el orquestador pueda marcar la
+                # tienda PARTIAL en vez de dejarlo en un WARNING que nadie lee.
+                result.empty_categories.add(category)
                 logger.warning("[%s] categoría '%s' no devolvió productos.", label, category)
 
             result.categories_ok += 1
@@ -189,10 +206,19 @@ def build_arg_parser(description: str = "Corre los scrapers de SmartCart.") -> a
         default="all",
         help="Qué tienda scrapear (default: all).",
     )
-    parser.add_argument(
+    # Los dos son la misma decisión vista desde los dos lados, así que se
+    # excluyen entre sí: pedir ambos es una línea de comando que no quiere decir
+    # nada, y argparse lo rechaza con un mensaje en vez de elegir uno en silencio.
+    embeddings = parser.add_mutually_exclusive_group()
+    embeddings.add_argument(
         "--skip-embeddings",
         action="store_true",
         help="No regenerar embeddings al terminar.",
+    )
+    embeddings.add_argument(
+        "--only-embeddings",
+        action="store_true",
+        help="Regenerar embeddings y nada más: no se barre ninguna tienda.",
     )
     parser.add_argument(
         "--no-prune",
@@ -221,7 +247,9 @@ def main():
     args = build_arg_parser().parse_args()
 
     db = SmartCartDB()
-    selected = list(STORE_RUNNERS) if args.store == "all" else [args.store]
+    selected = [] if args.only_embeddings else (
+        list(STORE_RUNNERS) if args.store == "all" else [args.store]
+    )
 
     started = time.time()
     results: dict[str, StoreRunResult | None] = {}
@@ -275,6 +303,8 @@ def main():
             linea = f"  {store:10} -> {result.items_scraped} productos"
             if result.categories_failed:
                 linea += f"  | {result.categories_failed}/{result.categories_total} categorías fallidas"
+            if result.empty_categories:
+                linea += f"  | SIN PRODUCTOS: {', '.join(sorted(result.empty_categories))}"
         p = pruned.get(store)
         if p:
             if p["skipped"]:
@@ -289,7 +319,8 @@ def main():
 
     # Exit code distinto de 0 si alguna tienda falló entera o en parte, para que
     # sirva en CI. El orquestador tiene su propia tabla de exit codes, más fina.
-    fallo = any(r is None or r.categories_failed for r in results.values())
+    fallo = any(r is None or r.categories_failed or r.empty_categories
+                for r in results.values())
     return 1 if fallo else 0
 
 

@@ -123,6 +123,7 @@ _TABLES = (
         items_scraped        INTEGER     NOT NULL DEFAULT 0,
         categories_ok        INTEGER     NOT NULL DEFAULT 0,
         categories_failed    INTEGER     NOT NULL DEFAULT 0,
+        categories_empty     INTEGER     NOT NULL DEFAULT 0,
         pruned_rows          INTEGER,
         pruned_orphans       INTEGER,
         prune_skipped_reason TEXT,
@@ -163,6 +164,16 @@ _COLUMNS = (
     ALTER TABLE store_products
         ADD COLUMN IF NOT EXISTS store_item_id   TEXT,
         ADD COLUMN IF NOT EXISTS source_category TEXT;
+    """,
+    # categories_empty: categorías que cerraron su barrido sin devolver un solo
+    # producto. No es un fallo —hay categorías legítimamente vacías— pero es la
+    # firma de una clave que murió: Día renombró `almacen/pastas-y-arroce` y la
+    # clave vieja siguió existiendo en el árbol con cero productos, así que dos
+    # góndolas quedaron vacías durante semanas reportando 24/24 categorías OK.
+    # Sin esta columna el único rastro era un WARNING en el log de esa noche.
+    """
+    ALTER TABLE scraper_execution_logs
+        ADD COLUMN IF NOT EXISTS categories_empty INTEGER NOT NULL DEFAULT 0;
     """,
 )
 

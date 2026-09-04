@@ -84,6 +84,42 @@ def test_toda_clave_barrida_resuelve_a_una_gondola(store):
         assert shelf_for_key(store, key) in SHELVES
 
 
+@pytest.mark.parametrize("store", STORES)
+def test_ninguna_clave_contiene_a_otra(store):
+    """
+    Ninguna clave puede ser ancestro de otra clave de la MISMA tienda.
+
+    El test de arriba prohíbe la clave repetida; ésta prohíbe la clave que
+    *contiene* a otra, que hace el mismo daño de una forma que no se ve. Las dos
+    categorías se barren, pero los productos de la hija también vienen en el
+    barrido del padre, y el ON CONFLICT de `save_store_products` actualiza
+    `shelf` y `source_category`: gana el que se barre último, que es el orden en
+    que están las góndolas en la tabla.
+
+    Medido cuando pasaba: los 27 dulces de leche de Carrefour entraban bajo
+    `mermeladas-y-otros-dulces` y la góndola `dulce-de-leche` figuraba vacía. No
+    se pierde el producto —queda archivado en la góndola equivocada—, así que ni
+    el conteo de la corrida ni `tests/test_shelves.py` lo notaban: 21/21
+    categorías OK, todas las noches.
+
+    Coto queda cubierto igual aunque sus claves sean ids opacos (`catv00001264`):
+    no hay jerarquía en el string, así que el ancestro es imposible de expresar y
+    el test pasa trivialmente. Es Día y Carrefour, que usan rutas, donde muerde.
+    """
+    claves = keys_for_store(store)
+    anidadas = [
+        (hija, padre)
+        for padre in claves
+        for hija in claves
+        if hija != padre and hija.startswith(f"{padre}/")
+    ]
+
+    assert not anidadas, (
+        f"claves anidadas en {store}: "
+        + "; ".join(f"{h!r} está adentro de {p!r}" for h, p in anidadas)
+    )
+
+
 def test_clave_ajena_a_la_tabla_no_recibe_gondola():
     """
     Una categoría de fuera de la tabla (un scrapeo manual) no recibe una góndola

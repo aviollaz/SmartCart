@@ -28,8 +28,15 @@ logger = logging.getLogger(__name__)
 # Fail-open ante un error es la mitad del problema: sin timeout, una base que no
 # rechaza pero tampoco responde (partición de red, servidor wedgeado) cuelga cada
 # escritura durante el timeout TCP del sistema —minutos— y la telemetría termina
-# costando más que el paso que mide. 5s alcanzan de sobra contra un Postgres local.
-CONNECT_TIMEOUT_S = 5
+# costando más que el paso que mide.
+#
+# 15s y no los 5 originales: aquel número era "de sobra contra un Postgres
+# local", y la base pasó a Neon, que se suspende tras 5 minutos sin actividad y
+# tarda varios segundos en despertar. En el barrido nocturno esto está cubierto
+# —`_wait_for_db` ya despertó la base antes del primer paso— pero un arranque en
+# frío perdería justo la fila que dice que la corrida empezó, que es la que más
+# vale. Sigue siendo corto frente a un paso que dura minutos.
+CONNECT_TIMEOUT_S = 15
 
 STATUS_RUNNING = "RUNNING"
 STATUS_SUCCESS = "SUCCESS"
@@ -51,6 +58,7 @@ class StepRecord:
     items_scraped: int = 0
     categories_ok: int = 0
     categories_failed: int = 0
+    categories_empty: int = 0
     pruned_rows: int | None = None
     pruned_orphans: int | None = None
     prune_skipped_reason: str | None = None
@@ -152,6 +160,7 @@ class ScraperTelemetry:
                             items_scraped        = %s,
                             categories_ok        = %s,
                             categories_failed    = %s,
+                            categories_empty     = %s,
                             pruned_rows          = %s,
                             pruned_orphans       = %s,
                             prune_skipped_reason = %s,
@@ -165,6 +174,7 @@ class ScraperTelemetry:
                             record.items_scraped,
                             record.categories_ok,
                             record.categories_failed,
+                            record.categories_empty,
                             record.pruned_rows,
                             record.pruned_orphans,
                             _truncate(record.prune_skipped_reason),

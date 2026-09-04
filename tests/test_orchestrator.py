@@ -67,7 +67,7 @@ class FakeDB:
         return self.prune_result
 
 
-def _result(store="coto", *, ok=3, failed=0, items=120, skus=("a", "b")):
+def _result(store="coto", *, ok=3, failed=0, items=120, skus=("a", "b"), empty=()):
     return run_scrapers.StoreRunResult(
         store=store,
         store_id=f"{store}_online",
@@ -79,6 +79,9 @@ def _result(store="coto", *, ok=3, failed=0, items=120, skus=("a", "b")):
         categories_total=ok + failed,
         categories_ok=ok,
         categories_failed=failed,
+        # Las vacías cerraron bien: son un subconjunto de las OK, no una
+        # categoría más. Por eso no suman a `categories_total`.
+        empty_categories=set(empty),
         errors=[f"cat{i}: boom" for i in range(failed)],
     )
 
@@ -114,6 +117,57 @@ def test_todo_ok_es_success():
 def test_una_categoria_caida_es_partial():
     """Rescatar 2 de 3 categorías no es un éxito, pero tampoco es un fallo total."""
     assert orchestrator._classify_store(_result(ok=2, failed=1), None) == STATUS_PARTIAL
+
+
+def test_una_categoria_vacia_es_partial():
+    """
+    La firma de una clave muerta: la tienda contesta bien, el barrido cierra, la
+    categoría cuenta OK y no trae un solo producto. Es como dos góndolas de Día
+    estuvieron vacías durante semanas con 24/24 categorías en verde, después de
+    que la tienda renombrara el slug y dejara el viejo en el árbol.
+    """
+    prune = {"deleted": 0, "orphans": 0, "skipped": False, "reason": None}
+    resultado = _result(empty=("almacen/pastas-seca",))
+
+    assert orchestrator._classify_store(resultado, prune) == STATUS_PARTIAL
+
+
+def test_run_store_marca_la_categoria_que_no_trajo_productos():
+    """
+    El lado productor: `_run_store` es quien tiene que notar el hueco, porque es
+    el único que ve la lista vacía. Antes esto era sólo un logger.warning y la
+    categoría se contaba OK sin más rastro.
+    """
+    class FakeDB:
+        def save_store_products(self, products, store_id):
+            return len(products)
+
+    def scrape(category):
+        return [] if category == "muerta" else [{"store_sku": f"sku-{category}"}]
+
+    resultado = run_scrapers._run_store(
+        FakeDB(), "dia", "dia_online", "DÍA",
+        ["viva", "muerta"], scrape, pause=0,
+    )
+
+    assert resultado.empty_categories == {"muerta"}
+    assert resultado.categories_empty == 1
+    assert resultado.categories_ok == 2       # cerró bien, no falló
+    assert resultado.categories_failed == 0
+    assert resultado.items_scraped == 1
+
+
+def test_la_categoria_vacia_no_sale_del_alcance_del_pruning():
+    """
+    Vacía no es fallida: el barrido de esa categoría SÍ terminó, así que sigue
+    siendo parte de `ok_categories` y podar dentro de ella es correcto — no hay
+    nada que borrar. Degradar el status no puede degradar también el pruning.
+    """
+    resultado = _result(ok=3, empty=("cat_ok0",))
+
+    assert resultado.complete
+    assert resultado.prune_scope is None
+    assert "cat_ok0" in resultado.ok_categories
 
 
 def test_ninguna_categoria_ok_es_failed():

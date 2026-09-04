@@ -14,6 +14,28 @@ Lo ya resuelto no vive acá: se saca del backlog y queda una línea en
 
 ## Producto
 
+### 0. Grabar la demo del README
+El `README.md` tiene el hueco marcado y las instrucciones de publicación; falta
+el archivo. **Es lo de mayor impacto por hora de trabajo de todo este backlog**:
+el repo es público y nadie clona un proyecto para evaluarlo — con suerte mira el
+README treinta segundos. Hoy esos treinta segundos no muestran el producto.
+
+Dos piezas, en este orden:
+
+* **Un GIF corto (~10 s)** arriba de todo. Es el que se ve sin hacer click, y
+  por eso es el que más importa: carrito → *Optimizar* → reparto entre tiendas.
+* **Un video (~60 s)** abajo, con el recorrido completo: buscar, ver el precio
+  por unidad de medida, armar el carrito, optimizar, y —lo que de verdad
+  distingue al proyecto— el ahorro y una sustitución estratégica aplicada.
+
+**No commitear el binario.** Se arrastra el archivo a un comentario de un issue
+o a un Release: GitHub lo sube a su CDN y devuelve una URL de
+`user-attachments`. Un `.mp4` versionado lo paga cada clone para siempre, y el
+criterio del repo es no guardar artefactos descartables.
+
+Para que la demo se vea bien hace falta una base poblada, o sea correr el
+barrido antes (`--store dia` alcanza para grabar, son ~16 min).
+
 ### 1. Progreso hacia el mínimo de compra, en vivo
 Hoy el usuario descubre que el carrito es inviable **recién al optimizar**, que
 es la peor fricción del flujo y además es la KPI que mide el analyzer
@@ -192,19 +214,34 @@ Lo que **no** hace falta tocar: `src/embeddings.py`, `src/schema.py` y
 
 ## Catálogo
 
-### 10. Segundo tramo de góndolas
-`src/shelves.py` tiene 20 góndolas alineadas entre las tres tiendas. Las
-candidatas obvias para el próximo tramo, ya relevadas contra las tres
-taxonomías: **cereales, té, papas congeladas, hamburguesas congeladas, cervezas,
-jugos, fiambres, huevos, manteca y margarina**. Ninguna existe hoy como slug.
+### 10. Helados: falta Carrefour
+La única góndola de alimentos relevada que **no** entró al segundo tramo. Coto
+tiene 150 productos y Día 48, pero `congelados/helados-y-postres` de Carrefour
+devuelve **0 productos en vivo** aunque el nodo exista en su árbol de categorías,
+así que no cumple la regla de las tres tiendas de `src/shelves.py`.
 
-Dos que están más cerca de lo que parece, porque ya entran como *claves de
-tienda* de otra góndola y habría que decidir si se separan: Día aporta
-`desayuno/galletitas-y-cereales/...` bajo `galletitas`, y `frescos/fiambreria`
-bajo `quesos`.
+Dos hipótesis, sin verificar: que sea estacional (el relevamiento es de
+principios de septiembre, arrancando la primavera) o que Carrefour los cuelgue de
+otra rama. **Revisar en verano**; si aparecen productos es una fila más en la
+tabla, con las claves de Coto y Día ya relevadas:
 
-Costo de referencia: las 20 actuales son ~30 min de barrido completo más
-embeddings. Agregar una góndola es una fila en la tabla.
+* Coto `catv00003247` (Helados en Pote), `catv00003248` (en Palito),
+  `catv00003147` (Postres Helados), `catv00003183` (Yogur Helado)
+* Día `congelados/postres-congelados`
+
+### 11. Medir el consumo de Neon después del segundo tramo **[hipótesis]**
+El catálogo pasó de 20 a 49 góndolas, así que el barrido nocturno pasa de ~77
+minutos a un estimado de ~1,5 h por tienda en paralelo. El plan gratuito de Neon
+da **100 CU-hours por mes** y la base se suspende sola tras 5 minutos sin
+actividad, o sea que lo que se paga es el tiempo que está despierta.
+
+El barrido en paralelo (`.github/workflows/scrape.yml` corre las tres tiendas en
+una matriz) mantiene ese número en el orden del más lento y no de la suma, que es
+justamente por qué se paralelizó. Pero **el número real no se puede leer desde
+adentro de la base**: hay que mirarlo en el panel de Neon después de la primera
+semana. Si se acerca al tope, las salidas por orden de costo son bajar la
+frecuencia del barrido (día por medio alcanza para precios de supermercado),
+o mudarse a la VM de Oracle (`ops/README.md`).
 
 ---
 
@@ -234,6 +271,14 @@ donde se lee cuando se toca el código.
 * **Bonus** — El esquema no existía en el repo. Ahora es `src/schema.py`:
   idempotente, declarativo, una sola definición, y **no borra nada** (los DROP
   viven en `src/scripts/migrate_shelves.py`). CLAUDE.md etapa 2.
+* **Segundo tramo de góndolas** — de 20 a **49**, cubriendo las secciones de
+  comida de las tres cadenas (se sumó Congelados como sección). Cada clave nueva
+  se midió contra el endpoint en vivo antes de escribirla. En el camino
+  aparecieron tres agujeros silenciosos que ya estaban en producción: dos claves
+  de Día muertas por un renombre de la tienda, una clave de Carrefour anidada
+  adentro de otra, y `frescos/fiambreria` entero cargado en `quesos`. Ver
+  CLAUDE.md etapa 1b (reglas de anidamiento y de claves muertas) y etapa 10
+  (`categories_empty`, que es lo que hace ruidosa esa clase de falla).
 * **19** — Alias de góndola para categorías fuera de la tabla → cerrado por
   construcción: los scrapers iteran `keys_for_store()` y `tests/test_shelves.py`
   verifica que toda clave exista en el dump de taxonomía de su tienda. El

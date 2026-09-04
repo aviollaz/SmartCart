@@ -1112,7 +1112,8 @@ def get_categories():
     o sea los 4 buckets de un dict de 12 claves con el 80% del catálogo en
     "Otros", y no lo consumía nadie. `/categories/tree` mergeaba por embeddings
     las taxonomías COMPLETAS de Coto y Día (Carrefour nunca entró) para armar un
-    menú de ~15 top-levels y cientos de hojas sobre un catálogo de 20 góndolas:
+    menú de ~15 top-levels y cientos de hojas sobre un catálogo que entonces
+    tenía 20 góndolas (hoy 49):
     casi todo lo que el usuario clickeaba no tenía productos y caía a
     `GET /search?q=<label>`. De ahí salía también `has_direct_category_match`, la
     bandera que le decía al frontend cuál de las dos rutas usar; ya no existe,

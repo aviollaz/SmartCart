@@ -31,7 +31,12 @@ COLUMNAS_MUERTAS = (
 @pytest.fixture(scope="module")
 def conn():
     try:
-        with psycopg.connect(resolve_conn_string(), connect_timeout=5) as c:
+        # 30s y no 5: contra el docker-compose local sobraban, pero la base vive
+        # en Neon, que se suspende sola tras 5 minutos sin actividad y tarda
+        # varios segundos en despertar. Con 5s el fixture salteaba las NUEVE
+        # aserciones de esquema y pytest reportaba verde — el mismo modo de falla
+        # que estos tests existen para detectar, esta vez en los tests mismos.
+        with psycopg.connect(resolve_conn_string(), connect_timeout=30) as c:
             yield c
     except psycopg.OperationalError as exc:
         pytest.skip(f"Postgres no disponible: {exc}")

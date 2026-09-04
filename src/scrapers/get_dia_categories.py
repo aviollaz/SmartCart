@@ -1,5 +1,25 @@
 import httpx
 import json
+from urllib.parse import urlparse
+
+
+def slug_from_url(url: str) -> str:
+    """
+    La ruta de la URL de una categoría, sin dominio.
+
+    Se parsea la URL en vez de recortar el dominio con `replace()`, que es lo que
+    hacía antes. VTEX dejó de devolver el dominio de la tienda en este árbol y
+    ahora contesta `https://diaio.myvtex.com/almacen/...` — su dominio interno—,
+    así que el `replace("https://diaonline.supermercadosdia.com.ar/", "")` no
+    recortaba nada y la clave quedaba siendo la URL entera. Regenerar el dump con
+    esa versión no fallaba: escribía 586 claves que ningún scraper puede usar, y
+    `tests/test_shelves.py` habría empezado a rechazar TODAS las claves de Día a
+    la vez, sin ninguna pista de por qué.
+
+    Cualquier dominio sirve, que es justamente el punto: la clave es la ruta.
+    """
+    return urlparse(url).path.strip("/")
+
 
 def get_dia_categories_rest():
     # Public VTEX REST API  
@@ -40,14 +60,14 @@ def get_dia_categories_rest():
                         url_completa = level3.get("url", "")
                         
                         if url_completa:
-                            slug_match = url_completa.replace("https://diaonline.supermercadosdia.com.ar/", "").strip("/")
-                            
+                            slug_match = slug_from_url(url_completa)
+
                             if slug_match:
                                 categories_map[slug_match] = f"{l1_name} -> {l2_name} -> {l3_name}"
                                 
                     url_l2 = level2.get("url", "")
                     if url_l2:
-                        slug_l2 = url_l2.replace("https://diaonline.supermercadosdia.com.ar/", "").strip("/")
+                        slug_l2 = slug_from_url(url_l2)
                         if slug_l2 and slug_l2 not in categories_map:
                             categories_map[slug_l2] = f"{l1_name} -> {l2_name}"
 

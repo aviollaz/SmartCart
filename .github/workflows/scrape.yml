@@ -6,8 +6,8 @@
 #
 # El trabajo NO vive en este archivo: se delega en src/scripts/orchestrator.py,
 # el mismo módulo que corría bajo cron, con su logging, su telemetría, su
-# pre-flight de base y su manejo de señales. Este YAML sólo aporta disparador,
-# entorno y secreto.
+# pre-flight de base y su manejo de señales. Este YAML aporta disparador,
+# entorno, secreto y —desde que las tiendas corren en paralelo— el reparto.
 #
 # Ver ops/README.md por qué el destino es Neon + Actions y no la VM de Oracle.
 
@@ -26,37 +26,112 @@ on:
 
   workflow_dispatch:
     inputs:
+      tiendas:
+        # El ÚNICO input tipado, y es el eje del paralelismo, no un flag: define
+        # cuántos jobs se crean, así que tiene que resolverse antes de que exista
+        # una línea de comando. `--store` del orquestador ya no se pasa a mano —
+        # lo pone la matriz.
+        description: "Tiendas a barrer, separadas por coma"
+        type: string
+        default: "coto,dia,carrefour"
       args:
-        # Un único campo de texto en vez de un input tipado por flag. La lista de
-        # flags ya la define build_arg_parser() en src/scripts/run_scrapers.py, y
+        # Todo lo demás sigue siendo un campo de texto libre. La lista de flags
+        # la define build_arg_parser() en src/scripts/run_scrapers.py, y
         # repetirla acá sería una segunda copia que se desincroniza — además de
         # obligar a un condicional por flag para armar la línea de comando.
-        #
-        # Así, agregar un flag al orquestador no requiere tocar este archivo, y la
-        # validación sigue donde estaba: --store tiene `choices=`, así que un valor
-        # inventado falla con un mensaje de argparse.
-        description: "Flags para el orquestador (ej: --store dia --skip-embeddings)"
+        # Agregar un flag al orquestador no requiere tocar este archivo.
+        description: "Flags extra para el orquestador (ej: --prune-dry-run)"
         type: string
         default: ""
 
 # Dos barridos simultáneos compiten por los mismos upserts y —peor— el segundo
 # podría podar con un `seen_skus` a medio armar. Es el equivalente del `flock -n`
-# que tenía la instalación de cron.
+# que tenía la instalación de cron. Va a nivel workflow, así que serializa la
+# corrida ENTERA (preparar + las tres tiendas + embeddings), no cada job.
 concurrency:
   group: scrapeo-nocturno
   cancel-in-progress: false
 
 jobs:
-  scrape:
+  # ---------------------------------------------------------------- preparar
+  # Existe para decidir UNA vez lo que las tres tiendas tienen que compartir.
+  preparar:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      run_id: ${{ steps.plan.outputs.run_id }}
+      matriz: ${{ steps.plan.outputs.matriz }}
+    steps:
+      - id: plan
+        env:
+          # `inputs.tiendas` viene vacío cuando dispara el `schedule` (no hay
+          # inputs), así que el default del formulario no aplica y hace falta
+          # repetirlo acá. Por `env` y no interpolado en el `run`, por lo mismo
+          # que `args` más abajo.
+          TIENDAS: ${{ inputs.tiendas }}
+        run: |
+          set -euo pipefail
+
+          # El run_id se genera acá y lo reciben los cuatro jobs, para que sus
+          # filas de scraper_execution_logs sean UNA corrida y no cuatro sueltas.
+          # Sin esto el paralelismo rompe la consulta que ata una noche entera.
+          # python3 y no `uuidgen`: los dos vienen en la imagen de ubuntu-latest,
+          # pero uuidgen es de util-linux y no existe en Git Bash, o sea que este
+          # paso dejaría de poder probarse fuera del runner. Mismo criterio que
+          # con `jq` acá abajo.
+          run_id="$(python3 -c 'import uuid; print(uuid.uuid4())')"
+          echo "run_id=${run_id}" >> "$GITHUB_OUTPUT"
+
+          # Lista separada por comas -> array JSON, que es lo que `fromJSON`
+          # necesita para abrir la matriz. En shell pelado a propósito: `jq` viene
+          # en la imagen de ubuntu-latest, pero depender de una herramienta que no
+          # está en la máquina de desarrollo hace que este paso —el que decide si
+          # la matriz se abre— sea el único que no se puede probar antes de
+          # pushear. Los nombres no se validan acá: `--store` tiene `choices=`,
+          # así que una tienda inventada muere con un mensaje de argparse.
+          lista="${TIENDAS:-coto,dia,carrefour}"
+          matriz="["
+          sep=""
+          IFS=',' read -ra partes <<< "$lista"
+          for parte in "${partes[@]}"; do
+            parte="$(echo "$parte" | tr -d '[:space:]')"
+            [ -z "$parte" ] && continue
+            matriz="${matriz}${sep}\"${parte}\""
+            sep=","
+          done
+          matriz="${matriz}]"
+
+          if [ "$matriz" = "[]" ]; then
+            echo "::error::La lista de tiendas quedó vacía: '${lista}'."
+            exit 1
+          fi
+
+          echo "matriz=${matriz}" >> "$GITHUB_OUTPUT"
+          echo "Corrida ${run_id} sobre ${matriz}"
+
+  # ----------------------------------------------------------------- tiendas
+  tiendas:
+    needs: preparar
     runs-on: ubuntu-latest
 
-    # El barrido son ~30 min medidos (unas 560 requests, dominadas por las pausas
-    # deliberadas de los scrapers, no por la red). 90 cubre una noche lenta y
-    # sigue cortando un scraper colgado. SUBIR ESTE NÚMERO ANTES de agregar
-    # góndolas: con el catálogo de alimentos completo el barrido se va a 2-3 h.
+    strategy:
+      # Una tienda caída NO puede cancelar a las otras dos. Es la misma regla que
+      # ya cumple el orquestador adentro de un proceso ("una tienda caída no debe
+      # tumbar a las otras"); en paralelo hay que declararla otra vez, porque el
+      # default de Actions es cancelar la matriz entera al primer fallo.
+      fail-fast: false
+      matrix:
+        tienda: ${{ fromJSON(needs.preparar.outputs.matriz) }}
+
+    # Por TIENDA, no por barrido completo. Medido sobre tres noches reales
+    # (scraper_execution_logs, 02..04-sep-2026): Coto 27 min, Día 16, Carrefour
+    # 34 — 77 en total, no los ~30 que decía este archivo. Con las góndolas de
+    # alimentos completas cada tienda se va a ~1,5h, y 150 deja margen sin dejar
+    # de cortar un scraper colgado, que es la otra razón de ser del tope.
+    #
     # Al cancelar, Actions manda SIGINT/SIGTERM, que el orquestador convierte en
     # excepción para cerrar su fila de telemetría en vez de dejarla en RUNNING.
-    timeout-minutes: 90
+    timeout-minutes: 150
 
     env:
       DATABASE_URL: ${{ secrets.DATABASE_URL }}
@@ -74,16 +149,6 @@ jobs:
       - name: Instalar dependencias
         run: pip install -r requirements.txt
 
-      # El modelo de sentence-transformers (~90 MB) se baja de HuggingFace la
-      # primera vez que se usa. Sin cache eso se repite todas las noches. La clave
-      # incluye el nombre del modelo para que cambiarlo (ítem 4 del TODO: modelo
-      # multilingüe) invalide el cache solo, en vez de servir el viejo en silencio.
-      - name: Cachear el modelo de embeddings
-        uses: actions/cache@v4
-        with:
-          path: ~/.cache/huggingface
-          key: hf-all-MiniLM-L6-v2-${{ runner.os }}
-
       # La única rama del workflow, y se la gana. Sin el secreto, SmartCartDB()
       # cae al default de docker-compose, _wait_for_db reintenta contra localhost
       # 60 segundos y el job muere con "Postgres inalcanzable" — la pista
@@ -96,6 +161,10 @@ jobs:
           fi
           echo "DATABASE_URL presente (${#DATABASE_URL} caracteres)."
 
+      # `--skip-embeddings` fijo: los embeddings son un paso posterior y ÚNICO,
+      # en su propio job. Tres procesos vectorizando a la vez cargarían el modelo
+      # tres veces (~1,5 GB cada uno) para escribir en la misma tabla.
+      #
       # Los exit codes del orquestador son el contrato de monitoreo:
       #   0 todo SUCCESS · 1 algún PARTIAL/FAILED · 2 la base no respondió
       # Cualquiera distinto de 0 pone el job en rojo y GitHub manda mail.
@@ -109,9 +178,64 @@ jobs:
       # Disparar esto pide permiso de escritura en el repo, así que no es una
       # puerta abierta — pero pasarlo por variable cuesta lo mismo y cierra la
       # categoría entera. Sin comillas a propósito: hace falta el word splitting
-      # para que "--store dia" llegue como dos argumentos. En `schedule` no hay
-      # inputs, así que queda vacío y corre el barrido completo.
-      - name: Correr el pipeline
+      # para que "--prune-dry-run --log-level DEBUG" llegue como cuatro argumentos.
+      - name: Barrer ${{ matrix.tienda }}
         env:
           ARGS: ${{ inputs.args }}
-        run: python -m src.scripts.orchestrator $ARGS
+          TIENDA: ${{ matrix.tienda }}
+          RUN_ID: ${{ needs.preparar.outputs.run_id }}
+        run: >
+          python -m src.scripts.orchestrator
+          --store "$TIENDA" --run-id "$RUN_ID" --skip-embeddings $ARGS
+
+  # -------------------------------------------------------------- embeddings
+  # Un producto sin `name_embedding` es invisible para GET /search, así que este
+  # paso no es opcional: sin él la base queda poblada y el buscador vacío.
+  embeddings:
+    needs: [preparar, tiendas]
+    # `always()` menos cancelado: alcanza con que UNA tienda haya dejado
+    # productos nuevos. Si ninguna lo hizo, vectorizar es un no-op de ~20s —
+    # mucho más barato que la alternativa, que es un catálogo invisible por un
+    # condicional de más.
+    if: ${{ !cancelled() }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+
+    env:
+      DATABASE_URL: ${{ secrets.DATABASE_URL }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: Instalar dependencias
+        run: pip install -r requirements.txt
+
+      # El modelo de sentence-transformers (~90 MB) se baja de HuggingFace la
+      # primera vez que se usa. Sin cache eso se repite todas las noches. La clave
+      # incluye el nombre del modelo para que cambiarlo (ítem 4 del TODO: modelo
+      # multilingüe) invalide el cache solo, en vez de servir el viejo en silencio.
+      # Sólo hace falta acá: los jobs de tienda corren con --skip-embeddings.
+      - name: Cachear el modelo de embeddings
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/huggingface
+          key: hf-all-MiniLM-L6-v2-${{ runner.os }}
+
+      - name: Verificar que el secreto está cargado
+        run: |
+          if [ -z "${DATABASE_URL}" ]; then
+            echo "::error::Falta el secreto DATABASE_URL. Ver ops/README.md."
+            exit 1
+          fi
+
+      - name: Generar embeddings pendientes
+        env:
+          RUN_ID: ${{ needs.preparar.outputs.run_id }}
+        run: >
+          python -m src.scripts.orchestrator
+          --only-embeddings --run-id "$RUN_ID"

@@ -64,7 +64,8 @@ no esté en la tabla contesta **404**, no una lista vacía: "no hay productos" y
 
 Esto reemplazó a `GET /categories/tree`, que mergeaba por embeddings las
 taxonomías completas de Coto y Día (Carrefour nunca entró) en un árbol de ~15
-top-levels y cientos de hojas sobre un catálogo de 20 góndolas. Casi todo lo que
+top-levels y cientos de hojas sobre un catálogo que entonces tenía 20 góndolas
+(hoy 49). Casi todo lo que
 el usuario clickeaba no tenía productos y caía a `GET /search?q=<label>` —una
 búsqueda semántica del nombre de una categoría que el catálogo no contenía—, y de
 ahí salía la vieja bandera `has_direct_category_match`, que ya no existe.

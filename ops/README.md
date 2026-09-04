@@ -70,10 +70,28 @@ una paga DNS + TCP + TLS en frío. El barrido real reusa la conexión con
 `httpx.Client` y sólo la primera request de cada host lo paga, así que la tabla
 sobreestima el costo.
 
-Sobre las latencias, ya medido: el barrido son unas **560 requests** (490 páginas
-más una vacía por categoría para detectar el final). Aun a +200 ms cada una eso
-suma menos de 2 minutos sobre un barrido de ~30, porque las pausas deliberadas de
-los scrapers —para no parecer un bot— le ganan a la red por diez a uno.
+Sobre las latencias, ya medido: aun a +200 ms por request la red suma unos pocos
+minutos sobre el barrido entero, porque las pausas deliberadas de los scrapers
+—para no parecer un bot— le ganan por diez a uno.
+
+## El barrido corre en paralelo, y no es por velocidad
+
+`.github/workflows/scrape.yml` abre **una matriz de tres jobs**, uno por tienda,
+más un cuarto para los embeddings (`needs:`). El `run_id` se genera una sola vez
+en un job previo y se le pasa a los cuatro con `--run-id`, así que las filas de
+`scraper_execution_logs` siguen siendo **una** corrida y no cuatro sueltas.
+
+La razón de fondo es el plan gratuito de Neon, no el reloj. Neon cobra por
+**tiempo despierta** (se suspende sola tras 5 minutos sin actividad), así que lo
+que importa es el wall-clock del barrido, no la suma del trabajo. En serie, las
+49 góndolas por cadena son ~3 h por noche; en paralelo el número baja al de la
+tienda más lenta. Sobre 100 CU-hours mensuales, esa diferencia es la que decide
+si el catálogo completo entra en el plan gratuito.
+
+Dos detalles que no son decorativos: `fail-fast: false`, porque una tienda caída
+no puede cancelar a las otras dos (es la misma regla que el orquestador ya cumple
+adentro de un proceso), y `concurrency` a nivel workflow, para que dos noches
+nunca se pisen.
 
 ## Poner Neon a andar
 
@@ -98,11 +116,16 @@ los scrapers —para no parecer un bot— le ganan a la red por diez a uno.
 | Cómputo | 100 CU-hours/mes | ~20-40 para uso propio |
 | Egress | 5 GB/mes | muy por debajo |
 
-Los 51 MB son medición: `unified_products` pesa 38 MB (13 de ellos el índice
-HNSW) y `store_products` 5 MB, sobre 6.401 y 8.846 filas. El techo de storage
-está en ~64.000 productos, unas 10 veces el catálogo actual — pero **baja a
+Los 51 MB son medición sobre el catálogo de **20 góndolas**: `unified_products`
+pesaba 38 MB (13 de ellos el índice HNSW) y `store_products` 5 MB, sobre 6.401 y
+8.846 filas. El techo de storage está en ~64.000 productos — pero **baja a
 ~47.000 si se hace el ítem 4 del TODO** (modelo multilingüe de 768 dimensiones),
 porque el 43% de la base son embeddings.
+
+**Ojo: esos números quedaron viejos con el segundo tramo de góndolas.** El
+catálogo pasó de 20 a 49 góndolas, o sea un estimado de ~18.000 ofertas y ~110 MB
+—cómodo contra los 0,5 GB—, pero es una proyección, no una medición. Hay que
+mirar el panel después del primer barrido completo.
 
 **El cómputo es el techo que importa, no el storage.** La base duerme sola tras 5
 minutos sin actividad, así que la cuenta es cuántas horas por día está despierta:
@@ -110,16 +133,24 @@ para vos solo son ~20-40 CU-hours, pero con usuarios reales y la base despierta
 8 h/día ya son 60-120. Ese número es el que decidió intentar Oracle, y el que
 vuelve a decidirlo cuando SmartCart tenga usuarios.
 
+Con 49 góndolas el barrido mismo pasa a ser un consumidor no despreciable, y es
+la razón de que las tres tiendas corran en paralelo (ver arriba): lo que se cobra
+es el wall-clock. **Medir en el panel de Neon después de la primera semana** —
+es el ítem 11 de `docs/TODO.md`, y no se puede leer desde adentro de la base.
+
 ## Verificación
 
 1. **`gh workflow run probe.yml`** — bloqueante, ver arriba.
 2. Neon arriba: `psql "$DATABASE_URL" -c "SELECT version();"` y la extensión.
 3. `pytest tests/test_schema.py` con el `.env` local apuntando a Neon: sólo
    re-emite el DDL idempotente y lee el catálogo, no toca datos.
-4. **Barrido de una tienda, manual**: Actions → Run workflow → `args: --store dia`.
-   Mirar el resultado y la fila en `scraper_execution_logs`.
-5. Barrido completo: Run workflow sin argumentos. Verde y cuatro filas `SUCCESS`
-   (coto/dia/carrefour/embeddings).
+4. **Barrido de una tienda, manual**: Actions → Run workflow → campo `tiendas`:
+   `dia`. Abre un solo job de tienda más el de embeddings. Mirar el resultado y
+   las filas en `scraper_execution_logs`.
+5. Barrido completo: Run workflow sin tocar nada. Verde y **cuatro filas
+   `SUCCESS` con el MISMO `run_id`** (coto/dia/carrefour/embeddings) — que
+   compartan run_id es lo que hay que mirar, porque es lo que la matriz podría
+   romper.
 6. `uvicorn src.api:app` local contra Neon: `GET /` (reporta `db_pool`),
    `GET /search?q=yerba` y un `POST /optimize` desde el frontend.
 7. **El schedule, con un cron a 10 minutos vista**, no esperando a las 3am.

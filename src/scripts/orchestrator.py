@@ -3,7 +3,13 @@ Orquestador del pipeline de scraping. Es el entry point desatendido (cron).
 
     python -m src.scripts.orchestrator                    # las tres tiendas + embeddings
     python -m src.scripts.orchestrator --store dia --skip-embeddings
+    python -m src.scripts.orchestrator --only-embeddings  # sólo vectorizar
     python -m src.scripts.orchestrator --prune-dry-run --log-level DEBUG
+
+El barrido nocturno lo parte en cuatro procesos: una tienda por job de la matriz
+de `.github/workflows/scrape.yml`, cada uno con `--store X --skip-embeddings`, y
+uno final con `--only-embeddings`. Los cuatro comparten `--run-id`, así que sus
+filas de telemetría siguen siendo UNA corrida.
 
 Qué agrega sobre `run_scrapers.py`, que es el CLI interactivo:
 
@@ -139,10 +145,26 @@ def _classify_store(result: run_scrapers.StoreRunResult, prune: dict | None) -> 
     No cambia con el pruning acotado por categoría: una categoría caída sigue
     siendo PARTIAL, y tiene que seguir siéndolo. Lo que cambia es que ya no arrastra
     consigo el pruning omitido de toda la tienda.
+
+    Una categoría VACÍA también es PARTIAL, y es el agregado que más cuesta ver.
+    No falla nada: la tienda contesta 200, el barrido cierra, la categoría cuenta
+    OK y el pruning es correcto (no hay nada que borrar dentro de ella). Pero es
+    exactamente lo que se ve cuando la tienda renombró el slug — Día pasó
+    `almacen/pastas-y-arroce` a `pastas-y-arroces` y dejó la vieja en el árbol
+    con cero productos, así que dos góndolas quedaron vacías durante semanas
+    reportando 24/24 categorías OK. Es la misma clase de falla que el hash de
+    persisted query rotado (CLAUDE.md etapa 1): una corrida que se ve limpia y no
+    trae datos.
+
+    No LEVANTA, a propósito: hay categorías legítimamente vacías, y hacer fallar
+    la tienda le costaría el pruning a todo lo demás por un estante sin stock.
+    PARTIAL es el punto justo — no rompe nada y no se puede ignorar.
     """
     if result.categories_ok == 0:
         return STATUS_FAILED
     if result.categories_failed:
+        return STATUS_PARTIAL
+    if result.categories_empty:
         return STATUS_PARTIAL
     if prune and prune.get("skipped"):
         return STATUS_PARTIAL
@@ -165,8 +187,22 @@ def _run_one_store(
         rec.items_scraped = result.items_scraped
         rec.categories_ok = result.categories_ok
         rec.categories_failed = result.categories_failed
+        rec.categories_empty = result.categories_empty
+        if result.empty_categories:
+            # Van al error_message aunque no sean un error: es el único campo que
+            # dice CUÁLES, y sin el nombre de la clave el contador obliga a
+            # cruzar el log de esa noche para saber qué mirar.
+            logger.warning(
+                "[%s] %d categoría(s) sin productos: %s",
+                store.upper(), result.categories_empty,
+                ", ".join(sorted(result.empty_categories)),
+            )
         if result.errors:
             rec.error_message = " | ".join(result.errors)
+        elif result.empty_categories:
+            rec.error_message = (
+                "sin productos: " + ", ".join(sorted(result.empty_categories))
+            )
 
         prune = _maybe_prune(db, result, store_id, prune_mode)
         if prune:
@@ -176,9 +212,9 @@ def _run_one_store(
 
         rec.status = _classify_store(result, prune)
         logger.info(
-            "=== %s: %s — %d productos, %d/%d categorías OK ===",
+            "=== %s: %s — %d productos, %d/%d categorías OK, %d vacías ===",
             store.upper(), rec.status, rec.items_scraped,
-            result.categories_ok, result.categories_total,
+            result.categories_ok, result.categories_total, result.categories_empty,
         )
         return rec.status
 
@@ -258,6 +294,15 @@ def _build_parser() -> argparse.ArgumentParser:
         description="Pipeline de scraping de SmartCart (entry point desatendido)."
     )
     parser.add_argument(
+        "--run-id",
+        default=os.getenv("SMARTCART_RUN_ID"),
+        help=(
+            "UUID de la corrida. Por defecto se genera uno. Sirve para que varios "
+            "procesos —las tiendas en paralelo del workflow nocturno— escriban sus "
+            "filas de telemetría bajo el MISMO run_id."
+        ),
+    )
+    parser.add_argument(
         "--log-dir",
         default=os.getenv("SMARTCART_LOG_DIR", "logs"),
         help="Directorio de logs (default: logs, o SMARTCART_LOG_DIR).",
@@ -301,10 +346,28 @@ def _resolve_prune_mode(args: argparse.Namespace) -> str:
     return mode
 
 
+def _resolve_run_id(raw: str | None) -> uuid.UUID:
+    """
+    El run_id pedido, o uno nuevo.
+
+    Un valor inválido genera uno nuevo en vez de abortar: la telemetría es
+    fail-open en todo el resto del módulo, y tirar abajo el barrido de la noche
+    por un identificador mal tipeado sería la única parte que no lo es.
+    """
+    if not raw:
+        return uuid.uuid4()
+    try:
+        return uuid.UUID(str(raw).strip())
+    except (ValueError, AttributeError, TypeError):
+        nuevo = uuid.uuid4()
+        logger.warning("--run-id '%s' no es un UUID válido; se usa %s.", raw, nuevo)
+        return nuevo
+
+
 def main(argv: list[str] | None = None) -> int:
     args = _build_parser().parse_args(argv)
 
-    run_id = uuid.uuid4()
+    run_id = _resolve_run_id(args.run_id)
     log_file = setup_logging(
         Path(args.log_dir), run_id,
         level=args.log_level, retention_days=args.retention_days,
@@ -328,7 +391,12 @@ def main(argv: list[str] | None = None) -> int:
     telemetry.ensure_schema()
 
     prune_mode = _resolve_prune_mode(args)
-    selected = list(run_scrapers.STORE_RUNNERS) if args.store == "all" else [args.store]
+    # `--only-embeddings` es el paso final del barrido en paralelo: las tres
+    # tiendas corren en jobs separados y este proceso sólo vectoriza lo que
+    # dejaron. Sin tiendas seleccionadas, el bucle de abajo no itera.
+    selected = [] if args.only_embeddings else (
+        list(run_scrapers.STORE_RUNNERS) if args.store == "all" else [args.store]
+    )
     statuses: dict[str, str] = {}
     exit_code = EXIT_OK
 
@@ -347,7 +415,7 @@ def main(argv: list[str] | None = None) -> int:
 
         if args.skip_embeddings:
             logger.info("Embeddings salteados por --skip-embeddings.")
-        elif all(s == STATUS_FAILED for s in statuses.values()):
+        elif statuses and all(s == STATUS_FAILED for s in statuses.values()):
             logger.warning("Embeddings salteados: ninguna tienda dejó datos nuevos.")
         else:
             try:
