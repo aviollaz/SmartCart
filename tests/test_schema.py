@@ -77,6 +77,18 @@ def test_las_columnas_muertas_no_vuelven(conn, tabla, columna):
     assert columna not in _columnas(conn, tabla)
 
 
+def test_store_products_guarda_el_nombre_de_la_tienda(conn):
+    """
+    El nombre propio de cada oferta. Sin esta columna el único nombre de la base
+    es `unified_products.name`, que es por EAN y lo pisa la última cadena que
+    escribió: de los tres nombres de un producto sobrevive uno y no queda registro
+    de cuál, así que verificar a mano qué levantó cada tienda es imposible.
+    """
+    ensure_schema(conn)
+
+    assert "name" in _columnas(conn, "store_products")
+
+
 def test_los_indices_estan(conn):
     ensure_schema(conn)
 

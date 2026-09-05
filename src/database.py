@@ -143,10 +143,27 @@ class SmartCartDB:
                         # 4. Guardar la Instancia Comercial con el JSON de promos y la IMAGEN
                         cur.execute("""
                             INSERT INTO store_products (
-                                unified_product_id, store_id, store_sku, store_item_id, product_url, base_price, in_stock, promotions_json, image_url, source_category
+                                unified_product_id, store_id, store_sku, name, store_item_id, product_url, base_price, in_stock, promotions_json, image_url, source_category
                             )
-                            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
                             ON CONFLICT (store_id, store_sku) DO UPDATE SET
+                                -- El unified_product_id se DERIVA del EAN, así que
+                                -- también tiene que refrescarse: congelado en el
+                                -- primer INSERT, un SKU al que la tienda le corrige
+                                -- el EAN sigue colgando del producto unificado
+                                -- viejo para siempre y deja de unificar contra las
+                                -- otras cadenas, sin error y sin síntoma. El
+                                -- producto nuevo, mientras tanto, queda sin ofertas
+                                -- y lo borra el pruning de huérfanos esa misma
+                                -- noche — o sea que el agujero se repite en cada
+                                -- barrido.
+                                unified_product_id = EXCLUDED.unified_product_id,
+                                -- El nombre propio de la tienda. NO es el de
+                                -- unified_products: aquel es por EAN y lo pisa la
+                                -- última cadena que escribió, así que de los tres
+                                -- nombres de un producto sobrevivía uno solo y la
+                                -- base no decía cuál.
+                                name = EXCLUDED.name,
                                 store_item_id = EXCLUDED.store_item_id,
                                 product_url = EXCLUDED.product_url,
                                 base_price = EXCLUDED.base_price,
@@ -166,6 +183,7 @@ class SmartCartDB:
                             unified_id,
                             store_id,
                             prod['store_sku'],
+                            prod['name'],
                             # Sólo lo mandan los scrapers VTEX. Va también en el
                             # DO UPDATE SET: una columna que falte ahí queda
                             # congelada en lo que escribió el primer INSERT, y un

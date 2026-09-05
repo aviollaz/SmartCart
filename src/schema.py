@@ -91,12 +91,21 @@ _TABLES = (
     # save_store_products sólo lo escribe en la rama UPDATE — o sea que el valor de
     # una fila recién insertada dependía de algo que no estaba escrito en ningún
     # lado.
+    #
+    # `name` es el nombre que le pone ESTA tienda a ESTA oferta, y no duplica al de
+    # unified_products: aquel es por EAN y lo pisa la última cadena que escribió
+    # (`name = EXCLUDED.name`), así que de los tres nombres de un producto la base
+    # guardaba uno solo y no decía cuál. El nombre de la tienda depende de
+    # (store_id, store_sku), no del EAN, así que este es el nivel donde va.
+    # Nullable porque las filas anteriores a la columna lo tienen en NULL hasta que
+    # las reescriba el próximo barrido.
     """
     CREATE TABLE IF NOT EXISTS store_products (
         id                 SERIAL PRIMARY KEY,
         unified_product_id VARCHAR(50)   REFERENCES unified_products(id),
         store_id           VARCHAR(50)   NOT NULL,
         store_sku          VARCHAR(100)  NOT NULL,
+        name               VARCHAR(255),
         product_url        TEXT,
         base_price         NUMERIC(10,2) NOT NULL,
         in_stock           BOOLEAN   DEFAULT TRUE,
@@ -160,10 +169,13 @@ _COLUMNS = (
     # el slug de los VTEX). Es lo que le permite al pruning acotarse a las
     # categorías cuyo barrido terminó bien, en vez de apagarse entero ante una sola
     # categoría caída.
+    #
+    # name: el nombre propio de la tienda. Ver el comentario del CREATE de arriba.
     """
     ALTER TABLE store_products
         ADD COLUMN IF NOT EXISTS store_item_id   TEXT,
-        ADD COLUMN IF NOT EXISTS source_category TEXT;
+        ADD COLUMN IF NOT EXISTS source_category TEXT,
+        ADD COLUMN IF NOT EXISTS name            VARCHAR(255);
     """,
     # categories_empty: categorías que cerraron su barrido sin devolver un solo
     # producto. No es un fallo —hay categorías legítimamente vacías— pero es la
