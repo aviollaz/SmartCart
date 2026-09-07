@@ -12,6 +12,12 @@ la condición de salida.
 | **Base de datos** | Neon (plan gratuito) | Postgres en la misma VM |
 | **API** | tu máquina (`uvicorn`) | la VM, detrás de nginx |
 
+Para la **demo pública** —API en Hugging Face Spaces y frontend en Vercel,
+las dos gratis— el runbook es `ops/demo-publica.md`. Es otro eje y no una
+tercera rama de esta tabla: acá se decide dónde corre el barrido nocturno,
+allá dónde corren la API y el frontend para que alguien los use desde su
+celular. La base es la misma y el barrido no cambia.
+
 **Por qué no está todo en la VM ya:** Oracle no entrega capacidad. El Always Free
 da 2 OCPU / 12 GB, pero crear la instancia devuelve *out of capacity* de forma
 persistente en Santiago; lo único que entró fue **1 OCPU y 1 GB de RAM**, y con
