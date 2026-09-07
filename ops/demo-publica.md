@@ -31,25 +31,49 @@ muere al arrancar — es la misma pared que tiene bloqueada la VM de Oracle
    |---|---|
    | `DATABASE_URL` | el mismo de tu `.env` (el de Neon, con `?sslmode=require`) |
    | `SMARTCART_POOL_MIN_SIZE` | `0` — **no es opcional**, ver abajo |
-   | `CORS_ORIGINS` | la URL de Vercel del paso 2, sin barra final |
+   | `CORS_ORIGINS` | la URL de Vercel, sin barra final — todavía no la tenés, se carga al final |
    | `ANALYTICS_ENV` | `demo` |
+
+   El orden es medio circular: el Space necesita la URL de Vercel y Vercel
+   necesita la del Space. Se resuelve arrancando por el Space —su URL sale
+   del nombre, `https://TU-USUARIO-smartcart.hf.space`— y volviendo a cargar
+   `CORS_ORIGINS` después del paso 2. Mientras tanto la API anda: CORS lo
+   aplica el navegador, así que `curl` y `/docs` funcionan igual.
 
    **`ANALYTICS_API_KEY` no se carga.** El analyzer corre en tu localhost y no es
    alcanzable desde el Space; sin la clave no se emite nada y no rompe nada (ver
    etapa 9 de CLAUDE.md). `GET /` lo confirma: `analytics.enabled: false` con el
    motivo escrito.
 
-3. Empujar este repo al Space:
+3. Clonar el Space **una sola vez**, en un directorio hermano de éste:
 
    ```bash
-   git remote add space https://huggingface.co/spaces/TU-USUARIO/smartcart
-   git push space main
+   git clone https://huggingface.co/spaces/TU-USUARIO/smartcart ../smartcart-space
    ```
 
-   El build tarda ~10 minutos la primera vez (baja torch). Después es cuestión
-   de capas cacheadas.
+   HF va a pedir usuario y contraseña: la contraseña es un **access token** con
+   permiso de escritura, que se saca en <https://huggingface.co/settings/tokens>.
 
-4. Verificar: `https://TU-USUARIO-smartcart.hf.space/` tiene que contestar
+4. Publicar la API:
+
+   ```bash
+   python ops/publicar_space.py ../smartcart-space
+   ```
+
+   El build tarda ~10 minutos la primera vez (baja torch); se sigue desde la
+   pestaña **Logs** del Space. Después es cuestión de capas cacheadas.
+
+   **El Space es un repo aparte y eso es a propósito, no una vuelta de más.**
+   Spaces lee su configuración del **frontmatter YAML del `README.md`** en la
+   raíz, así que empujar este repo tal cual le pisaría ese README con el de
+   SmartCart —que no lo tiene, ni debería: GitHub dibuja el frontmatter como una
+   tabla arriba de todo, en el archivo que es la carta de presentación del
+   proyecto— y el Space se quedaría sin saber que es Docker. El script escribe
+   el README del Space y copia sólo lo que la imagen necesita (`Dockerfile`,
+   `requirements.txt`, `src/`), que es lo mismo que ya dice `.dockerignore`.
+   Corre con `--dry-run` si querés ver qué haría.
+
+5. Verificar: `https://TU-USUARIO-smartcart.hf.space/` tiene que contestar
    `model_loaded: true` y `db_pool.enabled: true`. Probar también
    `/search?q=yerba` y `/demo-cart`.
 
@@ -71,11 +95,24 @@ visita: milisegundos, una vez por sesión.
 
 ## 2. El frontend en Vercel
 
-1. <https://vercel.com/new> → importar el repo de GitHub (login con GitHub, no
+Antes que nada, mergear a `main`: Vercel despliega la rama de producción del
+repo, que por defecto es esa.
+
+```bash
+git checkout main && git merge demo-ready && git push
+```
+
+1. <https://vercel.com/new> → importar `aviollaz/SmartCart` (login con GitHub, no
    pide tarjeta).
 2. **Root Directory**: `frontend`. El preset Vite lo detecta solo.
 3. **Environment Variables**: `VITE_API_URL` = la URL del Space, sin barra final.
-4. Deploy. Después, volver al Space y poner esa URL de Vercel en `CORS_ORIGINS`.
+4. Deploy. Copiar la URL que queda (`https://smartcart-algo.vercel.app`).
+5. **Volver al Space** y poner esa URL en `CORS_ORIGINS`. El Space se reinicia
+   solo. Sin este paso el frontend carga pero no le entra ni un dato, y el error
+   sólo se ve en la consola del navegador.
+
+De ahí en más, cada push a `main` redespliega el frontend solo. La API no: se
+actualiza con `python ops/publicar_space.py ../smartcart-space`.
 
 Va separado del Space a propósito. Durante una semana de feedback el frontend se
 toca muchas veces, y en Vercel eso es un push (segundos) contra un rebuild de
