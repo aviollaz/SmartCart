@@ -26,6 +26,7 @@ es exactamente la clase de bug que no se reproduce en desarrollo.
 """
 
 import logging
+import os
 from contextlib import contextmanager
 
 import psycopg
@@ -37,8 +38,36 @@ logger = logging.getLogger(__name__)
 # son cortas; lo que se quiere evitar es el handshake, no sostener concurrencia
 # alta. Un max_size grande contra una instancia chica (db.t4g.micro tiene un
 # `max_connections` de tres dígitos bajos) sólo mueve el problema a la base.
-MIN_SIZE = 1
-MAX_SIZE = 8
+#
+# `min_size` es configurable porque contra Neon decide si el proyecto entra o no
+# en el plan gratuito, y no es una diferencia de rendimiento: Neon suspende la
+# base sola tras 5 minutos SIN ACTIVIDAD, y una conexión abierta cuenta como
+# actividad. Con min_size=1 el pool sostiene una permanentemente, la base no se
+# suspende nunca y la API prendida consume ~1 CU-hour por hora — los 100
+# CU-hours mensuales se agotan en poco más de 4 días y la base se apaga sola.
+#
+# En desarrollo eso no se nota porque la API corre sólo mientras trabajás; con
+# la API publicada 24/7 es la diferencia entre que ande y que no. Por eso el
+# despliegue pone SMARTCART_POOL_MIN_SIZE=0: el pool sigue evitando el handshake
+# bajo carga, pero deja que la base duerma cuando nadie la usa.
+MIN_SIZE = int(os.getenv("SMARTCART_POOL_MIN_SIZE", "1"))
+MAX_SIZE = int(os.getenv("SMARTCART_POOL_MAX_SIZE", "8"))
+
+# Segundos que una conexión por encima de `min_size` sobrevive sin usarse.
+#
+# Va de la mano de lo de arriba y por sí solo no alcanza: con min_size=0 pero el
+# max_idle default de psycopg_pool (10 min), la última conexión de una visita
+# sigue abierta 10 minutos y recién ahí arranca el reloj de 5 minutos de Neon.
+# O sea 15 minutos de cómputo facturado por visita: veinte visitas sueltas en un
+# día son 5 horas, y el mes se pasa de los 100 CU-hours igual. Con 60 segundos
+# son ~6 minutos por visita.
+#
+# Lo que se paga a cambio es un handshake TCP+TLS en la primera consulta de cada
+# visita nueva, que es exactamente el costo que el pool existe para evitar. Es
+# el intercambio correcto para un despliegue de demo: ese handshake se paga una
+# vez por sesión y cuesta milisegundos, mientras que agotar las CU-hours apaga
+# la base para todo el mundo.
+MAX_IDLE_S = float(os.getenv("SMARTCART_POOL_MAX_IDLE", "60"))
 
 # Segundos que una request espera por una conexión libre antes de levantar.
 POOL_TIMEOUT_S = 10.0
@@ -84,6 +113,7 @@ def open_pool(conn_string: str, *, min_size: int = MIN_SIZE, max_size: int = MAX
             conninfo=conn_string,
             min_size=min_size,
             max_size=max_size,
+            max_idle=MAX_IDLE_S,
             kwargs={"row_factory": dict_row},
             open=False,
         )
@@ -94,7 +124,10 @@ def open_pool(conn_string: str, *, min_size: int = MIN_SIZE, max_size: int = MAX
 
     _pool = pool
     _pool_conn_string = conn_string
-    logger.info("Pool de conexiones abierto (min=%d, max=%d).", min_size, max_size)
+    logger.info(
+        "Pool de conexiones abierto (min=%d, max=%d, max_idle=%.0fs).",
+        min_size, max_size, MAX_IDLE_S,
+    )
     return True
 
 

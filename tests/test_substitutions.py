@@ -227,7 +227,12 @@ def test_sugerencia_basica_con_prorrateo():
     [alt] = grupo["alternatives"]
     assert alt["suggested_uid"] == "prod_b"
     assert alt["savings"] == pytest.approx(900.0 - 450.0)
-    assert alt["metric_info"] == "a igual cantidad de 900 ml"
+    # La frase describe CÓMO se calculó el ahorro (prorrateado al tamaño del
+    # ancla), no al producto sugerido: pegada detrás del nombre del reemplazo se
+    # leía al revés, como si el de 500 ml midiera 900.
+    assert alt["metric_info"] == (
+        "Ahorro calculado a igual cantidad (900 ml, el tamaño del original)"
+    )
 
 
 def test_pack_incompatible_no_llega_a_sugerencia():

@@ -138,6 +138,20 @@ class CartItem(BaseModel):
     unified_id: str
     quantity: int
 
+class DemoCartItem(BaseModel):
+    """
+    Una línea del carrito de ejemplo. No reusa `CartItem` porque incluye el
+    nombre: `CartItem` es lo que ENTRA por /optimize, donde el nombre no se usa
+    y no tendría por qué viajar. Acá hace falta porque el carrito del frontend
+    guarda `{name, quantity}` — sin el nombre habría que resolverlo con una
+    segunda llamada a /products/by-ids para dibujar una lista que el backend ya
+    tenía completa.
+    """
+    unified_id: str
+    quantity: int
+    name: str
+
+
 class OptimizationRequest(BaseModel):
     cart: List[CartItem]
     user_memberships: Optional[List[str]] = []
@@ -1121,6 +1135,115 @@ def get_categories():
     productos por construcción.
     """
     return shelf_sections()
+
+# Las góndolas del carrito de ejemplo de la home. Es una lista explícita y no
+# "las N primeras del catálogo" porque lo que se elige acá es CONTENIDO: tiene
+# que leerse como la compra de la semana de alguien. Se probó antes lo
+# automático —el producto más caro de cada góndola, sin lista— y armaba una
+# vinoteca: Amarula, Chandon, Catena Zapata y $384.000 de total.
+#
+# Cada slug existe en src/shelves.py y tiene producto en las tres cadenas; si
+# alguno dejara de tenerlo, simplemente no aparece (la query lo omite) y el
+# carrito queda más corto en vez de romperse.
+DEMO_CART_SHELVES = (
+    "leches",
+    "pastas-secas",
+    "arroz-y-legumbres",
+    "aceites-y-aderezos",
+    "yerba-mate",
+    "cafe",
+    "galletitas",
+    "yogures",
+    "quesos",
+    "panificados",
+    "gaseosas",
+    "azucar-y-endulzantes",
+)
+
+# Unidades por línea. Que sea más de una no es decorativo: las promos
+# condicionales (3x2, 2da unidad al 50%) recién se activan por encima de su
+# umbral, así que con todo en 1 el desglose no muestra ninguna promo y la demo
+# se pierde justo la parte que distingue al producto.
+DEMO_CART_QUANTITY = 2
+
+
+@app.get("/demo-cart", response_model=List[DemoCartItem])
+def get_demo_cart():
+    """
+    Un carrito de ejemplo, armado con el catálogo de HOY.
+
+    Existe para el arranque en frío. Alguien que abre el link por primera vez
+    tiene que buscar y elegir una docena de productos antes de llegar a lo
+    único que distingue a SmartCart, que es el reparto entre tiendas — y ése es
+    exactamente el trabajo que un tester no va a hacer. La home ofrece el atajo.
+
+    Lo elige el backend y no una lista de ids en el frontend, por dos razones
+    que apuntan al mismo lado. Una es que el pruning borra productos
+    discontinuados todas las noches (`prune_missing_store_products`), así que
+    unos ids fijos se pudren solos y sin aviso: el botón terminaría armando un
+    carrito de tres productos, o de ninguno, y nadie se enteraría. La otra es
+    que el catálogo es un dato del backend.
+
+    Tres criterios, cada uno por algo que salió mal al probarlo:
+
+    * **`store_count = 3`.** Un producto que vende una sola cadena no le da
+      nada que decidir al optimizador, que es justo lo que se quiere mostrar.
+    * **El producto MEDIANO de cada góndola, no el más caro.** El más caro es
+      el criterio obvio y da un carrito de licores de $384.000 (medido). La
+      mediana da leche, fideos, arroz y yerba: una compra.
+    * **Una góndola por producto**, de la lista de arriba, para que el carrito
+      se lea como una compra y no como doce variantes de lo mismo.
+
+    Sobre el total: medido, este carrito da ~$90.000, cómodamente por encima
+    del mínimo de compra de las tres cadenas. Importa porque un carrito barato
+    vuelve de /optimize como "inviable" con un mensaje sobre montos mínimos, que
+    es la peor primera pantalla posible.
+
+    Devuelve `[]` con la base vacía y el frontend no dibuja el botón. Es mejor
+    que un 404: no tener catálogo no es un error del pedido.
+    """
+    db = SmartCartDB()
+
+    # `pos = (n + 1) / 2` es la mediana por góndola con división entera: para
+    # n impar cae en el del medio, para n par en el de abajo. No hace falta
+    # percentile_cont, que además devolvería un precio y no una fila.
+    sql = """
+        WITH candidatos AS (
+            SELECT u.id, u.shelf, max(sp.base_price) AS precio
+            FROM unified_products u
+            JOIN store_products sp
+              ON sp.unified_product_id = u.id AND sp.in_stock
+            WHERE u.shelf = ANY(%s)
+            GROUP BY u.id, u.shelf
+            HAVING count(DISTINCT sp.store_id) = 3
+        ),
+        rankeados AS (
+            SELECT id, shelf,
+                   row_number() OVER (PARTITION BY shelf ORDER BY precio, id) AS pos,
+                   count(*)     OVER (PARTITION BY shelf) AS n
+            FROM candidatos
+        )
+        SELECT r.id, u.name
+        FROM rankeados r
+        JOIN unified_products u ON u.id = r.id
+        WHERE r.pos = (r.n + 1) / 2
+        ORDER BY r.shelf
+    """
+
+    with pooled_connection(db.conn_string) as conn:
+        with conn.cursor() as cur:
+            cur.execute(sql, (list(DEMO_CART_SHELVES),))
+            filas = cur.fetchall()
+
+    return [
+        {
+            "unified_id": fila["id"],
+            "quantity": DEMO_CART_QUANTITY,
+            "name": fila["name"],
+        }
+        for fila in filas
+    ]
+
 
 @app.get("/category/{shelf_slug}", response_model=List[ProductResponse])
 def get_products_by_shelf(

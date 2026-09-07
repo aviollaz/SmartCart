@@ -314,7 +314,15 @@ def build_semantic_suggestions(cur, cart_items, *, target_stores, user_membershi
 
         anchor_weight, anchor_unit = weight_of(anchor_rows[uid])
         anchor_cost = min(offer["total_cost"] for offer in flat_prices[uid].values())
-        metric_info = f"a igual cantidad de {format_size(anchor_weight, anchor_unit)}"
+        # El `savings` de abajo es PRORRATEADO: cuesta el ancla a su peso menos
+        # el candidato escalado a ESE peso, no la diferencia real del carrito.
+        # La frase tiene que decirlo, y tiene que poder leerse sola: pegada
+        # después del nombre del reemplazo, "a igual cantidad de 300 g" se leía
+        # como una afirmación sobre un producto de 200 g, o sea al revés.
+        metric_info = (
+            f"Ahorro calculado a igual cantidad "
+            f"({format_size(anchor_weight, anchor_unit)}, el tamaño del original)"
+        )
 
         alternatives = []
         for cand in viables:

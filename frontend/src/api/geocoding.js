@@ -9,8 +9,34 @@
 
 import { resolveZoneFromAddress } from "../utils/deliveryCosts";
 
+// Nominatim responde en el idioma del `Accept-Language` del navegador, y eso
+// no es cosmético: `resolveZoneFromAddress` compara `address.state` contra
+// nombres en castellano, así que un navegador en inglés devuelve
+// "Autonomous City of Buenos Aires" y TODA CABA cae en "Fuera de las zonas de
+// envío conocidas", cotizando con la zona por defecto. Se pide explícito.
+const NOMINATIM_LANG = "es";
+
 const NOMINATIM_URL = "https://nominatim.openstreetmap.org/search";
 const NOMINATIM_REVERSE_URL = "https://nominatim.openstreetmap.org/reverse";
+
+/**
+ * "Avenida Corrientes 1234" a partir del `address` estructurado de Nominatim.
+ *
+ * El chip del Header usaba `display_name.split(",")[0]`, que no es la calle: en
+ * un resultado con altura el primer segmento ES la altura sola ("Envío a 3160")
+ * y en un POI es el nombre del lugar ("Envío a Centro Educativo de Nivel
+ * Sec…"). El dato bueno estaba en `address`, que ya se venía pidiendo con
+ * addressdetails=1 y del que sólo se usaba la zona.
+ *
+ * Devuelve null si no hay calle —un punto en medio del campo, o un POI sin
+ * `road`—, y ahí el chip cae al comportamiento anterior.
+ */
+function streetFromAddress(address) {
+  const road = address?.road || address?.pedestrian || address?.footway;
+  if (!road) return null;
+  const number = address.house_number;
+  return number ? `${road} ${number}` : road;
+}
 
 /**
  * Convierte una dirección escrita a mano en candidatos con lat/lng.
@@ -32,6 +58,7 @@ export async function geocodeAddress(query, { limit = 5 } = {}) {
     format: "json",
     countrycodes: "ar",
     addressdetails: "1",
+    "accept-language": NOMINATIM_LANG,
     limit: String(limit),
   });
 
@@ -48,6 +75,7 @@ export async function geocodeAddress(query, { limit = 5 } = {}) {
 
   return results.map((item) => ({
     displayName: item.display_name,
+    street: streetFromAddress(item.address),
     lat: Number(item.lat),
     lng: Number(item.lon),
     zone: resolveZoneFromAddress(item.address),
@@ -73,6 +101,7 @@ export async function reverseGeocode({ lat, lng }) {
       format: "json",
       zoom: "18",
       addressdetails: "1",
+      "accept-language": NOMINATIM_LANG,
     });
 
     const response = await fetch(`${NOMINATIM_REVERSE_URL}?${params}`, {
@@ -85,6 +114,7 @@ export async function reverseGeocode({ lat, lng }) {
 
     return {
       displayName: result.display_name,
+      street: streetFromAddress(result.address),
       zone: resolveZoneFromAddress(result.address),
     };
   } catch {

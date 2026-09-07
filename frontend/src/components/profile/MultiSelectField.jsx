@@ -1,7 +1,10 @@
+// `options` son `{value, label}`: el `value` es lo que viaja a /optimize y lo
+// que el optimizador compara por igualdad exacta contra los slugs de
+// src/promotions/banks.py; el `label` es lo único que se dibuja.
 export function MultiSelectField({ label, options, selected, onChange }) {
-  function toggle(option) {
-    if (selected.includes(option)) onChange(selected.filter((item) => item !== option));
-    else onChange([...selected, option]);
+  function toggle(value) {
+    if (selected.includes(value)) onChange(selected.filter((item) => item !== value));
+    else onChange([...selected, value]);
   }
 
   return (
@@ -9,12 +12,12 @@ export function MultiSelectField({ label, options, selected, onChange }) {
       <legend className="mb-2 text-sm font-semibold text-ink">{label}</legend>
       <div className="flex flex-wrap gap-2">
         {options.map((option) => {
-          const isSelected = selected.includes(option);
+          const isSelected = selected.includes(option.value);
           return (
             <button
-              key={option}
+              key={option.value}
               type="button"
-              onClick={() => toggle(option)}
+              onClick={() => toggle(option.value)}
               aria-pressed={isSelected}
               className={`rounded-full border px-3 py-1 text-xs font-medium transition-colors ${
                 isSelected
@@ -22,7 +25,7 @@ export function MultiSelectField({ label, options, selected, onChange }) {
                   : "border-line bg-surface text-ink hover:bg-surface-muted"
               }`}
             >
-              {option}
+              {option.label}
             </button>
           );
         })}

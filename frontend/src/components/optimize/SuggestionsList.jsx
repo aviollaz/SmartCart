@@ -26,7 +26,6 @@ function SuggestionRow({ group, onAccept }) {
           {alternatives.map((alt) => (
             <option key={alt.suggested_uid} value={alt.suggested_uid}>
               {alt.suggested_product} — ahorrás {formatPrice(alt.savings)}
-              {alt.metric_info ? ` (${alt.metric_info})` : ""}
             </option>
           ))}
         </select>
@@ -40,11 +39,16 @@ function SuggestionRow({ group, onAccept }) {
         </button>
       </div>
 
-      {typeof selected.effective_unit_price === "number" && (
-        <p className="text-xs text-ink-muted">
-          {formatPrice(selected.effective_unit_price)} por unidad en la tienda más barata.
-        </p>
-      )}
+      {/* `metric_info` vivía adentro del <option>, justo detrás del nombre del
+          reemplazo, y ahí se leía como una descripción de ESE producto: un
+          reemplazo de 200 g anunciado "a igual cantidad de 300 g". Es una
+          aclaración sobre cómo se calculó el ahorro, así que va con el resto de
+          la letra chica. */}
+      <p className="text-xs text-ink-muted">
+        {selected.metric_info}
+        {typeof selected.effective_unit_price === "number" &&
+          ` · ${formatPrice(selected.effective_unit_price)} por unidad en la tienda más barata`}
+      </p>
     </li>
   );
 }
@@ -56,7 +60,7 @@ export function SuggestionsList({ suggestions, onAccept }) {
     <div className="rounded-lg border border-brand-violet-100 bg-brand-violet-100 p-4">
       <p className="mb-3 flex items-center gap-2 font-display text-sm font-semibold text-brand-violet-700">
         <Lightbulb size={16} />
-        Smart Replacements recomendados
+        Reemplazos más baratos
       </p>
       <ul className="space-y-3">
         {suggestions.map((group) => (

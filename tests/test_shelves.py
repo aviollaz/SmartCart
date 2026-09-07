@@ -183,3 +183,16 @@ def test_store_ids_cubre_las_tres_tiendas():
     """`STORE_IDS` es lo que usan run_scrapers y el optimizador para nombrar la
     misma tienda; una tienda de STORES sin id no se puede persistir."""
     assert set(STORE_IDS) == set(STORES)
+
+
+def test_las_gondolas_del_carrito_de_ejemplo_existen():
+    """
+    `DEMO_CART_SHELVES` (src/api.py) filtra por `u.shelf = ANY(...)`, así que un
+    slug mal escrito o renombrado no falla: devuelve una góndola menos y el
+    carrito de ejemplo queda más corto, en silencio. Es la misma clase de agujero
+    que las claves muertas de Día que este archivo ya cubre para los scrapers.
+    """
+    from src.api import DEMO_CART_SHELVES
+
+    inexistentes = [slug for slug in DEMO_CART_SHELVES if slug not in SHELVES]
+    assert not inexistentes, f"Góndolas fuera de SHELVES: {inexistentes}"

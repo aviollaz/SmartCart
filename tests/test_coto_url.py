@@ -1,3 +1,7 @@
+import re
+
+import pytest
+
 from src.scrapers.scraper_coto import _as_price, build_coto_url, resolve_coto_product_id
 
 
@@ -42,6 +46,77 @@ def test_la_url_generada_no_tiene_el_patron_roto():
     url = build_coto_url("Fécula De Papa Dicomere 450g", "00569958")
     assert ".com.ar_/" not in url
     assert url.startswith("https://www.coto.com.ar/productos/")
+
+
+# --- Saneado del slug -------------------------------------------------------
+#
+# El slug sale del nombre del producto, que es texto libre de la tienda. Todo
+# lo de acá abajo son nombres REALES del catálogo: hasta que se saneó, cada uno
+# producía una URL que el CDN de Coto rechaza con 400, y el desglose de
+# /optimize abre una pestaña por producto de Coto, así que se veía crudo.
+#
+# Los fixtures viejos eran todos ASCII alfanumérico, que es exactamente por qué
+# el suite era ciego a esta clase entera de falla.
+
+
+def test_el_porcentaje_no_queda_como_escape_invalido():
+    """
+    El caso que rompía: "100%" seguido de "-v" es un escape porcentual
+    inválido y el CDN contesta 400 Bad Request antes de rutear.
+    """
+    url = build_coto_url("La Serenisima 100% Vegetal Almendra 1L", "00498602")
+    assert "%" not in url
+    assert url == (
+        "https://www.coto.com.ar/productos/"
+        "la-serenisima-100-vegetal-almendra-1l-"
+        "/_/R-00498602-00498602-200"
+    )
+
+
+def test_los_acentos_se_bajan_a_ascii_en_vez_de_borrarse():
+    """"Fécula" tiene que quedar "fecula", no "fcula"."""
+    url = build_coto_url("Fécula De Papa Dicomere 450g", "00569958")
+    assert "/productos/fecula-de-papa-dicomere-450g-/_/" in url
+
+
+@pytest.mark.parametrize(
+    "nombre",
+    [
+        "Yogur Ser 0% Frutilla 190g",          # porcentaje
+        "Queso Port Salut / Cremoso Xkg",      # barra: agregaba un segmento
+        "Jugo Baggio Multifruta #1 1L",        # numeral: trunca la URL
+        "Arroz Gallo Oro 500g + 20% Gratis",   # más y porcentaje
+        "Café La Virginia ¿Cuál? 250g",        # signos de pregunta
+        "Fideos Matarazzo & Cia 500g",         # ampersand: abría un query param
+        "Té Green Hills 25 Saquitos",          # acento
+        "Aceite Natura  doble   espacio 900ml",  # espacios repetidos
+    ],
+)
+def test_ningun_nombre_real_produce_caracteres_inseguros(nombre):
+    url = build_coto_url(nombre, "00123456")
+    ruta = url.removeprefix("https://www.coto.com.ar/productos/")
+    slug = ruta.split("/_/")[0]
+
+    # El slug queda con el alfabeto que Coto usa en sus propios links, y sólo
+    # con ese: cualquier otro carácter o entra escapado (y hay que escaparlo
+    # bien) o rompe la ruta.
+    assert re.fullmatch(r"[a-z0-9-]+", slug), slug
+    # Y no colapsa en guiones sueltos ni deja uno duplicado.
+    assert "--" not in slug
+    assert not slug.startswith("-")
+
+
+def test_slug_conserva_el_guion_final_que_usa_coto():
+    url = build_coto_url("Semola Bonalma 500 Grm!!!", "00539894")
+    assert "/productos/semola-bonalma-500-grm-/_/" in url
+
+
+def test_nombre_sin_alfanumericos_no_produce_url():
+    """
+    Una ruta ".../productos//_/R-..." tiene un segmento vacío y no es mejor que
+    no linkear, así que se trata igual que un nombre ausente.
+    """
+    assert build_coto_url("!!! ???", "00539894") is None
 
 
 def test_precio_nulo_no_rompe_el_barrido():

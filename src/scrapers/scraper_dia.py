@@ -7,7 +7,7 @@ from src.database import SmartCartDB
 from src.dietary_parser import detect_dietary_flags
 from src.ean import normalize_ean
 from src.scrapers.errors import CategoryScrapeError
-from src.scrapers.vtex import extract_search_payload
+from src.scrapers.vtex import extract_search_payload, read_availability
 from src.shelves import keys_for_store, shelf_for_key
 from src.taxonomy import category_path
 from src.size_parser import extract_real_volume, normalize_magnitude
@@ -119,6 +119,11 @@ class DiaScraper:
                 
             first_item = items[0]
             sellers = first_item.get("sellers", [])
+            # `base_price` se resetea por producto. Se asignaba SÓLO dentro del
+            # `if sellers:`, así que un producto sin sellers heredaba en
+            # silencio el precio del producto anterior del lote — y el primero
+            # de la página levantaba NameError. Carrefour ya lo hacía bien.
+            base_price = 0.0
             if sellers:
                 comm_comm = sellers[0].get("commertialOffer", {})
                 base_price = float(comm_comm.get("ListPrice", 0.0))
@@ -210,7 +215,7 @@ class DiaScraper:
                 "url": p.get("link"),
                 "image_url": image_url,
                 "base_price": base_price,
-                "in_stock": True,
+                "in_stock": read_availability(first_item),
                 "total_volume_weight": total_volume_weight,
                 "unit_type": unit_type,
                 "is_gluten_free": is_gluten_free,

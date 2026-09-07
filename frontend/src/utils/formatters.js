@@ -62,20 +62,26 @@ const SHORT_ADDRESS_MAX = 30;
 /**
  * Versión corta de la dirección del perfil, para el chip del Header.
  *
- * Nominatim devuelve el camino completo ("Avenida Cabildo 1234, Belgrano,
- * Comuna 13, Buenos Aires, ..."), del que solo interesa el primer segmento: el
- * resto es jerarquía administrativa que no ayuda a reconocer la dirección y no
- * entra en una barra. Cuando el punto se fijó en el mapa sin reverse geocoding,
- * displayName son las coordenadas, que también sirven como identificación.
+ * Usa `location.street` (calle + altura, que `geocoding.js` saca del `address`
+ * estructurado de Nominatim). El primer segmento de `display_name` NO sirve
+ * para esto, aunque lo parezca: en un resultado con altura ese segmento es la
+ * altura sola —de ahí el "Envío a 3160" que se veía— y en un POI es el nombre
+ * del lugar ("Envío a Centro Educativo de Nivel Sec…"), nunca la calle.
+ *
+ * Se mantiene el fallback al primer segmento para los perfiles guardados antes
+ * de que existiera `street`, y para los puntos marcados en el mapa donde el
+ * reverse geocoding no devolvió calle: ahí `displayName` son las coordenadas,
+ * que también identifican el punto.
  *
  * Devuelve null cuando no hay dirección (nunca onboardeado o "seguir sin
  * dirección"), para que el Header elija el texto del caso vacío.
  */
 export function formatShortAddress(location) {
   if (!location || location.skipped || !location.displayName) return null;
-  const [firstSegment] = location.displayName.split(",");
-  const label = firstSegment.trim();
+
+  const label = (location.street || location.displayName.split(",")[0] || "").trim();
   if (!label) return null;
+
   return label.length > SHORT_ADDRESS_MAX ? `${label.slice(0, SHORT_ADDRESS_MAX - 1)}…` : label;
 }
 

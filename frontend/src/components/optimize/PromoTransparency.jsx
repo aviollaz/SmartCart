@@ -2,8 +2,8 @@ import { formatPrice } from "../../utils/formatters";
 
 /**
  * Explica de dónde sale el total de una tienda: qué promoción se aplicó a cada
- * línea y qué descuento bancario entró. El JSON crudo queda en un segundo nivel
- * porque sirve para depurar, no para comprar.
+ * línea y qué descuento bancario entró. El JSON crudo sólo existe en el build
+ * de desarrollo: sirve para depurar, no para comprar.
  */
 export function PromoTransparency({ checkout, cartItems }) {
   const products = checkout.products || [];
@@ -42,14 +42,22 @@ export function PromoTransparency({ checkout, cartItems }) {
         </ul>
       )}
 
-      <details className="mt-2">
-        <summary className="cursor-pointer select-none">Ver JSON crudo</summary>
-        {/* El contenedor scrollea solo: sin esto una línea larga del JSON
-            empujaría el ancho de toda la página. */}
-        <div className="mt-1 max-h-64 overflow-auto rounded bg-surface-muted p-2">
-          <pre className="text-[11px] leading-tight">{JSON.stringify(checkout, null, 2)}</pre>
-        </div>
-      </details>
+      {/* El JSON crudo es una herramienta de desarrollo y no tenía ningún gate:
+          quedaba a dos clicks de cualquier usuario, adentro de una pantalla que
+          justamente busca que le CREAN al precio. Ver una estructura de datos
+          ahí no explica nada y sugiere que la app está a medio hacer.
+          `import.meta.env.DEV` es false en el bundle de producción, así que Vite
+          lo elimina entero del build. */}
+      {import.meta.env.DEV && (
+        <details className="mt-2">
+          <summary className="cursor-pointer select-none">Ver JSON crudo (dev)</summary>
+          {/* El contenedor scrollea solo: sin esto una línea larga del JSON
+              empujaría el ancho de toda la página. */}
+          <div className="mt-1 max-h-64 overflow-auto rounded bg-surface-muted p-2">
+            <pre className="text-[11px] leading-tight">{JSON.stringify(checkout, null, 2)}</pre>
+          </div>
+        </details>
+      )}
     </details>
   );
 }
