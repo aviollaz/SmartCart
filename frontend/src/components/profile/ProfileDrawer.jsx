@@ -9,29 +9,42 @@ import { MultiSelectField } from "./MultiSelectField";
 // La lista sale del relevamiento real de las tres cadenas — antes tenía cinco
 // entradas y dejaba afuera a ICBC, Ciudad, Patagonia, Supervielle y compañía,
 // que son justamente los que más descuentos publican.
+//
+// El `value` es lo que viaja a /optimize y lo que tiene que coincidir con
+// banks.py; el `label` es sólo lo que se dibuja. Existe porque el chip
+// mostraba el slug crudo — "banco_del_sol", "naranja_x", "personal_pay" —
+// y los nombres legibles ya estaban escritos del lado del backend
+// (DISPLAY_NAMES en src/promotions/banks.py), sin nadie que los sirviera.
+// Se copian y no se exponen por un endpoint: son 27 strings que cambian
+// cuando cambia la lista de entidades, o sea en el mismo commit que ya
+// obliga a tocar los dos archivos.
 const CARD_OPTIONS = [
-  "galicia",
-  "macro",
-  "nacion",
-  "bbva",
-  "santander",
-  "icbc",
-  "ciudad",
-  "comafi",
-  "credicoop",
-  "patagonia",
-  "supervielle",
-  "columbia",
-  "banco_del_sol",
-  "carrefour_banco",
-  "naranja_x",
-  "amex",
-  "cabal",
-  "mercado_pago",
-  "modo",
-  "uala",
-  "prex",
-  "personal_pay",
+  { value: "galicia", label: "Galicia" },
+  { value: "macro", label: "Macro" },
+  { value: "nacion", label: "Nación" },
+  { value: "bbva", label: "BBVA" },
+  { value: "santander", label: "Santander" },
+  { value: "icbc", label: "ICBC" },
+  { value: "hsbc", label: "HSBC" },
+  { value: "itau", label: "Itaú" },
+  { value: "provincia", label: "Provincia" },
+  { value: "hipotecario", label: "Hipotecario" },
+  { value: "ciudad", label: "Ciudad" },
+  { value: "comafi", label: "Comafi" },
+  { value: "credicoop", label: "Credicoop" },
+  { value: "patagonia", label: "Patagonia" },
+  { value: "supervielle", label: "Supervielle" },
+  { value: "columbia", label: "Columbia" },
+  { value: "banco_del_sol", label: "Banco del Sol" },
+  { value: "carrefour_banco", label: "Carrefour Banco" },
+  { value: "naranja_x", label: "Naranja X" },
+  { value: "amex", label: "American Express" },
+  { value: "cabal", label: "Cabal" },
+  { value: "mercado_pago", label: "Mercado Pago" },
+  { value: "modo", label: "MODO" },
+  { value: "uala", label: "Ualá" },
+  { value: "prex", label: "Prex" },
+  { value: "personal_pay", label: "Personal Pay" },
 ];
 // "mi_carrefour" no es decorativo: en Carrefour el precio rebajado suele ser el
 // del programa de fidelidad ("Doble Precio"), y sin declararlo el optimizador
@@ -39,13 +52,16 @@ const CARD_OPTIONS = [
 // Mismo criterio que CARD_OPTIONS, pero contra el otro eje: el loader marca
 // estas entidades con `is_membership` y el optimizador las busca en
 // user_memberships (ver MEMBERSHIP_ENTITIES en src/promotions/banks.py).
+//
+// "jumbo_mas" se fue: Jumbo no es una de las tres cadenas del proyecto, así
+// que era una opción que no podía aplicar a ningún precio — ruido que invita
+// a preguntar por una tienda que no existe acá.
 const MEMBERSHIP_OPTIONS = [
-  "club_dia",
-  "coto_tci",
-  "comunidad_coto",
-  "jumbo_mas",
-  "mi_carrefour",
-  "club_la_nacion",
+  { value: "club_dia", label: "Club Día" },
+  { value: "coto_tci", label: "Coto TCI" },
+  { value: "comunidad_coto", label: "Comunidad Coto" },
+  { value: "mi_carrefour", label: "Mi Carrefour" },
+  { value: "club_la_nacion", label: "Club La Nación" },
 ];
 
 // Reemplaza el sidebar fijo de Streamlit ("Tu Perfil"): vive inline en

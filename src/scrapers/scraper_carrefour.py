@@ -7,7 +7,7 @@ from src.database import SmartCartDB
 from src.dietary_parser import detect_dietary_flags
 from src.ean import normalize_ean
 from src.scrapers.errors import CategoryScrapeError
-from src.scrapers.vtex import extract_search_payload
+from src.scrapers.vtex import extract_search_payload, read_availability
 from src.shelves import keys_for_store, shelf_for_key
 from src.taxonomy import category_path
 from src.size_parser import extract_real_volume, normalize_magnitude
@@ -236,7 +236,7 @@ class CarrefourScraper:
                 "url": build_carrefour_url(p.get("link")),
                 "image_url": image_url,
                 "base_price": base_price,
-                "in_stock": True,
+                "in_stock": read_availability(first_item),
                 "total_volume_weight": total_volume_weight,
                 "unit_type": unit_type,
                 "is_gluten_free": is_gluten_free,

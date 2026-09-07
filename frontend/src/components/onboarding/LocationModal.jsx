@@ -39,6 +39,7 @@ export function LocationModal({ onClose }) {
     location && !location.skipped && typeof location.lat === "number"
       ? {
           displayName: location.displayName,
+          street: location.street ?? null,
           lat: location.lat,
           lng: location.lng,
           zone: location.zone ?? null,
@@ -82,14 +83,14 @@ export function LocationModal({ onClose }) {
   // coordenadas, que son lo único que el backend realmente necesita.
   async function handleMapPick({ lat, lng }) {
     setCoverageWarning(null);
-    setPendingPoint({ displayName: null, lat, lng, zone: null });
+    setPendingPoint({ displayName: null, street: null, lat, lng, zone: null });
 
     const resolved = await reverseGeocode({ lat, lng });
     if (!resolved) return;
     // Se descarta si el usuario ya movió el pin de nuevo mientras respondía.
     setPendingPoint((prev) =>
       prev && prev.lat === lat && prev.lng === lng
-        ? { ...prev, displayName: resolved.displayName, zone: resolved.zone }
+        ? { ...prev, displayName: resolved.displayName, street: resolved.street, zone: resolved.zone }
         : prev
     );
   }
@@ -98,6 +99,11 @@ export function LocationModal({ onClose }) {
     setLocation(
       {
         displayName: point.displayName || formatCoords(point),
+        // Calle + altura, para el chip del Header. Los perfiles guardados antes
+        // de este campo simplemente no lo tienen y caen al comportamiento
+        // anterior: es la misma regla que ProfileContext ya aplica con
+        // `location`, no versionar la clave de localStorage.
+        street: point.street ?? null,
         lat: point.lat,
         lng: point.lng,
         // Zona de envío derivada de la dirección (reemplazó al dropdown manual).

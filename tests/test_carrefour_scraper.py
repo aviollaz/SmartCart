@@ -10,6 +10,7 @@ import pytest
 from src.flattener import evaluate_best_promo
 from src.promotion_parser import PromoTransformer
 from src.scrapers.errors import CategoryScrapeError
+from src.scrapers.vtex import read_availability
 from src.scrapers.scraper_carrefour import CarrefourScraper, build_carrefour_url
 from src.scrapers.vtex import extract_search_payload
 
@@ -194,3 +195,38 @@ def test_dia_conserva_sus_promo_id_tras_el_refactor():
     assert base_price == 1500.0
     assert {p["promo_id"] for p in promos} == {"dia_direct_311925", "dia_teaser_311925_0"}
     assert all(p["requires_membership"] is None for p in promos)
+
+
+# --- Disponibilidad (compartida con Día, src/scrapers/vtex.py) --------------
+
+
+def test_availability_lee_lo_que_dijo_la_tienda():
+    """
+    Con los parámetros de hoy VTEX filtra lo agotado del lado del servidor y
+    todo vuelve con 10000, así que este camino parece decorativo. No lo es:
+    con `hideUnavailableItems: False` la misma categoría devuelve 14 de 50
+    productos con `AvailableQuantity: 0` (medido en vivo), y aflojar ese filtro
+    es un cambio de una palabra.
+    """
+    disponible = {"sellers": [{"commertialOffer": {"AvailableQuantity": 10000}}]}
+    agotado = {"sellers": [{"commertialOffer": {"AvailableQuantity": 0}}]}
+
+    assert read_availability(disponible) is True
+    assert read_availability(agotado) is False
+
+
+def test_availability_default_true_si_el_campo_no_esta():
+    """
+    El `sha256Hash` fija el conjunto de campos del lado del servidor. Si la
+    tienda lo rota y `AvailableQuantity` desaparece, un default `False` marcaría
+    el catálogo entero como agotado y el optimizador no armaría ningún carrito.
+    Ausencia es "la tienda no dijo", no "no hay".
+    """
+    assert read_availability({"sellers": [{"commertialOffer": {"Price": 100}}]}) is True
+    assert read_availability({"sellers": []}) is True
+    assert read_availability({}) is True
+
+
+def test_availability_tolera_un_valor_ilegible():
+    assert read_availability({"sellers": [{"commertialOffer": {"AvailableQuantity": None}}]}) is True
+    assert read_availability({"sellers": [{"commertialOffer": {"AvailableQuantity": "x"}}]}) is True

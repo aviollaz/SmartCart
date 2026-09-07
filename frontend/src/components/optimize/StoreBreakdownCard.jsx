@@ -67,6 +67,15 @@ export function StoreBreakdownCard({ storeId, checkout, cartItems }) {
         )
       )}
 
+      {/* La disponibilidad que conoce SmartCart es la que la tienda publica en
+          su listado, que es por región por defecto y no por dirección: el
+          catálogo puede decir que hay stock y el checkout de la cadena
+          contestar "no tiene inventario para tu dirección". Decirlo acá es más
+          barato que hacer al usuario descubrirlo con el carrito ya armado. */}
+      <p className="mt-2 text-center text-xs text-ink-muted">
+        El súper confirma el stock final para tu dirección al cerrar la compra.
+      </p>
+
       <details className="mt-3 text-xs text-ink-muted">
         <summary className="cursor-pointer select-none">Ver lista para esta tienda</summary>
         <ul className="mt-1 list-inside list-disc">

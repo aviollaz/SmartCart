@@ -3,6 +3,7 @@ import logging
 import re
 import time
 import random
+import unicodedata
 
 from src.dietary_parser import detect_dietary_flags
 from src.ean import normalize_ean
@@ -60,12 +61,47 @@ def build_coto_url(value: str, product_id: str) -> str | None:
     Formato real: el slug es decorativo y lo que resuelve la página es el
     código R-. Ej. ("Paleta Cocida Feteada Paladini Xkg", "00307037") ->
     https://www.coto.com.ar/productos/paleta-cocida-feteada-paladini-xkg-/_/R-00307037-00307037-200
+
+    El slug sale del NOMBRE del producto, que es texto libre de la tienda, así
+    que hay que sanearlo. "La Serenisima 100% Vegetal Almendra 1L" producía
+    ".../la-serenisima-100%-vegetal-almendra-1l-/_/R-..." y ese "%-v" es un
+    escape porcentual inválido: el CDN contesta **400 Bad Request** antes de
+    rutear. No es un caso de borde. El desglose de /optimize abre una pestaña
+    por producto de Coto —no hay carrito por URL como en las VTEX, ver
+    VTEX_CHECKOUT_DOMAINS en src/api.py—, así que un solo nombre con "%" le
+    muestra al usuario una página de error cruda en medio del checkout.
+
+    Se normaliza en vez de percent-encodear porque el slug no resuelve nada: lo
+    hace el código R-, y Coto ignora lo que el slug diga. O sea que la salida
+    correcta no es escapar los caracteres raros sino sacarlos, que es además lo
+    que Coto hace en sus propios links.
     """
     if not value or not product_id:
         return None
 
-    slug = value.lower().replace(" ", "-") + "-"
+    slug = _slugify(value)
+    if not slug:
+        return None
+
     return f"https://www.coto.com.ar/productos/{slug}/_/R-{product_id}-{product_id}-200"
+
+
+def _slugify(value: str) -> str:
+    """
+    Texto libre -> segmento de URL seguro, con el guión final que usa Coto.
+
+    Los acentos se bajan a ASCII (NFKD y descarte de las marcas combinantes) en
+    vez de borrarse, para que "Fécula" quede "fecula" y no "fcula": el slug es
+    decorativo, pero es lo que se lee en la barra de direcciones.
+
+    Devuelve "" para un nombre sin un solo carácter alfanumérico, y el llamador
+    trata eso como "no hay URL": una ruta ".../productos//_/R-..." tiene un
+    segmento vacío y no es mejor que no linkear.
+    """
+    plano = unicodedata.normalize("NFKD", value.lower())
+    plano = "".join(c for c in plano if not unicodedata.combining(c))
+    slug = re.sub(r"[^a-z0-9]+", "-", plano).strip("-")
+    return f"{slug}-" if slug else ""
 
 
 def resolve_coto_product_id(item: dict, prod_data: dict) -> str | None:

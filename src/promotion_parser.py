@@ -2,6 +2,8 @@
 import logging
 import re
 
+from src.promotions.banks import display_name
+
 logger = logging.getLogger(__name__)
 
 
@@ -120,7 +122,14 @@ class PromoTransformer:
             discount_pct = round(((list_price - selling_price) / list_price) * 100, 2)
             descripcion = f"{int(discount_pct)}% Off Directo"
             if price_gap_membership:
-                descripcion = f"{int(discount_pct)}% Off con {price_gap_membership}"
+                # `display_name` y no el slug crudo: esta cadena termina tal
+                # cual en la tarjeta del producto ("CARREFOUR: 21% Off con
+                # mi_carrefour"). Los scrapers de promos bancarias ya la usan
+                # (src/promotions/scraper_carrefour.py); este camino era el
+                # único que se la salteaba.
+                descripcion = (
+                    f"{int(discount_pct)}% Off con {display_name(price_gap_membership)}"
+                )
 
             parsed_promos.append({
                 "promo_id": f"{prefix}_direct_{product_id}",
