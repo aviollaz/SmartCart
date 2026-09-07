@@ -34,11 +34,16 @@ export function Header({ onOpenCart, onOpenLocation }) {
         </div>
       </div>
 
+      {/* En pantalla chica el buscador baja a su propia fila (`order-last` +
+          `w-full` sobre un contenedor que envuelve) y las dos acciones dejan
+          sólo el ícono. Antes era un flex de cuatro elementos sin un solo
+          breakpoint: a 375 px el buscador quedaba de unos pocos caracteres, y
+          casi todo el mundo va a abrir esto del celular. */}
       <div className="border-b border-line bg-surface">
-        <div className="mx-auto flex max-w-7xl items-center gap-4 px-4 py-3">
+        <div className="mx-auto flex max-w-7xl flex-wrap items-center gap-x-3 gap-y-2 px-4 py-3 md:flex-nowrap md:gap-4">
           <Link
             to="/"
-            className="flex shrink-0 items-center gap-1.5 font-display text-xl font-bold text-brand-violet-700"
+            className="flex shrink-0 items-center gap-1.5 font-display text-lg font-bold text-brand-violet-700 sm:text-xl"
           >
             <ShoppingCart size={24} aria-hidden="true" />
             SmartCart
@@ -47,21 +52,23 @@ export function Header({ onOpenCart, onOpenLocation }) {
           <button
             type="button"
             onClick={() => setMegaMenuOpen(true)}
+            aria-label="Categorías"
             className="flex shrink-0 items-center gap-1.5 rounded-md border border-line px-3 py-2 text-sm font-medium text-ink hover:bg-surface-muted"
           >
             <Menu size={18} aria-hidden="true" />
-            Categorías
+            <span className="hidden sm:inline">Categorías</span>
           </button>
 
-          <SearchBar className="mx-auto" />
+          <SearchBar className="order-last w-full md:order-none md:mx-auto md:w-auto" />
 
           <button
             type="button"
             onClick={onOpenCart}
-            className="relative flex shrink-0 items-center gap-2 rounded-full border border-brand-violet-700 px-4 py-2 text-sm font-medium text-brand-violet-700 hover:bg-brand-violet-100"
+            aria-label="Carrito"
+            className="relative ml-auto flex shrink-0 items-center gap-2 rounded-full border border-brand-violet-700 px-3 py-2 text-sm font-medium text-brand-violet-700 hover:bg-brand-violet-100 sm:px-4 md:ml-0"
           >
             <ShoppingCart size={18} aria-hidden="true" />
-            Carrito
+            <span className="hidden sm:inline">Carrito</span>
             {itemCount > 0 && (
               <span className="absolute -right-2 -top-2 flex h-5 min-w-5 items-center justify-center rounded-full bg-brand-accent px-1 text-xs font-semibold text-white">
                 {itemCount}

@@ -1,0 +1,15 @@
+# Sólo la API entra en la imagen. Todo lo demás la engorda o la ensucia.
+.git
+.github
+.venv
+frontend
+docs
+ops
+tests
+logs
+*.log
+.env
+__pycache__
+**/__pycache__
+*.pyc
+.pytest_cache
