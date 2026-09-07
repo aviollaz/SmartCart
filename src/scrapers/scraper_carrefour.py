@@ -5,6 +5,7 @@ import random
 
 from src.database import SmartCartDB
 from src.dietary_parser import detect_dietary_flags
+from src.ean import normalize_ean
 from src.scrapers.errors import CategoryScrapeError
 from src.scrapers.vtex import extract_search_payload
 from src.shelves import keys_for_store, shelf_for_key
@@ -222,7 +223,10 @@ class CarrefourScraper:
                 # (producto 100650 = item 17305). Es el que espera
                 # /checkout/cart/add?sku= para armar el carrito por URL.
                 "store_item_id": first_item.get("itemId"),
-                "ean": first_item.get("ean"),
+                # Sin normalizar, esto pasaba el valor de VTEX crudo (ni
+                # siquiera str()): la misma truncación que rompe a Coto,
+                # esperando un payload distinto. Ver src/ean.py.
+                "ean": normalize_ean(first_item.get("ean")),
                 "name": p.get("productName"),
                 "brand": p.get("brand"),
                 # La góndola canónica: la única noción de categoría del proyecto

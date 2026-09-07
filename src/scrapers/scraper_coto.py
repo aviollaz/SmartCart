@@ -5,6 +5,7 @@ import time
 import random
 
 from src.dietary_parser import detect_dietary_flags
+from src.ean import normalize_ean
 from src.scrapers.errors import CategoryScrapeError
 from src.shelves import keys_for_store, shelf_for_key
 from src.taxonomy import category_path
@@ -202,7 +203,10 @@ class CotoScraper:
                         # La categoría con la que se barrió: es lo que le permite
                         # al pruning acotarse a las que terminaron bien.
                         "source_category": category_id,
-                        "ean": str(prod_data.get("product_main_ean")) if prod_data.get("product_main_ean") else None,
+                        # Coto publica acá el GTIN-14 de la caja en parte del
+                        # catálogo, contra una columna de 13: cinco filas así
+                        # revertían la categoría entera. Ver src/ean.py.
+                        "ean": normalize_ean(prod_data.get("product_main_ean")),
                         "name": name,
                         "brand": brand,
                         # La góndola canónica: la única noción de categoría del
