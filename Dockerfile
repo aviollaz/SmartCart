@@ -1,23 +1,25 @@
-# Imagen de la API, pensada para Hugging Face Spaces (SDK "docker").
+# Imagen de la API, desplegada en Google Cloud Run (ops/demo-publica.md).
 #
-# Por qué HF Spaces y no un PaaS común: la API carga `all-MiniLM-L6-v2` con
-# torch para codificar las búsquedas, o sea ~1 GB de RSS. Los planes gratuitos
-# de Render, Koyeb y compañía dan 512 MB y el proceso muere al arrancar; el CPU
-# basic de Spaces da 2 vCPU y 16 GB, sin tarjeta de crédito. Es el mismo motivo
-# por el que la VM de Oracle sigue bloqueada (ops/README.md): 1 GB no alcanza.
+# Por qué Cloud Run y no un PaaS gratuito: la API carga `all-MiniLM-L6-v2` para
+# codificar las búsquedas y el pico medido es **413 MB** de RSS (bajo /optimize,
+# el camino más pesado). Render free da 0,1 CPU y 512 MB —entra por 100 MB, pero
+# 0,1 de CPU con torch es lento—, Koyeb ya no ofrece un web service gratis, y
+# Hugging Face Spaces movió el SDK Docker a un plan pagado. Cloud Run da CPU
+# real, 1 GiB holgado y escala a cero, dentro de un free tier de 180.000
+# vCPU-segundos por mes.
 #
 # La base sigue siendo Neon y el frontend sigue en Vercel. Acá va SÓLO la API.
 FROM python:3.12-slim
 
-# git lo necesita huggingface_hub para bajar el modelo; el resto son las
-# dependencias de compilación que psycopg[binary] NO necesita — por eso no está
-# build-essential y la imagen queda chica.
+# git lo necesita huggingface_hub para bajar el modelo. No está build-essential
+# a propósito: psycopg[binary] y las ruedas de torch/ortools vienen compiladas,
+# así que agregarlo sólo engorda la imagen.
 RUN apt-get update \
     && apt-get install -y --no-install-recommends git curl \
     && rm -rf /var/lib/apt/lists/*
 
-# Spaces corre el contenedor como uid 1000 y el HOME por defecto no es
-# escribible: sin esto, sentence-transformers no puede escribir su caché y el
+# El contenedor NO corre como root y el HOME por defecto no es escribible:
+# sin esto, sentence-transformers no puede escribir su caché y el
 # arranque falla con un PermissionError que no menciona la caché.
 RUN useradd -m -u 1000 app
 ENV HOME=/home/app \
@@ -45,16 +47,32 @@ COPY --chown=app:app src ./src
 
 USER app
 
-# El modelo se baja EN EL BUILD y no en el primer arranque. Un Space gratis se
-# pausa tras ~48 h sin uso, así que el arranque en frío es un caso normal y no
-# uno raro: sin esto, la primera persona que abre el link después de una pausa
-# espera la descarga del modelo además de su carga.
+# El modelo se baja EN EL BUILD y no en el primer arranque. Con scale-to-zero el
+# arranque en frío es el caso NORMAL y no uno raro —Cloud Run apaga la instancia
+# cuando nadie la usa, que es justamente lo que la mantiene gratis—, así que sin
+# esto la primera persona que abre el link paga la descarga del modelo además de
+# su carga.
 RUN python -c "from sentence_transformers import SentenceTransformer; SentenceTransformer('all-MiniLM-L6-v2')"
 
-# 7860 es el puerto que Spaces expone por convención.
-EXPOSE 7860
+# Cloud Run INYECTA `PORT` y espera que el contenedor escuche ahí. El puerto no
+# se puede fijar: si el proceso escucha en otro, el deploy falla el health check
+# y el error no menciona el puerto. El default 8080 es el de Cloud Run, y deja
+# que la imagen se pueda correr a mano sin pasar nada.
+ENV PORT=8080
+EXPOSE 8080
 
-# Un solo worker a propósito: cada uno carga su propia copia del modelo, así que
-# dos workers son ~2 GB de RAM para una demo que no tiene concurrencia. El pool
-# de conexiones ya asume un worker (src/db_pool.py).
-CMD ["uvicorn", "src.api:app", "--host", "0.0.0.0", "--port", "7860", "--workers", "1"]
+# Forma SHELL a propósito (sin corchetes): la forma exec no expande variables, y
+# `--port $PORT` llegaría a uvicorn como el string literal "$PORT".
+#
+# El `exec` NO es decorativo y es lo que arregla la contrapartida de esa
+# decisión: sin él uvicorn queda como hijo de /bin/sh, que es el PID 1, y el
+# SIGTERM que Cloud Run manda al bajar la instancia se lo come el shell. El
+# lifespan de FastAPI nunca corre su shutdown, o sea que `close_pool()` no cierra
+# el pool y las conexiones a Neon quedan colgadas hasta que expiran solas — justo
+# lo que SMARTCART_POOL_MIN_SIZE=0 existe para evitar. Con `exec`, uvicorn
+# reemplaza al shell y recibe la señal él.
+#
+# Un solo worker: cada uno carga su propia copia del modelo, así que dos son
+# ~800 MB para una demo sin concurrencia. El pool de conexiones ya asume un
+# worker (src/db_pool.py), y Cloud Run escala con instancias, no con workers.
+CMD exec uvicorn src.api:app --host 0.0.0.0 --port $PORT --workers 1

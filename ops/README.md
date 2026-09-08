@@ -12,7 +12,7 @@ la condición de salida.
 | **Base de datos** | Neon (plan gratuito) | Postgres en la misma VM |
 | **API** | tu máquina (`uvicorn`) | la VM, detrás de nginx |
 
-Para la **demo pública** —API en Hugging Face Spaces y frontend en Vercel,
+Para la **demo pública** —API en Google Cloud Run y frontend en Vercel,
 las dos gratis— el runbook es `ops/demo-publica.md`. Es otro eje y no una
 tercera rama de esta tabla: acá se decide dónde corre el barrido nocturno,
 allá dónde corren la API y el frontend para que alguien los use desde su
