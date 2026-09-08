@@ -37,6 +37,46 @@ requests por mes**, verificado en su página de precios. Con 1 vCPU / 1 GiB eso
 son ~50 h de CPU facturable por mes, que para una demo sobra por dos órdenes de
 magnitud.
 
+### Self-hostear en una PC de casa: evaluado y descartado
+
+La pregunta se hizo y se va a volver a hacer, así que queda contestada acá.
+
+**Es técnicamente viable.** Una PC de escritorio no necesita IP pública ni abrir
+puertos: **Tailscale Funnel** es gratis en todos los planes, da un hostname
+HTTPS estable (`equipo.tailnet.ts.net`), y funciona sobre conexiones salientes,
+o sea que atraviesa el CGNAT que usan casi todos los ISP argentinos. Sólo
+escucha en 443, 8443 y 10000, y tiene límites de ancho de banda no publicados.
+**ngrok free NO sirve para esto**: su plan gratuito inserta una página
+intermedia en los endpoints HTTP/S, y eso rompe las llamadas XHR que el frontend
+le hace a la API.
+
+**Y la comparación honesta no es "Cloud Run vs la PC" sino "Cloud Run + Neon vs
+la PC sola".** Lo que más se ganaría self-hosteando no es ahorrarse Cloud Run
+—que ya sale $0— sino poder mover Postgres a esa misma máquina y sacarse de
+encima el techo de **100 CU-hours** de Neon, que `ops/README.md` llama *"el techo
+que importa, no el storage"*. Ésa es, de hecho, la arquitectura que el proyecto
+tiene documentada como destino: la VM de Oracle es exactamente eso.
+
+Se descarta igual, por tres motivos en orden de peso:
+
+1. **La PC no queda prendida sola.** Habría que encenderla a propósito: son
+   ~35-70 kWh al mes de electricidad real para servir un puñado de requests, y
+   el techo de gasto del proyecto es $0.
+2. **La falla es silenciosa, y ya pasó en esta misma máquina.** La etapa 10 de
+   CLAUDE.md documenta que un cron bajo WSL2 nunca disparó porque Windows apaga
+   la VM al quedar ociosa, y que ningún script lo arregla. En una ronda de
+   feedback eso no se ve: la persona entra, no carga, no avisa, y el feedback se
+   pierde sin dejar rastro de por qué.
+3. **El techo de Neon todavía no aplica.** Los 60-120 CU-hours son *con usuarios
+   reales*, no con cinco amigos durante una semana. Mudarse ahora es pagar la
+   complejidad antes de que exista el problema.
+
+**Qué daría vuelta la decisión**, para no rediscutirla desde cero: que la PC
+pase a quedar prendida por otro motivo, o que SmartCart junte usuarios y Neon
+empiece a apretar. En los dos casos la mudanza es barata **por diseño** —dos
+variables de entorno y el mismo `Dockerfile`, ver `ops/README.md`— y el paso
+correcto sería llevar también Postgres a esa máquina, no sólo la API.
+
 ## 1. La API en Cloud Run
 
 1. Crear un proyecto en <https://console.cloud.google.com> y activar la
