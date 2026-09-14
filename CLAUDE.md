@@ -8,6 +8,7 @@ SmartCart is a shopping-cart price optimizer for Argentine supermarkets (Coto, D
 
 Full technical spec (data model, architecture rationale): `docs/smartcart_spec.md`.
 Pending work and known risks, with the reasoning behind each: `docs/TODO.md`.
+How to publish the API (Cloud Run) and frontend (Vercel) for an external demo, including the redeploy command and Windows/PowerShell-specific gotchas already hit once: `ops/demo-publica.md`.
 
 The repo has two halves that run as separate processes and talk over HTTP:
 - **`src/`** — Python/FastAPI backend + Postgres/pgvector.

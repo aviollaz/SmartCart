@@ -98,18 +98,29 @@ correcto sería llevar también Postgres a esa máquina, no sólo la API.
    ```
 
 4. Desplegar. `--source .` construye con Cloud Build usando el `Dockerfile` de
-   la raíz:
+   la raíz. **Este es el comando para correr cada vez que cambia algo en
+   `src/` o en el `Dockerfile`** — no hay redeploy automático del backend
+   (a diferencia del frontend en Vercel, que sí redeploya solo con cada push a
+   `main`):
 
-   ```bash
-   gcloud run deploy smartcart-api \
-     --source . \
-     --region us-east1 \
-     --memory 1Gi --cpu 1 \
-     --min-instances 0 --max-instances 3 \
-     --allow-unauthenticated \
-     --set-env-vars SMARTCART_POOL_MIN_SIZE=0,ANALYTICS_ENV=demo \
-     --set-secrets DATABASE_URL=smartcart-db-url:latest
+   ```powershell
+   gcloud run deploy smartcart-api --source . --region us-east1 --memory 1Gi --cpu 1 --min-instances 0 --max-instances 3 --allow-unauthenticated --env-vars-file ops/vars.YAML --set-secrets DATABASE_URL=neon-url:latest
    ```
+
+   Escrito en una sola línea a propósito: en PowerShell (Windows), el `\` de
+   continuación de línea de bash no significa nada (ahí se usa `` ` ``), así
+   que un comando multilínea copiado tal cual de una guía en bash tira
+   `Missing expression after unary operator '--'` — una sola línea evita el
+   problema de raíz. `--env-vars-file ops/vars.YAML` reemplaza a
+   `--set-env-vars` con valores separados por coma: en Windows, `gcloud` es un
+   `.cmd` que vuelve a parsear los argumentos a través de `cmd.exe`, y ahí una
+   coma sin comillas es un separador de argumentos igual que un espacio — dos
+   variables separadas por coma terminaban pegadas en una sola con un espacio
+   en el medio (`'0 ANALYTICS_ENV=demo'`), y como esa cadena ya no era un
+   entero válido, `SmartCartDB` explotaba en el arranque. `neon-url` es el
+   nombre real del secreto en este proyecto (`gcloud secrets list` lo
+   confirma) — el nombre `smartcart-db-url` de una versión anterior de esta
+   guía nunca existió acá.
 
    La primera vez tarda ~10 minutos (baja torch). Al terminar imprime la URL del
    servicio.
