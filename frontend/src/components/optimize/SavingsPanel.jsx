@@ -24,17 +24,16 @@ export function SavingsPanel({ result, cartItems }) {
       </div>
 
       {/* Con ahorro cero la tarjeta no se dibuja: pasa cuando cada producto se
-          consigue en una sola tienda, y un "$0" en verde es ruido, no un dato. */}
+          consigue en una sola tienda, y un "$0" en verde es ruido, no un dato.
+          El detalle de contra qué se compara (producto a producto, sin envío
+          ni descuento bancario) vive en el desplegable de abajo, no en una
+          línea fija: una sola frase alcanza para lo que se lee de arriba. */}
       {total > 0 && (
         <div className="rounded-lg border border-line bg-surface p-4">
-          <p className="flex items-center gap-1.5 text-xs text-ink-muted">
-            <PiggyBank size={14} />
-            Estás ahorrando al usar el sitio
-          </p>
-          <p className="text-2xl font-bold text-state-success">{formatPrice(total)}</p>
-          <p className="mt-1 text-xs text-ink-muted">
-            Frente a comprar cada producto en el súper más caro que lo tiene. Es una comparación
-            entre precios de productos: no incluye envíos ni descuentos bancarios.
+          <p className="flex items-center gap-1.5 text-sm text-ink">
+            <PiggyBank size={16} className="shrink-0 text-state-success" />
+            Ahorrás <span className="font-bold text-state-success">{formatPrice(total)}</span> usando
+            el sitio
           </p>
 
           {items.length > 0 && (

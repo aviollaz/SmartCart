@@ -294,6 +294,60 @@ o mudarse a la VM de Oracle (`ops/README.md`).
 
 ---
 
+## Optimizador
+
+### 12. Límite de cantidad de supermercados en el split
+Idea de AV: dejar elegir "como máximo N supermercados" antes de optimizar, en
+vez de que el split use los que el propio solver decida óptimos. Investigado
+para la demo con amigos y **deliberadamente no implementado todavía** — no
+vale el costo para una primera demo, pero queda anotado para no rehacer la
+investigación.
+
+**La parte fácil es trivial.** `src/optimizer.py::optimize_cart()` ya arma
+una variable booleana `y[j]` por tienda ("¿está activa?") para el constraint
+de mínimo de compra. Un límite de cantidad es una línea más, en cualquier
+punto antes de `model.Minimize(...)`:
+
+```python
+if max_stores is not None:
+    model.Add(sum(y[j] for j in stores) <= max_stores)
+```
+
+**Lo que realmente cuesta es no mentir sobre por qué falló.** Hoy, si el
+solver no encuentra asignación, `optimize_cart` devuelve un mensaje genérico
+("No se encontró una asignación que cumpla los mínimos requeridos") que
+asume que la causa es el mínimo de compra — con el cap agregado, un carrito
+que necesita productos de más de N tiendas también cae por ese mismo mensaje,
+y sería la causa equivocada. Hace falta distinguirlo, con un chequeo previo
+al modelo (mismo patrón que `unavailable_products`, líneas 71-95) o con un
+mensaje propio cuando el solver falla con el cap puesto.
+
+**Lo que falta para exponerlo, dos archivos, sin precedente que copiar:**
+`OptimizationRequest` en `src/api.py` no tiene ningún campo de este tipo hoy
+— a diferencia de lo que uno esperaría, `excluded_stores` **no** viaja desde
+el frontend: lo calcula el propio backend a partir de `lat`/`lng`
+(`_resolve_coto_stage`). `max_stores` sí sería el primer campo puramente
+elegido por el usuario, así que hay que agregarlo como
+`Optional[int] = None` y pasarlo a `optimize_cart(...)`.
+`frontend/src/api/optimize.js` sigue el mismo patrón que `zone`/`anon_user_id`
+para sumarlo al body.
+
+**No hace falta ningún selector de "qué tienda", sólo de cantidad.**
+`StoreAvailabilityToggle` (`frontend/src/components/plp/`) existe pero es un
+filtro client-side de la grilla de búsqueda, no tiene ninguna conexión con
+`/optimize` — no sirve como base para esto. Al ser un límite de cantidad y no
+una selección, alcanza con un control numérico simple (1 / 2 / 3 / sin
+límite) en el carrito, sin pedirle al usuario que elija tiendas de antemano.
+
+**Tests:** `tests/test_optimizer_correctness.py` ya tiene un oráculo de
+fuerza bruta (`_brute_force_optimum`) que sería mecánico extender con un
+filtro `len(active) <= max_stores`, más un puñado de casos nuevos (cap=1
+fuerza todo a una tienda aunque sea más caro; cap=1 más un producto exclusivo
+de otra tienda es infeasible con el mensaje distinguido; cap ≥ cantidad de
+tiendas es un no-op).
+
+---
+
 ## Cerrados
 
 Se sacan del backlog. El razonamiento no se pierde: vive en CLAUDE.md, que es

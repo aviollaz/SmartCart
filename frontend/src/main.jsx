@@ -8,6 +8,7 @@ import './index.css'
 import App from './App.jsx'
 import { CartProvider } from './context/CartContext.jsx'
 import { ProfileProvider } from './context/ProfileContext.jsx'
+import { CartProductsProvider } from './context/CartProductsContext.jsx'
 import { HistoryProvider } from './context/HistoryContext.jsx'
 
 createRoot(document.getElementById('root')).render(
@@ -15,11 +16,14 @@ createRoot(document.getElementById('root')).render(
     <BrowserRouter>
       <CartProvider>
         <ProfileProvider>
-          {/* El más interno: no necesita nada de los otros dos, pero desde acá
-              puede leerlos si alguna vez hace falta, y nadie arriba lo necesita. */}
-          <HistoryProvider>
-            <App />
-          </HistoryProvider>
+          {/* Necesita CartContext y ProfileContext (recorta por cobertura), así
+              que va adentro de los dos. HistoryProvider no depende de esto ni
+              al revés — el orden entre ambos no importa. */}
+          <CartProductsProvider>
+            <HistoryProvider>
+              <App />
+            </HistoryProvider>
+          </CartProductsProvider>
         </ProfileProvider>
       </CartProvider>
     </BrowserRouter>

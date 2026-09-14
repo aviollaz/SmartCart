@@ -1,12 +1,15 @@
 import { Link } from "react-router-dom";
 import { X } from "lucide-react";
 import { useCart } from "../../context/CartContext";
+import { useCartProductsContext } from "../../context/CartProductsContext";
 import { CartLineItem } from "./CartLineItem";
+import { EstimatedSubtotal } from "./EstimatedSubtotal";
 import { ClearCartButton } from "./ClearCartButton";
 import { CoverageWarning } from "./CoverageWarning";
 
 export function CartDrawer({ open, onClose }) {
   const { items, incrementItem, decrementItem, removeItem } = useCart();
+  const { cartProducts, subtotalEstimado } = useCartProductsContext();
   const entries = Object.entries(items);
 
   if (!open) return null;
@@ -35,6 +38,7 @@ export function CartDrawer({ open, onClose }) {
                 key={unifiedId}
                 name={item.name}
                 quantity={item.quantity}
+                product={cartProducts[unifiedId]}
                 onIncrement={() => incrementItem(unifiedId)}
                 onDecrement={() => decrementItem(unifiedId)}
                 onRemove={() => removeItem(unifiedId)}
@@ -42,6 +46,8 @@ export function CartDrawer({ open, onClose }) {
             ))}
           </ul>
         )}
+
+        <EstimatedSubtotal subtotalEstimado={subtotalEstimado} className="mt-4" />
 
         <ClearCartButton className="mt-4 self-start" />
 

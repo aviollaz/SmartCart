@@ -6,8 +6,9 @@ const CartContext = createContext(null);
 
 const STORAGE_KEY = "smartcart_cart_v1";
 
-// { [unified_id]: { name, quantity } } — sin precio (ver decisión de paridad
-// del plan: el carrito no muestra subtotal antes de optimizar).
+// { [unified_id]: { name, quantity } } — sin precio. El precio y el subtotal
+// estimado se resuelven aparte, en CartProductsContext, y se muestran a
+// propósito antes de optimizar (CartPage, CartDrawer): ver el comentario ahí.
 export function CartProvider({ children }) {
   const [items, setItems] = useLocalStorage(STORAGE_KEY, {});
 

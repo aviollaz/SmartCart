@@ -3,9 +3,10 @@ import { useCart } from "../context/CartContext";
 import { useProfile } from "../context/ProfileContext";
 import { useHistory } from "../context/HistoryContext";
 import { optimizeCart } from "../api/optimize";
-import { formatPrice, resolveDisplayPrice, storeName } from "../utils/formatters";
-import { useCartProducts } from "../hooks/useCartProducts";
+import { storeName } from "../utils/formatters";
+import { useCartProductsContext } from "../context/CartProductsContext";
 import { CartLineItem } from "../components/cart/CartLineItem";
+import { EstimatedSubtotal } from "../components/cart/EstimatedSubtotal";
 import { ClearCartButton } from "../components/cart/ClearCartButton";
 import { CoverageWarning } from "../components/cart/CoverageWarning";
 import { UndoBar } from "../components/cart/UndoBar";
@@ -25,27 +26,10 @@ export function CartPage({ onOpenLocation }) {
   const { recordPurchase } = useHistory();
   const entries = Object.entries(items);
 
-  // Imagen y precio de cada línea. Falla abierto: si no resuelve, `cartProducts`
-  // queda vacío y el carrito se dibuja como antes, con nombre y cantidad.
-  const cartProducts = useCartProducts(items);
-
-  // Piso del carrito, no el total. Suma el precio más barato de cada producto
-  // por separado —posiblemente de tres tiendas distintas—, sin envíos, sin
-  // descuentos bancarios y sin las promos por cantidad, que /optimize sí aplica.
-  // Es `null` (y no se dibuja) mientras no haya precio para NINGUNA línea: un
-  // subtotal calculado sobre la mitad del carrito es peor que no mostrarlo.
-  const lineasConPrecio = entries
-    .map(([unifiedId, item]) => {
-      const producto = cartProducts[unifiedId];
-      const unitario = producto ? resolveDisplayPrice(producto) : null;
-      return typeof unitario === "number" ? unitario * item.quantity : null;
-    })
-    .filter((total) => total !== null);
-
-  const subtotalEstimado =
-    lineasConPrecio.length === entries.length && entries.length > 0
-      ? lineasConPrecio.reduce((suma, total) => suma + total, 0)
-      : null;
+  // Imagen y precio de cada línea, y el subtotal estimado. Compartido con
+  // CartDrawer vía CartProductsContext para no duplicar el pedido a
+  // /products/by-ids en cada cambio de carrito (ver ese contexto).
+  const { cartProducts, subtotalEstimado } = useCartProductsContext();
 
   const [optimizeStatus, setOptimizeStatus] = useState("idle"); // idle | loading | success | infeasible | error
   const [optimizeResult, setOptimizeResult] = useState(null);
@@ -213,33 +197,13 @@ export function CartPage({ onOpenLocation }) {
                 ))}
               </ul>
 
-              {/* El subtotal es una ESTIMACIÓN y el texto lo dice, porque el
-                  número que importa lo calcula /optimize: acá se suma el precio
-                  más barato de cada producto tomado por separado, que es un
-                  carrito que nadie puede comprar —son tres tiendas distintas—
-                  y que además ignora envíos, descuentos bancarios y las promos
-                  por cantidad. Es un piso, no el total.
-
-                  CartContext documenta la decisión contraria ("el carrito no
+              {/* CartContext documenta la decisión contraria ("el carrito no
                   muestra subtotal antes de optimizar"). Se rompe a propósito:
                   una lista de nombres sin un solo precio hace que la pregunta
                   "¿cuánto llevo?" no tenga respuesta en la pantalla donde se
                   hace, y esa pregunta la va a hacer todo el mundo. Etiquetarlo
                   como estimado es más barato que no contestarla. */}
-              {subtotalEstimado !== null && (
-                <div className="mt-3 flex items-baseline justify-between border-t border-line pt-3">
-                  <div>
-                    <p className="text-sm font-semibold text-ink">Subtotal estimado</p>
-                    <p className="text-xs text-ink-muted">
-                      Sumando el precio más barato de cada producto. Sin envíos ni descuentos:
-                      el total real lo calcula “Optimizar compra”.
-                    </p>
-                  </div>
-                  <p className="font-display text-lg font-bold text-brand-violet-700">
-                    {formatPrice(subtotalEstimado)}
-                  </p>
-                </div>
-              )}
+              <EstimatedSubtotal subtotalEstimado={subtotalEstimado} className="mt-3" />
             </>
           )}
         </section>
