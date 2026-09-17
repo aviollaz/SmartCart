@@ -17,6 +17,7 @@ from src.analytics import (
 )
 from src.database import SmartCartDB
 from src.db_pool import close_pool, connection as pooled_connection, open_pool, pool_status
+from src.embeddings import DEFAULT_EMBEDDING_MODEL
 from src.optimizer import optimize_cart, DEFAULT_DELIVERY_COSTS, DEFAULT_MIN_SPEND_LIMITS
 from src.flattener import flatten_cart_prices, evaluate_best_promo, parse_promotions_json
 from src.coto_logistics import check_coverage, resolve_coto_logistics
@@ -243,9 +244,11 @@ STORE_BONUS_CAP = 2
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    # Carga del modelo sentence-transformer en startup
-    logger.info("Cargando modelo SentenceTransformer 'all-MiniLM-L6-v2'...")
-    ml_models["model"] = SentenceTransformer("all-MiniLM-L6-v2")
+    # Carga del modelo sentence-transformer en startup. Mismo nombre que indexa
+    # el catálogo (src/embeddings.py): una sola constante, no dos literales que
+    # puedan desincronizarse en silencio.
+    logger.info("Cargando modelo SentenceTransformer '%s'...", DEFAULT_EMBEDDING_MODEL)
+    ml_models["model"] = SentenceTransformer(DEFAULT_EMBEDDING_MODEL)
     logger.info("Modelo SentenceTransformer cargado exitosamente.")
 
     # Conexión inicial + esquema. El DDL de src/schema.py es idempotente, así que

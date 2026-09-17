@@ -101,72 +101,6 @@ Contexto: `GET /search` ya hace recuperar-y-reordenar en dos etapas con el bonus
 por disponibilidad (`STORE_BONUS`, ver CLAUDE.md etapa 6). Lo que sigue es la
 continuación natural.
 
-### 4. Modelo multilingüe
-`all-MiniLM-L6-v2` (fijado en `src/api.py` y en `src/embeddings.py:18`) está
-entrenado principalmente en inglés. Esto **ya no es hipótesis**: hay una
-medición, y cambia el diagnóstico lo suficiente como para que valga leerla antes
-de migrar nada.
-
-Se corrieron 10 queries de cabecera contra el catálogo real, contando cuántos de
-los 10 primeros resultados caen en la góndola que corresponde
-(`python -m src.scripts.medir_busqueda`):
-
-| query | aciertos | primer resultado |
-|---|---|---|
-| `fideos`, `aceite`, `cerveza`, `yogur`, `queso`, `cafe`, `galletitas` | **10/10** | correcto |
-| `yerba` | 9/10 | correcto |
-| `leche` | **1/10** | *Dulce de leche Ser 400 g* |
-| `arroz` | **0/10** | *Alfajor de arroz Chocoarroz* |
-
-O sea que el modelo **no** está globalmente desalineado con el castellano, que es
-lo que sugerían las tres distancias sueltas que este ítem citaba antes. Falla en
-un patrón único y reconocible: **cuando la palabra buscada aparece como
-modificador en el nombre de otra góndola**. "Leche" está adentro de "dulce de
-leche" y de "chocolate con leche"; "arroz" adentro de "alfajor de arroz". Se
-midió también `manteca` (contra "manteca de maní") y `sal`, con el mismo perfil.
-
-**La consecuencia para este ítem es incómoda y conviene tenerla antes de
-empezar: un modelo multilingüe no está garantizado que lo arregle.** El problema
-no es que el modelo no sepa qué es la leche — es que "dulce de leche" contiene
-literalmente la palabra y es, legítimamente, un vecino cercano. El ítem 5
-(mitad léxica) tampoco lo resuelve solo, por el mismo motivo: BM25 sobre
-"dulce de leche" matchea "leche" igual de bien.
-
-Lo que sí se sabe es que el hueco es chico y que la información para cerrarlo ya
-está en la base: el mejor producto de la góndola correcta está en los puestos
-**10, 15, 9 y 2** respectivamente, a 0.056-0.113 de distancia del top-1 global.
-O sea que **cualquier señal de góndola alcanza**; lo que falta es decidir cuál,
-y eso es una decisión de diseño que conviene tomar con datos de uso reales.
-
-Descartados, con su motivo, para que no se re-propongan:
-
-* **Un bonus por góndola en el `ORDER BY` de `/search`.** Funciona (0.12 cubre el
-  hueco medido) pero toca el ranking, y el costo también está medido: `yerba`
-  hoy trae en el puesto 2 un *Yerba Mate en saquitos* de "Té e infusiones", un
-  resultado bueno que el bonus empuja para abajo.
-* **Resolver la góndola en `SearchBar` y rutear a `/categoria/<slug>`.** Más
-  barato todavía y sin tocar el ranking, pero pone en el cliente una regla que
-  decide qué ve el usuario: el frontend no calcula ni decide, y una segunda
-  definición de "qué significa esta query" viviendo en JS se desincroniza sola.
-
-**Antes de migrar, medir.** Correr `python -m src.scripts.medir_busqueda --modelo
-<candidato>` y comparar
-la tabla de arriba, no las distancias: una distancia más baja con los mismos
-errores no sirve de nada. Costo de la migración: regenerar los ~12.900
-embeddings (hay que poner `name_embedding` en NULL primero — el pipeline sólo
-llena los nulos) y, si cambia la dimensión (los `multilingual-e5-*` usan 768),
-recrear la columna `vector(384)` y el índice HNSW
-(`EmbeddingPipeline.ensure_vector_extension_and_index()`). Candidatos:
-`paraphrase-multilingual-MiniLM-L12-v2` (mantiene 384, o sea que no toca el
-esquema) o `multilingual-e5-base`.
-
-Un detalle aparte que salió del mismo relevamiento y no depende del modelo: el
-nombre del modelo está **hardcodeado dos veces** (`src/embeddings.py:18` como
-default de un parámetro y `src/api.py:234` como literal suelto), sin ninguna
-constante compartida. Nada obliga a que el modelo que indexa y el que consulta
-sean el mismo, y si se separan las distancias que salen no significan nada. Es
-una línea, y es justo el error que una migración de modelo puede cometer.
-
 ### 5. Búsqueda híbrida: sumar la mitad léxica **[hipótesis]**
 Para queries cortas y precisas ("oreo 354g", "coca 2.25") BM25 le gana a los
 embeddings casi siempre; el vector brilla en queries vagas ("algo para untar sin
@@ -407,3 +341,27 @@ donde se lee cuando se toca el código.
   de `tests/test_scraper_truncation.py`. **No elimina los fallos reales**
   (hash de persisted query rotado, sitio caído) — esos tienen que seguir
   pintando el job en rojo.
+* **4 — Modelo multilingüe → medido y descartado, no se migra.** Se corrió
+  `medir_busqueda.py` con los dos candidatos contra una copia local del
+  catálogo (12.961 productos, dump de sólo lectura de Neon — la base de
+  producción no se tocó en ningún momento de la medición):
+
+  | modelo | total | leche | arroz | queda igual (antes 10/10) |
+  |---|---|---|---|---|
+  | `all-MiniLM-L6-v2` (actual) | 79/100 | 1/10 | 0/10 | — |
+  | `paraphrase-multilingual-MiniLM-L12-v2` | 50/100 | 3/10 | 0/10 | aceite 10→1, cerveza 10→0, queso 10→4 |
+  | `multilingual-e5-base` | 70/100 | 5/10 | 3/10 | fideos 10→1, aceite 10→2 |
+
+  Los dos candidatos mejoran `leche` y `arroz` un poco, pero **rompen queries
+  que hoy andan perfectas** — la caída neta es peor que el hueco que venían a
+  cerrar. `multilingual-e5-base` corrió sin el prefijo `"query: "`/`"passage:
+  "` que la familia e5 espera (`medir_busqueda.py` y `embeddings.py` no lo
+  aplican a ningún modelo): puede ser parte de por qué le fue mejor que al
+  otro candidato pero seguir perdiendo contra el actual; si alguna vez se
+  retoma este ítem, probar eso primero antes que un tercer modelo. Se deja
+  `all-MiniLM-L6-v2`. Lo que sí se corrigió de una, independiente del
+  resultado: el nombre del modelo estaba hardcodeado dos veces
+  (`src/api.py` y `src/embeddings.py`) y ahora es una sola constante,
+  `DEFAULT_EMBEDDING_MODEL` en `src/embeddings.py`, que `api.py` y
+  `medir_busqueda.py` importan — era el error exacto que este ítem advertía
+  que una migración de modelo podía cometer.

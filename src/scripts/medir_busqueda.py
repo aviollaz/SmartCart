@@ -27,6 +27,7 @@ import psycopg
 from dotenv import load_dotenv
 from sentence_transformers import SentenceTransformer
 
+from src.embeddings import DEFAULT_EMBEDDING_MODEL
 from src.schema import resolve_conn_string
 
 # Diez queries de una palabra, que es como la gente busca en un supermercado, y
@@ -66,7 +67,7 @@ SQL = """
 
 def main() -> int:
     parser = argparse.ArgumentParser(description="Mide la relevancia de /search.")
-    parser.add_argument("--modelo", default="all-MiniLM-L6-v2",
+    parser.add_argument("--modelo", default=DEFAULT_EMBEDDING_MODEL,
                         help="Modelo de sentence-transformers a usar para la query.")
     parser.add_argument("--verbose", action="store_true",
                         help="Muestra los 3 primeros resultados de cada query.")
