@@ -8,6 +8,7 @@ import unicodedata
 from src.dietary_parser import detect_dietary_flags
 from src.ean import normalize_ean
 from src.scrapers.errors import CategoryScrapeError
+from src.scrapers.http_retry import request_with_retry
 from src.shelves import keys_for_store, shelf_for_key
 from src.taxonomy import category_path
 from src.size_parser import extract_real_volume, normalize_magnitude
@@ -165,8 +166,8 @@ class CotoScraper:
             logger.info("[COTO] Extrayendo %s - Página %s...", category_id, page)
             
             try:
-                response = self.client.get(url)
-                
+                response = request_with_retry(lambda: self.client.get(url), "COTO")
+
                 if response.status_code != 200:
                     # Cortaba con `break`, que es indistinguible del final de la
                     # categoría: el mismo agujero que el `except` de más abajo ya

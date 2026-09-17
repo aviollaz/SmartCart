@@ -13,9 +13,11 @@ uno de esos caminos.
 Los fixtures son inline y recortados a mano de respuestas reales: sólo los campos
 que el parser lee.
 """
+import httpx
 import pytest
 
 from src.scrapers.errors import CategoryScrapeError
+from src.scrapers.http_retry import MAX_ATTEMPTS
 from src.scrapers.scraper_carrefour import CarrefourScraper
 from src.scrapers.scraper_coto import CotoScraper
 from src.scrapers.scraper_dia import DiaScraper
@@ -47,6 +49,22 @@ def _pagina_vtex(skus, records=None):
         "recordsFiltered": records if records is not None else len(productos),
         "products": productos,
     }}}
+
+
+class _FakeResponseVtex:
+    """Respuesta 200 con el JSON de VTEX, para probar a nivel `client.post`."""
+
+    def __init__(self, payload):
+        self.status_code = 200
+        self._payload = payload
+
+    def json(self):
+        return self._payload
+
+
+class _RespuestaFalsa500:
+    """Un 500 pasajero: http_retry.py lo reintenta sin llegar a leer el body."""
+    status_code = 500
 
 
 ERRORES_GRAPHQL = {"errors": [{"message": "PersistedQueryNotFound"}]}
@@ -125,6 +143,27 @@ def test_dia_una_pagina_que_repite_no_es_un_final(monkeypatch):
         scraper.scrape_entire_category("almacen/snacks")
 
 
+def test_dia_recupera_de_un_timeout_transitorio(monkeypatch):
+    # A nivel `scrape_category_slice`, no `scrape_entire_category`: es ahí
+    # donde vive el `client.post` que http_retry.py envuelve.
+    scraper = DiaScraper()
+    restantes = [httpx.ConnectTimeout("timeout"), _FakeResponseVtex(_pagina_vtex([1, 2]))]
+
+    def fake_post(_url, json):
+        assert restantes, "se pidieron más intentos de los guionados"
+        siguiente = restantes.pop(0)
+        if isinstance(siguiente, Exception):
+            raise siguiente
+        return siguiente
+
+    monkeypatch.setattr(scraper.client, "post", fake_post)
+    monkeypatch.setattr("time.sleep", lambda *_: None)
+
+    data = scraper.scrape_category_slice("almacen/snacks", 0, 15)
+
+    assert [p["productId"] for p in data["data"]["productSearch"]["products"]] == ["1", "2"]
+
+
 def test_dia_agotar_el_tope_de_paginas_levanta(monkeypatch):
     # Llegar a MAX_PAGES significa que el corte por página vacía nunca llegó: la
     # categoría quedó recorrida a medias.
@@ -162,6 +201,22 @@ def test_carrefour_detecta_la_persisted_query_rotada_a_mitad(monkeypatch):
 
     with pytest.raises(CategoryScrapeError, match="PersistedQueryNotFound"):
         scraper.scrape_entire_category("almacen/snacks")
+
+
+def test_carrefour_recupera_de_un_500_pasajero(monkeypatch):
+    scraper = CarrefourScraper()
+    restantes = [_RespuestaFalsa500(), _FakeResponseVtex(_pagina_vtex([1, 2], records=2))]
+
+    def fake_post(_url, json):
+        assert restantes, "se pidieron más intentos de los guionados"
+        return restantes.pop(0)
+
+    monkeypatch.setattr(scraper.client, "post", fake_post)
+    monkeypatch.setattr("time.sleep", lambda *_: None)
+
+    data = scraper.scrape_category_slice("almacen/snacks", 0, 15)
+
+    assert [p["productId"] for p in data["data"]["productSearch"]["products"]] == ["1", "2"]
 
 
 def test_carrefour_corta_bien_por_records_filtered(monkeypatch):
@@ -205,11 +260,20 @@ class _RespuestaFalsa:
 
 
 def _falsear_coto(monkeypatch, scraper, respuestas):
+    """
+    Igual que `_falsear_paginas`, pero a nivel `client.get`: cada elemento de
+    `respuestas` es una respuesta a devolver o una excepción a levantar. Ir a
+    este nivel (y no `scrape_category`) es lo que deja probar `http_retry.py`
+    en el lugar real donde se enchufa.
+    """
     restantes = list(respuestas)
 
     def fake_get(_url):
         assert restantes, "el bucle pidió más páginas de las guionadas"
-        return restantes.pop(0)
+        siguiente = restantes.pop(0)
+        if isinstance(siguiente, Exception):
+            raise siguiente
+        return siguiente
 
     monkeypatch.setattr(scraper.client, "get", fake_get)
     monkeypatch.setattr("time.sleep", lambda *_: None)
@@ -218,14 +282,33 @@ def _falsear_coto(monkeypatch, scraper, respuestas):
 def test_coto_un_http_no_200_a_mitad_levanta(monkeypatch):
     # Coto ya relanzaba las excepciones, pero un 500 no es una excepción: era un
     # `if status != 200: break`, con el mismo efecto silencioso.
+    #
+    # Un 500 es reintentable (http_retry.py), así que un 500 PERSISTENTE hace
+    # falta encolarlo MAX_ATTEMPTS veces para que el fallo real (no un blip
+    # transitorio) siga terminando en CategoryScrapeError.
     scraper = CotoScraper()
     _falsear_coto(monkeypatch, scraper, [
         _RespuestaFalsa(200, _respuesta_coto([1, 2])),
-        _RespuestaFalsa(500),
+        *[_RespuestaFalsa(500)] * MAX_ATTEMPTS,
     ])
 
     with pytest.raises(CategoryScrapeError, match="HTTP 500"):
         scraper.scrape_category("catv_123")
+
+
+def test_coto_recupera_de_un_timeout_transitorio(monkeypatch):
+    # El caso que motiva http_retry.py: un timeout de red en una sola página no
+    # tiene que tirar la categoría entera.
+    scraper = CotoScraper()
+    _falsear_coto(monkeypatch, scraper, [
+        _RespuestaFalsa(200, _respuesta_coto([1, 2])),
+        httpx.ConnectTimeout("timeout"),
+        _RespuestaFalsa(200, _respuesta_coto([])),
+    ])
+
+    productos = scraper.scrape_category("catv_123")
+
+    assert [p["store_sku"] for p in productos] == ["sku00000001", "sku00000002"]
 
 
 def test_coto_la_pagina_sin_resultados_es_el_final_valido(monkeypatch):

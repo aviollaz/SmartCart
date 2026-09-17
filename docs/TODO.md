@@ -389,3 +389,21 @@ donde se lee cuando se toca el código.
   del vocabulario de cada cadena: **no reemplazar una comparación exacta por un
   umbral de similaridad** — ver la discusión del 0.90 en CLAUDE.md etapa 4. La
   forma correcta es una tabla explícita, y `src/shelves.py` es esa tabla.
+* **Scrapeo nocturno "casi siempre" con alguna tienda en rojo** — no era un
+  problema de las tiendas, era que ningún scraper reintentaba un request.
+  `scraper_coto.py`, `scraper_dia.py` y `scraper_carrefour.py` hacían un solo
+  intento por página con `timeout=15.0`; cualquier timeout o error transitorio
+  levantaba `CategoryScrapeError` de inmediato, y **cualquier** categoría
+  PARTIAL hace que `orchestrator.py` salga con código != 0 (ver CLAUDE.md etapa
+  10), así que un solo blip de red entre ~150-200 requests por noche alcanzaba
+  para pintar el job de GitHub Actions en rojo. Coincide con lo observado en
+  `docs/references/*.png`: la tienda que falla cambia noche a noche, y a veces
+  falla a los 5 minutos — muy poco para un barrido que tarda 40 min-1,5 h,
+  consistente con un error temprano de una sola request. Arreglado con
+  `src/scrapers/http_retry.py`: 2-3 intentos con backoff corto sobre
+  excepciones de transporte y status 429/5xx, sin tocar la semántica de
+  `CategoryScrapeError` (sigue levantando igual si los reintentos se agotan).
+  Sin dependencia nueva. Tests en `tests/test_http_retry.py` y los casos nuevos
+  de `tests/test_scraper_truncation.py`. **No elimina los fallos reales**
+  (hash de persisted query rotado, sitio caído) — esos tienen que seguir
+  pintando el job en rojo.
