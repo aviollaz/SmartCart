@@ -1,10 +1,11 @@
 import { useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
-import { Search, ShoppingCart, Sparkles, Wand2 } from "lucide-react";
+import { Camera, Search, ShoppingCart, Sparkles, Wand2 } from "lucide-react";
 import { getDemoCart } from "../api/products";
 import { useCart } from "../context/CartContext";
 import { useShelves } from "../hooks/useShelves";
 import { PurchaseHistorySection } from "../components/history/PurchaseHistorySection";
+import { ReceiptScanModal } from "../components/receipt/ReceiptScanModal";
 
 // Los tres pasos del recorrido. La home antes era un título y 49 pills: no
 // decía qué hacía la app ni por dónde empezar, y para alguien que abre el link
@@ -23,6 +24,7 @@ export function HomePage() {
   const { mergeItems } = useCart();
   const navigate = useNavigate();
   const [cargandoDemo, setCargandoDemo] = useState(false);
+  const [escaneandoTicket, setEscaneandoTicket] = useState(false);
 
   // El atajo del arranque en frío. Es `mergeItems` y no `restoreItems` por la
   // misma razón que el "Repetir" del historial: la home puede visitarse con el
@@ -57,16 +59,29 @@ export function HomePage() {
           supermercados que menos te cuesta.
         </p>
 
-        <button
-          type="button"
-          onClick={probarCarritoDeEjemplo}
-          disabled={cargandoDemo}
-          className="mx-auto mb-10 flex items-center gap-2 rounded-full bg-brand-accent px-5 py-3 text-sm font-semibold text-white transition-colors hover:bg-brand-accent-dark disabled:opacity-60"
-        >
-          <Wand2 size={18} aria-hidden="true" />
-          {cargandoDemo ? "Armando el carrito…" : "Probar con un carrito de ejemplo"}
-        </button>
+        <div className="mb-10 flex flex-wrap items-center justify-center gap-3">
+          <button
+            type="button"
+            onClick={probarCarritoDeEjemplo}
+            disabled={cargandoDemo}
+            className="flex items-center gap-2 rounded-full bg-brand-accent px-5 py-3 text-sm font-semibold text-white transition-colors hover:bg-brand-accent-dark disabled:opacity-60"
+          >
+            <Wand2 size={18} aria-hidden="true" />
+            {cargandoDemo ? "Armando el carrito…" : "Probar con un carrito de ejemplo"}
+          </button>
+
+          <button
+            type="button"
+            onClick={() => setEscaneandoTicket(true)}
+            className="flex items-center gap-2 rounded-full border border-brand-violet-700 px-5 py-3 text-sm font-semibold text-brand-violet-700 transition-colors hover:bg-brand-violet-100"
+          >
+            <Camera size={18} aria-hidden="true" />
+            Escanear un ticket
+          </button>
+        </div>
       </div>
+
+      {escaneandoTicket && <ReceiptScanModal onClose={() => setEscaneandoTicket(false)} />}
 
       <ol className="mb-12 grid grid-cols-1 gap-4 sm:grid-cols-3">
         {PASOS.map(({ Icon, titulo, texto }, indice) => (

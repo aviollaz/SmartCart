@@ -14,8 +14,13 @@ FROM python:3.12-slim
 # git lo necesita huggingface_hub para bajar el modelo. No está build-essential
 # a propósito: psycopg[binary] y las ruedas de torch/ortools vienen compiladas,
 # así que agregarlo sólo engorda la imagen.
+#
+# tesseract-ocr(-spa) es el binario que pytesseract (src/receipt_parser.py)
+# invoca como subproceso — no hay wheel de PyPI que lo traiga, a diferencia del
+# resto de las dependencias de requirements.txt. Unos 30-50 MB, dentro del
+# margen que ya deja el ajuste de torch de abajo (~1 GB).
 RUN apt-get update \
-    && apt-get install -y --no-install-recommends git curl \
+    && apt-get install -y --no-install-recommends git curl tesseract-ocr tesseract-ocr-spa \
     && rm -rf /var/lib/apt/lists/*
 
 # El contenedor NO corre como root y el HOME por defecto no es escribible:

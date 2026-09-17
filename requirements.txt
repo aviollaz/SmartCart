@@ -21,3 +21,9 @@ python-dotenv
 # El resto del proyecto no lo necesita: el import es lazy, así que CotoScraper y
 # la API siguen funcionando sin Chromium instalado.
 playwright
+# OCR de tickets (POST /receipt/parse, src/receipt_parser.py). pytesseract es
+# sólo el wrapper de Python: el binario de Tesseract se instala aparte, igual
+# que el Chromium de Playwright de arriba (ver Dockerfile para el contenedor,
+# y CLAUDE.md para el paso local en Windows).
+pytesseract
+Pillow

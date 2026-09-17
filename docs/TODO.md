@@ -365,3 +365,82 @@ donde se lee cuando se toca el código.
   `DEFAULT_EMBEDDING_MODEL` en `src/embeddings.py`, que `api.py` y
   `medir_busqueda.py` importan — era el error exacto que este ítem advertía
   que una migración de modelo podía cometer.
+* **Foto de ticket → carrito** — feature nueva, no un ítem que estuviera acá.
+  `POST /receipt/parse` (`src/api.py`) lee la foto con OCR local (Tesseract vía
+  `src/receipt_parser.py`) y matchea cada línea contra el catálogo con el mismo
+  embedding semántico que usa `/search` — no texto exacto, porque el OCR sobre
+  una impresora térmica argentina se equivoca seguido. **Deliberadamente no un
+  modelo de visión pago**: el endpoint no tiene autenticación, así que un costo
+  por imagen sería una superficie de gasto sin techo, peor que el ya documentado
+  en CLAUDE.md etapa 10 sobre Cloud Run. La contrapartida es precisión — por
+  eso la respuesta nunca toca el carrito sola: `ReceiptScanModal.jsx` siempre
+  pasa por una pantalla de revisión (por línea: aceptar, sacar, cambiar el
+  match a mano, ajustar cantidad, o agregar a mano lo que el OCR ni siquiera
+  propuso) antes de `mergeItems`. Sin match confiable
+  (`RECEIPT_MATCH_MAX_DISTANCE = 0.35`) queda `null` en vez de inventar uno.
+
+  **Probado de punta a punta contra una Factura B real de DIA**
+  (`docs/references/ticket_dia.png`, foto de celular de costado, con brillo y
+  perspectiva — no un scan plano), y la primera pasada leía mal casi todo. Tres
+  hallazgos, cada uno midiendo antes/después contra la misma foto:
+
+  1. **`--psm 6`** (asumir un único bloque uniforme de texto) fue el ajuste que
+     más importó: el modo automático de Tesseract intenta segmentar la página
+     en columnas y sobre una columna angosta de texto disperso —la forma de
+     cualquier ticket— confunde el layout y garabatea nombres enteros
+     ("CALDO GALLINA C/VEGE" salía "pag C/VESE"). Con `--psm 6` la mayoría de
+     los nombres se leen bien.
+  2. **Duplicar la resolución (LANCZOS) antes de OCR** subió más la fidelidad,
+     nombres y precios. Un threshold binario (Otsu) se probó también y salió
+     PEOR que sólo autocontraste — medido y descartado, no supuesto.
+  3. **El formato real de DIA no es "cantidad nombre precio" en una línea**:
+     separa cantidad/precio-unitario en su propia línea (`"4,00 X 4990,00"`,
+     sin nombre) y el nombre va en la siguiente, con un `"(%IVA)"` pegado justo
+     antes del importe (`"ATUN LOM N DIA 354GR (21,00) 19960,00"`).
+     `clean_line_for_matching()` ahora **exige que la línea termine en un
+     importe** (coma o punto + 2 decimales) para considerarla candidata —eso
+     es lo que saca de encima cabecera, CUIT, N° de comprobante y fecha/hora
+     sin necesitar una lista de frases a excluir, porque ninguna de esas
+     líneas termina en un importe real— y **busca el ÚLTIMO importe de la
+     línea en vez de exigirlo pegado al final**: el OCR deja basura después
+     del precio con frecuencia (una mancha, un reflejo), y exigir el importe
+     literalmente al final perdía líneas enteras por un carácter suelto al
+     final. Se suma un mínimo de 3 letras SEGUIDAS para que un código de
+     barras mal leído con letras sueltas entre dígitos no sobreviva como si
+     fuera un nombre.
+
+  Con los tres arreglos: 6 de 8 líneas de producto reales quedaron como
+  candidatas, y 3 de esas matchearon correctamente (Fideos Penne Rigate
+  d=0.21, Alfajor de Maicena d=0.30, Crema de Leche d=0.31). Los dos matches
+  incorrectos (Papa → "Papas Fritas", Cebolla → "Queso Cremoso Gran Aldea") son
+  el mismo patrón de confusión léxica que el ítem 4 ya documentó para
+  `leche`/`arroz` — no un bug nuevo de esta feature. Con esos dos datos de
+  distancia (0.357 y 0.371, contra 0.21-0.31 de los correctos) se bajó
+  `RECEIPT_MATCH_MAX_DISTANCE` de 0.40 a 0.35: saca los dos incorrectos sin
+  tocar ninguno de los correctos, aunque sigue siendo muy poca muestra para
+  llamarlo calibrado.
+
+  **Limitación real que queda abierta, no arreglada:** 3 productos (Atún,
+  Caldo Gallina, Caldo Carne) se perdieron enteros — no aparecieron ni como
+  "no encontrado" — porque el OCR partió el nombre y el precio en líneas
+  separadas de forma inconsistente sobre esa foto en particular, y
+  `clean_line_for_matching()` opera línea por línea, no reconstruye nombres
+  partidos entre líneas. El botón "Agregar un producto que no reconocimos"
+  (`InlineProductSearch` en `ReceiptScanModal.jsx`) es la mitigación elegida
+  para esto: no intenta resolver el problema de OCR, le da al usuario una
+  salida manual para lo que se perdió del todo. Reconstruir nombres partidos
+  entre líneas (heurística de "línea sin precio seguida de línea con precio y
+  sin nombre") quedaría para una próxima vuelta, con más fotos reales para
+  medir contra antes de escribir la heurística — el mismo criterio que ya se
+  aplicó acá.
+
+  **Dos gotchas de Windows que costó descubrir, específicos de esta máquina, no
+  del código:** el instalador de Chocolatey no baja el paquete de idioma
+  (`--params "/Lang:spa"` no tomó — sólo quedó `eng`) y tampoco agrega
+  `tesseract.exe` al PATH. `src/receipt_parser.py` ahora resuelve el segundo
+  problema solo (`shutil.which` + fallback al install path default de
+  Windows); el primero se resolvió bajando `spa.traineddata` a una carpeta con
+  permiso de escritura y apuntando `TESSDATA_PREFIX` ahí en el `.env` local
+  (Tesseract lee esa variable solo). Ninguno de los dos aplica al contenedor
+  (`apt-get install tesseract-ocr-spa` deja el idioma y el PATH bien en Linux),
+  así que no hay nada que replicar ahí.

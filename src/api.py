@@ -3,7 +3,7 @@ import time
 import logging
 from contextlib import asynccontextmanager
 from typing import List, Optional, Dict, Any
-from fastapi import FastAPI, Query, HTTPException, BackgroundTasks
+from fastapi import FastAPI, Query, HTTPException, BackgroundTasks, UploadFile, File
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field
@@ -21,6 +21,7 @@ from src.embeddings import DEFAULT_EMBEDDING_MODEL
 from src.optimizer import optimize_cart, DEFAULT_DELIVERY_COSTS, DEFAULT_MIN_SPEND_LIMITS
 from src.flattener import flatten_cart_prices, evaluate_best_promo, parse_promotions_json
 from src.coto_logistics import check_coverage, resolve_coto_logistics
+from src.receipt_parser import clean_line_for_matching, extract_lines_from_image
 from src.schema import ensure_schema
 from src.shelves import SHELVES, sections as shelf_sections, shelf_label
 from src.strategic_swaps import find_strategic_swaps
@@ -197,6 +198,14 @@ MAX_PRODUCTS_BY_IDS = 100
 
 class ProductsByIdsRequest(BaseModel):
     unified_ids: List[str] = Field(..., min_length=1, max_length=MAX_PRODUCTS_BY_IDS)
+
+
+class ReceiptLineResult(BaseModel):
+    ocr_line: str = Field(..., example="2 GALLETITAS OREO 118G")
+    matched: Optional[ProductResponse] = None
+    distance: Optional[float] = Field(
+        None, description="Distancia coseno al match, cuando hubo uno. None si la línea no dejó texto para buscar."
+    )
 
 # Estado global para mantener el modelo cargado en memoria
 ml_models = {}
@@ -1392,6 +1401,118 @@ def get_products_by_ids(request: ProductsByIdsRequest):
 
     except Exception as e:
         logger.error(f"Error en la busqueda por ids: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+# El endpoint no tiene autenticación, así que sin un tope una sola foto enorme
+# (o un script mandando muchas) puede consumir memoria del proceso sin límite.
+# 10 MB es holgado para una foto de celular ya comprimida (unos pocos MB).
+MAX_RECEIPT_IMAGE_BYTES = 10 * 1024 * 1024
+
+# Primer punto de datos real (no calibrado a fondo como STORE_BONUS, etapa 6 de
+# CLAUDE.md -- esto es UN ticket, no 15 queries): contra una Factura B real de
+# DIA (docs/references/ticket_dia.png), los 3 matches correctos dieron
+# distance 0.21-0.31 y los 2 incorrectos (confusión léxica tipo "papa"/"papas
+# fritas", mismo patrón documentado en docs/TODO.md ítem 4) dieron 0.357 y
+# 0.371. 0.40 dejaba pasar los dos incorrectos; 0.35 los saca sin tocar
+# ninguno de los correctos. Sigue siendo poca muestra -- bajar más esto cuando
+# haya más tickets reales para medir, no asumir que ya quedó bien calibrado.
+RECEIPT_MATCH_MAX_DISTANCE = 0.35
+
+
+@app.post("/receipt/parse", response_model=List[ReceiptLineResult])
+async def parse_receipt(file: UploadFile = File(...)):
+    """
+    Sube la foto de un ticket, la lee con OCR local (Tesseract) y matchea cada
+    línea contra el catálogo por similitud semántica -- el mismo embedding que
+    ya usa /search, no texto exacto, porque el OCR sobre una impresora térmica
+    argentina se equivoca seguido (ver src/receipt_parser.py).
+
+    Es OCR y no un modelo de visión pago: el endpoint no tiene login, así que
+    un costo por imagen sería una superficie de gasto sin techo. La
+    contrapartida es que esto es MENOS preciso que un modelo de visión, y por
+    eso la respuesta es sólo material para una pantalla de revisión -- el
+    frontend nunca agrega nada al carrito sin que el usuario confirme cada
+    línea. Sin match confiable, `matched` va en null: inventar un match sería
+    peor que pedirle al usuario que lo complete a mano (misma asimetría que
+    los flags dietarios y la disponibilidad de Coto).
+    """
+    if "model" not in ml_models:
+        raise HTTPException(status_code=503, detail="El modelo de NLP no está inicializado.")
+
+    image_bytes = await file.read()
+    if len(image_bytes) > MAX_RECEIPT_IMAGE_BYTES:
+        raise HTTPException(status_code=413, detail="La imagen supera el tamaño máximo permitido (10 MB).")
+
+    try:
+        raw_lines = extract_lines_from_image(image_bytes)
+    except Exception as e:
+        logger.error(f"Error leyendo la imagen del ticket: {e}")
+        raise HTTPException(status_code=400, detail="No se pudo leer la imagen. Probá con otra foto.")
+
+    results: List[dict] = []
+    try:
+        db = SmartCartDB()
+        with pooled_connection(db.conn_string) as conn:
+            with conn.cursor() as cur:
+                cur.execute(
+                    "SELECT set_config('hnsw.ef_search', %s, false)",
+                    (str(SEARCH_EF_SEARCH),),
+                )
+
+                for raw_line in raw_lines:
+                    cleaned = clean_line_for_matching(raw_line)
+                    if not cleaned:
+                        # Una línea que no dejó nada para buscar (sólo precio,
+                        # sólo separadores) no es un producto: no tiene sentido
+                        # mandarla a embeber ni mostrarla como "no encontrado".
+                        continue
+
+                    query_embedding = ml_models["model"].encode(cleaned)
+                    vector_str = f"[{','.join(map(str, query_embedding))}]"
+
+                    # CTE en vez de GROUP BY sobre el JOIN: acá sólo hace falta
+                    # UN vecino más cercano (LIMIT 1), así que se resuelve
+                    # primero y el conteo de tiendas se agrega después sobre esa
+                    # única fila, igual que el `pool` de /search pero con N=1.
+                    cur.execute("""
+                        WITH nearest AS (
+                            SELECT u.id, u.ean, u.name, u.brand, u.shelf,
+                                   u.unit_type, u.total_volume_weight,
+                                   u.is_gluten_free, u.is_vegan,
+                                   u.name_embedding <=> %s AS distance
+                            FROM unified_products u
+                            WHERE u.name_embedding IS NOT NULL
+                            ORDER BY distance ASC
+                            LIMIT 1
+                        )
+                        SELECT n.*, count(DISTINCT sp.store_id) AS store_count
+                        FROM nearest n
+                        LEFT JOIN store_products sp
+                               ON sp.unified_product_id = n.id AND sp.in_stock
+                        GROUP BY n.id, n.ean, n.name, n.brand, n.shelf,
+                                 n.unit_type, n.total_volume_weight,
+                                 n.is_gluten_free, n.is_vegan, n.distance
+                    """, (vector_str,))
+                    nearest = cur.fetchone()
+
+                    matched = None
+                    distance = None
+                    if nearest is not None:
+                        distance = float(nearest["distance"])
+                        if distance <= RECEIPT_MATCH_MAX_DISTANCE:
+                            offers_by_product = _fetch_offers_by_product(cur, [nearest["id"]])
+                            matched = _build_product_response(
+                                nearest, offers_by_product.get(nearest["id"], []), distance
+                            )
+
+                    results.append({"ocr_line": raw_line, "matched": matched, "distance": distance})
+
+        return results
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error matcheando el ticket contra el catálogo: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
 
