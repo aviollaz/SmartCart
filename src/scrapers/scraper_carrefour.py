@@ -101,7 +101,7 @@ class CarrefourScraper:
             "extensions": {
                 "persistedQuery": {
                     "version": 1,
-                    "sha256Hash": "b398fc0a2fd04ea5d4f7a94c732c10fb1bf64f8f9a2b31c92aee6a5e796457c9",
+                    "sha256Hash": "a96c5ed03ef513568c34b63a4bf8da055ea6296293ee02eadb56e2e895eaffbc",
                     "sender": "vtex.store-resources@0.x",
                     "provider": "vtex.search-graphql@0.x"
                 }
