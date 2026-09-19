@@ -4,14 +4,11 @@ import time
 import random
 
 from src.database import SmartCartDB
-from src.dietary_parser import detect_dietary_flags
-from src.ean import normalize_ean
 from src.scrapers.errors import CategoryScrapeError
 from src.scrapers.http_retry import request_with_retry
-from src.scrapers.vtex import extract_search_payload, read_availability
+from src.scrapers.vtex import extract_search_payload, parse_vtex_offer
 from src.shelves import keys_for_store, shelf_for_key
 from src.taxonomy import category_path
-from src.size_parser import extract_real_volume, normalize_magnitude
 
 logger = logging.getLogger(__name__)
 
@@ -114,117 +111,15 @@ class DiaScraper:
         parsed_products = []
 
         for p in products_data:
-            items = p.get("items", [])
-            if not items:
+            # El parseo del producto (precio, talla, flags dietarios, etc.) es
+            # idéntico al de Carrefour por correr las dos sobre VTEX — vive en
+            # src/scrapers/vtex.py. Sólo la URL difiere: Día la manda absoluta.
+            product = parse_vtex_offer(p, shelf, taxonomy_path, source_category,
+                                        url=p.get("link"))
+            if product is None:
                 continue
-                
-            first_item = items[0]
-            sellers = first_item.get("sellers", [])
-            # `base_price` se resetea por producto. Se asignaba SÓLO dentro del
-            # `if sellers:`, así que un producto sin sellers heredaba en
-            # silencio el precio del producto anterior del lote — y el primero
-            # de la página levantaba NameError. Carrefour ya lo hacía bien.
-            base_price = 0.0
-            if sellers:
-                comm_comm = sellers[0].get("commertialOffer", {})
-                base_price = float(comm_comm.get("ListPrice", 0.0))
-
-            precio_por_und = None
-            unidad_medida = "un"
-
-            # Buscar las properties en el JSON de VTEX
-            for prop in p.get("properties", []):
-                if prop["name"] == "PrecioPorUnd":
-                    precio_por_und = float(prop["values"][0])
-                if prop["name"] == "UnidaddeMedida":
-                    unidad_medida = prop["values"][0].lower()
-
-            # Fuente primaria: parsear el tamaño real del nombre del producto
-            # (ej. "250 Ml", "400 Gr") - la property VTEX "UnidaddeMedida" no
-            # siempre viene informada y cae al genérico "un".
-            total_volume_weight, unit_type = extract_real_volume(p.get("productName"))
-
-            # Fallback: usar el precio por unidad de VTEX cuando el nombre no trae talla.
-            if unit_type == "un" and base_price > 0 and precio_por_und is not None and precio_por_und > 0:
-                total_volume_weight = round(base_price / precio_por_und, 3)
-
-                # Estas dos ramas deciden la MAGNITUD: un cociente menor a 1
-                # significa que `precio_por_und` venía por litro/kilo y no por
-                # mililitro/gramo. No tocarlas sin datos nuevos de VTEX.
-                if "lt" in unidad_medida or "l" in unidad_medida:
-                    if total_volume_weight < 1.0:
-                        total_volume_weight = total_volume_weight * 1000
-                        unidad_medida = "ml"
-                elif "kg" in unidad_medida:
-                    if total_volume_weight < 1.0:
-                        total_volume_weight = total_volume_weight * 1000
-                        unidad_medida = "g"
-
-                # Y esto decide el VOCABULARIO, que es otra cosa. Sin esta
-                # llamada, `unidad_medida` viajaba crudo desde la property de
-                # VTEX: un producto en "gr" o en "kg" quedaba guardado con esa
-                # etiqueta y dejaba de ser comparable contra las filas en "g",
-                # desapareciendo en silencio de las sugerencias y de la
-                # heurística de cierre de tienda.
-                total_volume_weight, unit_type = normalize_magnitude(
-                    total_volume_weight, unidad_medida
-                )
-
-            images = first_item.get("images", [])
-            image_url = images[0].get("imageUrl") if images else None
-
-            # Solo fuentes que describen ESTE producto: nombre, marca, ruta de
-            # categoría y los campos estructurados que la tienda le asigna
-            # (property "Otros" suele traer "Sin Tacc"). `clusterHighlights` y
-            # `properties` pueden no venir —la query es persisted, con hash
-            # fijo— así que se leen de forma defensiva.
-            #
-            # `description`/`metaTagDescription` quedan EXCLUIDOS a propósito:
-            # son copy de marketing de la marca y enumeran productos hermanos.
-            # El "Ketchup Hellmann's Regular" traía "...mayonesa hellmann's
-            # light, clásica, suave, vegana, oliva..." y se marcaba como vegano.
-            # Medido sobre 196 productos, el texto libre aportaba +5 detecciones
-            # de gluten y 1 sola de vegano, que era justamente ese falso positivo.
-            dietary_sources = [
-                p.get("productName"),
-                p.get("brand"),
-                taxonomy_path,
-                p.get("clusterHighlights"),
-                [prop.get("values") for prop in p.get("properties", [])],
-            ]
-            is_gluten_free, is_vegan = detect_dietary_flags(*dietary_sources)
-
-            product = {
-                "store_sku": p.get("productId"),
-                # La categoría con la que se barrió: es lo que le permite al
-                # pruning acotarse a las que terminaron bien.
-                "source_category": source_category,
-                # El SKU real de VTEX, que es lo que espera
-                # /checkout/cart/add?sku=. Acá coincide con el productId, pero se
-                # guarda igual: el link de carrito lo exige explícitamente para
-                # no depender de esa coincidencia (en Carrefour no se da).
-                "store_item_id": first_item.get("itemId"),
-                # Sin normalizar, esto pasaba el valor de VTEX crudo (ni
-                # siquiera str()): la misma truncación que rompe a Coto,
-                # esperando un payload distinto. Ver src/ean.py.
-                "ean": normalize_ean(first_item.get("ean")),
-                "name": p.get("productName"),
-                "brand": p.get("brand"),
-                # La góndola canónica: la única noción de categoría del proyecto
-                # (ver src/shelves.py).
-                "shelf": shelf,
-                "url": p.get("link"),
-                "image_url": image_url,
-                "base_price": base_price,
-                "in_stock": read_availability(first_item),
-                "total_volume_weight": total_volume_weight,
-                "unit_type": unit_type,
-                "is_gluten_free": is_gluten_free,
-                "is_vegan": is_vegan,
-                "raw_promos": sellers[0].get("commertialOffer", {}) if sellers else []
-            }
             parsed_products.append(product)
-            
+
         return parsed_products
 
     def scrape_entire_category(self, category_query: str):
