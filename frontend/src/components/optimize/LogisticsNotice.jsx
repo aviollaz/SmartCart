@@ -31,7 +31,9 @@ export function LogisticsNotice({ result }) {
     );
   }
 
-  if (coto.source === "fallback") {
+  // Sólo si Coto quedó en el reparto: un envío estimado de una tienda donde
+  // no se compra nada no cambia ningún número que el usuario esté viendo.
+  if (coto.source === "fallback" && result.split?.coto_online) {
     return (
       <div className="flex items-start gap-2 rounded-lg border border-line bg-surface p-4">
         <Truck size={18} className="mt-0.5 shrink-0 text-ink-muted" />

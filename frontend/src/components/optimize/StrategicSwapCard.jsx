@@ -1,11 +1,6 @@
 import { ArrowRight, Store } from "lucide-react";
 import { formatPrice, storeName } from "../../utils/formatters";
 
-// A partir de acá la lista de cambios se colapsa en un <details>. El backend
-// topea en 8 (MAX_ANCHOR_SWAPS), así que el caso largo existe y una lista de
-// ocho filas abierta tapa el resto del resultado.
-const INLINE_SWAPS_LIMIT = 3;
-
 function SwapRow({ swap }) {
   return (
     <li className="flex flex-col gap-1 border-t border-brand-violet-100 py-2 first:border-t-0 sm:flex-row sm:items-center sm:gap-3">
@@ -50,51 +45,45 @@ export function StrategicSwapCard({ suggestion, onApply }) {
   if (!suggestion || !suggestion.swaps?.length) return null;
 
   const { swaps, closed_store: closedStore, relocated_count: relocated } = suggestion;
-  const swapList = <ul className="mt-1">{swaps.map((swap) => <SwapRow key={swap.original_uid} swap={swap} />)}</ul>;
 
+  // Una línea y un botón: el mensaje largo del backend, el "antes → después" de
+  // los totales y la lista de cambios abierta ocupaban media pantalla arriba
+  // del total. La lista sigue a un clic, porque aceptar cambios de producto sin
+  // poder verlos no es una opción.
   return (
-    <div className="rounded-lg border-2 border-brand-violet-500 bg-surface p-4">
-      <p className="flex items-center gap-2 font-display text-sm font-semibold text-brand-violet-700">
-        <Store size={16} />
-        Podés sacar {storeName(closedStore)} del pedido
-      </p>
-
-      <p className="mt-2 text-sm text-ink">{suggestion.message}</p>
-
-      <div className="mt-3 flex flex-wrap items-baseline gap-x-3 gap-y-1">
-        <span className="text-2xl font-bold text-state-success">
-          {formatPrice(suggestion.projected_savings)}
-        </span>
-        <span className="text-xs text-ink-muted">
-          menos: {formatPrice(suggestion.original_total)} → {formatPrice(suggestion.simulated_total)}
-        </span>
+    <div className="rounded-lg border border-brand-violet-500 bg-surface p-4">
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <p className="flex items-center gap-2 text-sm text-ink">
+          <Store size={16} className="shrink-0 text-brand-violet-700" />
+          <span>
+            Sacá <strong>{storeName(closedStore)}</strong> del pedido y ahorrá{" "}
+            <strong className="text-state-success">{formatPrice(suggestion.projected_savings)}</strong>
+          </span>
+        </p>
+        <button
+          type="button"
+          onClick={() => onApply(suggestion)}
+          className="shrink-0 rounded-md bg-brand-accent px-4 py-1.5 text-sm font-semibold text-white hover:bg-brand-accent-dark"
+        >
+          Aplicar
+        </button>
       </div>
 
-      {swaps.length <= INLINE_SWAPS_LIMIT ? (
-        swapList
-      ) : (
-        <details className="mt-2">
-          <summary className="cursor-pointer select-none text-xs font-semibold text-brand-violet-700">
-            Ver los {swaps.length} cambios
-          </summary>
-          {swapList}
-        </details>
-      )}
-
-      {relocated > 0 && (
-        <p className="mt-2 text-xs text-ink-muted">
-          Los otros {relocated} producto{relocated === 1 ? "" : "s"} que ibas a comprar en{" "}
-          {storeName(closedStore)} se mudan solos a otra tienda, sin cambiar de producto.
-        </p>
-      )}
-
-      <button
-        type="button"
-        onClick={() => onApply(suggestion)}
-        className="mt-3 w-full rounded-md bg-brand-accent px-4 py-2 text-sm font-semibold text-white hover:bg-brand-accent-dark"
-      >
-        Aplicar y recalcular
-      </button>
+      <details className="mt-2">
+        <summary className="cursor-pointer select-none text-xs font-semibold text-brand-violet-700">
+          Ver {swaps.length === 1 ? "el cambio" : `los ${swaps.length} cambios`}
+        </summary>
+        <ul className="mt-1">
+          {swaps.map((swap) => (
+            <SwapRow key={swap.original_uid} swap={swap} />
+          ))}
+        </ul>
+        {relocated > 0 && (
+          <p className="mt-1 text-xs text-ink-muted">
+            Otros {relocated} producto{relocated === 1 ? "" : "s"} se mudan a otra tienda sin cambiar.
+          </p>
+        )}
+      </details>
     </div>
   );
 }

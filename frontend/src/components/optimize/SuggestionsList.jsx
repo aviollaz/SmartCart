@@ -1,5 +1,4 @@
 import { useState } from "react";
-import { Lightbulb } from "lucide-react";
 import { formatPrice } from "../../utils/formatters";
 
 function SuggestionRow({ group, onAccept }) {
@@ -11,7 +10,7 @@ function SuggestionRow({ group, onAccept }) {
   const selected = alternatives.find((alt) => alt.suggested_uid === selectedUid) || alternatives[0];
 
   return (
-    <li className="flex flex-col gap-2 border-t border-brand-violet-100 pt-3 first:border-t-0 first:pt-0">
+    <li className="flex flex-col gap-2 border-t border-line pt-3 first:border-t-0 first:pt-0">
       <p className="text-sm text-ink">
         En lugar de <em>{group.original_product}</em>:
       </p>
@@ -53,20 +52,16 @@ function SuggestionRow({ group, onAccept }) {
   );
 }
 
+// Vive adentro del desplegable del panel de resultados, que ya pone la caja y
+// el título: acá va sólo la lista.
 export function SuggestionsList({ suggestions, onAccept }) {
   if (!suggestions || suggestions.length === 0) return null;
 
   return (
-    <div className="rounded-lg border border-brand-violet-100 bg-brand-violet-100 p-4">
-      <p className="mb-3 flex items-center gap-2 font-display text-sm font-semibold text-brand-violet-700">
-        <Lightbulb size={16} />
-        Reemplazos más baratos
-      </p>
-      <ul className="space-y-3">
-        {suggestions.map((group) => (
-          <SuggestionRow key={group.original_uid} group={group} onAccept={onAccept} />
-        ))}
-      </ul>
-    </div>
+    <ul className="space-y-3">
+      {suggestions.map((group) => (
+        <SuggestionRow key={group.original_uid} group={group} onAccept={onAccept} />
+      ))}
+    </ul>
   );
 }

@@ -1,5 +1,5 @@
 import { ExternalLink } from "lucide-react";
-import { formatPrice, storeLabel, storeName } from "../../utils/formatters";
+import { formatPrice, storeName } from "../../utils/formatters";
 import { PromoTransparency } from "./PromoTransparency";
 
 function readBankDiscount(bankDiscount) {
@@ -10,9 +10,16 @@ function readBankDiscount(bankDiscount) {
   };
 }
 
+/**
+ * Una tienda del reparto. A la vista queda lo que hace falta para comprar
+ * —cuántos productos, cuánto, y el botón— y el desglose (subtotal, envío,
+ * descuento bancario, lista y promos) va plegado en "Ver detalle": lo lee
+ * quien desconfía del total, no todo el mundo.
+ */
 export function StoreBreakdownCard({ storeId, checkout, cartItems }) {
   const bankDiscount = readBankDiscount(checkout.bank_discount);
   const productLinks = checkout.products.filter((item) => item.product_url);
+  const units = checkout.products.reduce((sum, item) => sum + (item.quantity || 0), 0);
 
   const openAllProducts = () => {
     for (const item of productLinks) {
@@ -21,28 +28,17 @@ export function StoreBreakdownCard({ storeId, checkout, cartItems }) {
   };
 
   return (
-    <div className="rounded-lg border border-line bg-surface p-4">
-      <p className="mb-2 font-display text-sm font-bold text-brand-violet-700">{storeLabel(storeId)}</p>
-      <dl className="space-y-1 text-sm text-ink">
-        <div className="flex justify-between">
-          <dt className="text-ink-muted">Subtotal productos</dt>
-          <dd>{formatPrice(checkout.subtotal_products)}</dd>
+    <div className="flex flex-col rounded-lg border border-line bg-surface p-4">
+      <div className="flex items-baseline justify-between gap-3">
+        <div>
+          <p className="font-display text-base font-bold text-brand-violet-700">{storeName(storeId)}</p>
+          <p className="text-xs text-ink-muted">
+            {checkout.products.length} producto{checkout.products.length === 1 ? "" : "s"}
+            {units !== checkout.products.length && ` · ${units} unidades`}
+          </p>
         </div>
-        <div className="flex justify-between">
-          <dt className="text-ink-muted">Costo de envío</dt>
-          <dd>{formatPrice(checkout.delivery_cost)}</dd>
-        </div>
-        {bankDiscount && (
-          <div className="flex justify-between text-state-success">
-            <dt>{bankDiscount.description}</dt>
-            <dd>-{formatPrice(bankDiscount.amount)}</dd>
-          </div>
-        )}
-        <div className="flex justify-between border-t border-line pt-1 font-semibold">
-          <dt>Total tienda</dt>
-          <dd>{formatPrice(checkout.store_total)}</dd>
-        </div>
-      </dl>
+        <p className="text-xl font-bold text-ink">{formatPrice(checkout.store_total)}</p>
+      </div>
 
       {checkout.checkout_url ? (
         <a
@@ -51,7 +47,7 @@ export function StoreBreakdownCard({ storeId, checkout, cartItems }) {
           rel="noreferrer"
           className="mt-3 flex items-center justify-center gap-2 rounded-md bg-brand-accent px-4 py-2 text-sm font-semibold text-white hover:bg-brand-accent-dark"
         >
-          Comprar carrito en {storeName(storeId)}
+          Comprar en {storeName(storeId)}
           <ExternalLink size={14} />
         </a>
       ) : (
@@ -61,24 +57,32 @@ export function StoreBreakdownCard({ storeId, checkout, cartItems }) {
             onClick={openAllProducts}
             className="mt-3 flex items-center justify-center gap-2 rounded-md bg-brand-accent px-4 py-2 text-sm font-semibold text-white hover:bg-brand-accent-dark"
           >
-            Abrir productos de {storeLabel(storeId)}
+            Abrir productos en {storeName(storeId)}
             <ExternalLink size={14} />
           </button>
         )
       )}
 
-      {/* La disponibilidad que conoce SmartCart es la que la tienda publica en
-          su listado, que es por región por defecto y no por dirección: el
-          catálogo puede decir que hay stock y el checkout de la cadena
-          contestar "no tiene inventario para tu dirección". Decirlo acá es más
-          barato que hacer al usuario descubrirlo con el carrito ya armado. */}
-      <p className="mt-2 text-center text-xs text-ink-muted">
-        El súper confirma el stock final para tu dirección al cerrar la compra.
-      </p>
-
       <details className="mt-3 text-xs text-ink-muted">
-        <summary className="cursor-pointer select-none">Ver lista para esta tienda</summary>
-        <ul className="mt-1 list-inside list-disc">
+        <summary className="cursor-pointer select-none">Ver detalle</summary>
+        <dl className="mt-2 space-y-1 text-sm text-ink">
+          <div className="flex justify-between">
+            <dt className="text-ink-muted">Productos</dt>
+            <dd>{formatPrice(checkout.subtotal_products)}</dd>
+          </div>
+          <div className="flex justify-between">
+            <dt className="text-ink-muted">Envío</dt>
+            <dd>{formatPrice(checkout.delivery_cost)}</dd>
+          </div>
+          {bankDiscount && (
+            <div className="flex justify-between text-state-success">
+              <dt>{bankDiscount.description}</dt>
+              <dd>-{formatPrice(bankDiscount.amount)}</dd>
+            </div>
+          )}
+        </dl>
+
+        <ul className="mt-2 list-inside list-disc">
           {checkout.products.map((item) => (
             <li key={item.unified_id}>
               {item.product_url ? (
@@ -92,9 +96,15 @@ export function StoreBreakdownCard({ storeId, checkout, cartItems }) {
             </li>
           ))}
         </ul>
-      </details>
 
-      <PromoTransparency checkout={checkout} cartItems={cartItems} />
+        <PromoTransparency checkout={checkout} cartItems={cartItems} />
+
+        {/* La disponibilidad que conoce SmartCart es la que la tienda publica en
+            su listado, que es por región por defecto y no por dirección: el
+            catálogo puede decir que hay stock y el checkout de la cadena
+            contestar "no tiene inventario para tu dirección". */}
+        <p className="mt-2">El súper confirma el stock final para tu dirección al cerrar la compra.</p>
+      </details>
     </div>
   );
 }
