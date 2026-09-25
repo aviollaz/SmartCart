@@ -15,4 +15,5 @@ export const STORES = [
 // Formulario de feedback para los testers de la demo, enlazado al final de la
 // FAQ (/ayuda). Vacío = el bloque de contacto no se dibuja, así la página
 // funciona igual antes de tener el formulario.
-export const FEEDBACK_FORM_URL = "";
+export const FEEDBACK_FORM_URL =
+  "https://docs.google.com/forms/d/e/1FAIpQLSeBZK0Tz0twnhLe0vVlDqAPnQEjviGu_rnx-9AYRVCv9fgCww/viewform";
