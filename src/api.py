@@ -22,7 +22,7 @@ from src.optimizer import optimize_cart, DEFAULT_DELIVERY_COSTS, DEFAULT_MIN_SPE
 from src.flattener import flatten_cart_prices, evaluate_best_promo, parse_promotions_json
 from src.coto_logistics import check_coverage, resolve_coto_logistics
 from src.schema import ensure_schema
-from src.shelves import SHELVES, sections as shelf_sections, shelf_label
+from src.shelves import SECTIONS, SHELVES, sections as shelf_sections, shelf_label
 from src.strategic_swaps import find_strategic_swaps
 from src.substitutions import build_semantic_suggestions, format_size
 
@@ -1283,7 +1283,8 @@ DEALS_MAX_LIMIT = 50
 _deals_cache: Dict[tuple, tuple] = {}
 
 
-def _rank_deals(cur, memberships: List[str], limit: int) -> List[tuple]:
+def _rank_deals(cur, memberships: List[str], limit: int,
+                shelves: Optional[List[str]] = None) -> List[tuple]:
     """
     [(unified_id, descuento), ...] de los `limit` productos con mayor descuento a
     una unidad, de mayor a menor.
@@ -1296,13 +1297,20 @@ def _rank_deals(cur, memberships: List[str], limit: int) -> List[tuple]:
     No hay umbral fijo ("más de 70%"): medido sobre el catálogo, sin membresías
     el máximo es 60% y hay 33 productos arriba de 50%, así que un corte duro
     dejaría la sección vacía justamente para el usuario anónimo.
+
+    `shelves` restringe el ranking a esas góndolas (el filtro por sección de la
+    home). Se aplica en SQL y no después, para no evaluar las promos de todo el
+    catálogo y tirar el 80%.
     """
-    cur.execute("""
-        SELECT unified_product_id, store_id, product_url, base_price, in_stock,
-               promotions_json, image_url
-        FROM store_products
-        WHERE in_stock AND base_price > 0 AND promotions_json IS NOT NULL
-    """)
+    shelf_clause = "AND u.shelf = ANY(%s)" if shelves is not None else ""
+    cur.execute(f"""
+        SELECT sp.unified_product_id, sp.store_id, sp.product_url, sp.base_price,
+               sp.in_stock, sp.promotions_json, sp.image_url
+        FROM store_products sp
+        JOIN unified_products u ON u.id = sp.unified_product_id
+        WHERE sp.in_stock AND sp.base_price > 0 AND sp.promotions_json IS NOT NULL
+        {shelf_clause}
+    """, (shelves,) if shelves is not None else None)
     best: Dict[str, float] = {}
     for sp in cur.fetchall():
         offer = _build_store_offer(sp, memberships)
@@ -1320,15 +1328,27 @@ def _rank_deals(cur, memberships: List[str], limit: int) -> List[tuple]:
 def get_deals(
     limit: int = Query(12, ge=1, le=DEALS_MAX_LIMIT),
     memberships: List[str] = Query([], description="Membresías declaradas: suman sus promos al ranking"),
+    section: Optional[str] = Query(None, description="Sección de src/shelves.py (ej. 'Congelados'); sin ella, todo el catálogo"),
 ):
     """
     Los productos con mayor descuento de hoy, para la home.
 
     Con membresías el ranking cambia —las promos de Mi Carrefour son las más
-    agresivas del catálogo—, y por eso la cache es por conjunto de membresías.
-    `discount_pct` viene lleno (fracción, 0.6 = 60%).
+    agresivas del catálogo—, y por eso la cache es por conjunto de membresías
+    (y por sección). `discount_pct` viene lleno (fracción, 0.6 = 60%).
+
+    Una sección fuera de SECTIONS contesta 404, igual que /category con un slug
+    desconocido: el conjunto es cerrado, y "esa sección no existe" no es lo
+    mismo que "hoy no tiene descuentos". Medido, ninguna sección real queda
+    corta: la más chica (Congelados) tiene 192 productos con descuento.
     """
-    key = (tuple(sorted(set(memberships))), limit)
+    shelves = None
+    if section is not None:
+        if section not in SECTIONS:
+            raise HTTPException(status_code=404, detail=f"No existe la sección '{section}'.")
+        shelves = [slug for slug, shelf in SHELVES.items() if shelf.section == section]
+
+    key = (tuple(sorted(set(memberships))), section, limit)
     cached = _deals_cache.get(key)
     if cached and time.monotonic() - cached[0] < DEALS_CACHE_TTL_SECONDS:
         return cached[1]
@@ -1337,7 +1357,7 @@ def get_deals(
         db = SmartCartDB()
         with pooled_connection(db.conn_string) as conn:
             with conn.cursor() as cur:
-                ranking = _rank_deals(cur, memberships, limit)
+                ranking = _rank_deals(cur, memberships, limit, shelves)
                 if not ranking:
                     return []
                 ids = [uid for uid, _ in ranking]

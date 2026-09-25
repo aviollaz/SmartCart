@@ -65,9 +65,11 @@ export function getProductsByIds(unifiedIds, memberships = []) {
  * `discount_pct` (fracción: 0.6 = 60%). Sin umbral fijo: el backend devuelve
  * los `limit` mejores, porque sin membresías el techo del catálogo ronda el 60%.
  */
-export function getDeals(limit = 8, memberships) {
+export function getDeals(limit = 8, memberships, section) {
   const params = new URLSearchParams({ limit: String(limit) });
   appendMemberships(params, memberships);
+  // Una sección de GET /categories ("Congelados"); sin ella, todo el catálogo.
+  if (section) params.set("section", section);
   return apiFetch(`/deals?${params.toString()}`);
 }
 

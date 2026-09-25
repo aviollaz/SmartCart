@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { ArrowRight, Search, ShoppingCart, Sparkles, Tag, Wand2 } from "lucide-react";
 import { getDeals, getDemoCart } from "../api/products";
+import { useShelves } from "../hooks/useShelves";
 import { useCart } from "../context/CartContext";
 import { useProfile } from "../context/ProfileContext";
 import { STORES } from "../utils/constants";
@@ -152,44 +153,83 @@ function SplitDiagram() {
 
 function DealsSection() {
   const { memberships, unavailableStores } = useProfile();
+  const { sections } = useShelves();
   const membershipsKey = (memberships || []).join(",");
-  const [deals, setDeals] = useState([]);
+  // "" = todas las secciones. Estado local y sin persistir: es una forma de
+  // mirar la home, no una preferencia del usuario.
+  const [section, setSection] = useState("");
+  const [state, setState] = useState({ deals: [], loading: true, failed: false });
 
   useEffect(() => {
     let cancelled = false;
-    getDeals(DEALS_LIMIT, membershipsKey ? membershipsKey.split(",") : [])
+    // El contenido anterior se queda (atenuado) mientras llega el nuevo, para
+    // que la home no salte de altura con cada cambio del selector.
+    setState((prev) => ({ ...prev, loading: true }));
+    getDeals(DEALS_LIMIT, membershipsKey ? membershipsKey.split(",") : [], section || undefined)
       .then((data) => {
-        if (!cancelled) setDeals(data || []);
+        if (!cancelled) setState({ deals: data || [], loading: false, failed: false });
       })
       .catch(() => {
-        // Falla abierto: la home sin ofertas sigue sirviendo, con un cartel de
-        // error no.
-        if (!cancelled) setDeals([]);
+        if (!cancelled) setState({ deals: [], loading: false, failed: true });
       });
     return () => {
       cancelled = true;
     };
-  }, [membershipsKey]);
+  }, [membershipsKey, section]);
 
   // Una oferta de una tienda que no entrega en la dirección del usuario no es
   // una oferta para él: se saca, igual que en la grilla de resultados.
-  const visibles = stripUnavailableStores(deals, unavailableStores).filter((product) =>
+  const visibles = stripUnavailableStores(state.deals, unavailableStores).filter((product) =>
     product.available_at_stores.some((offer) => offer.promo_unit_price != null)
   );
-  if (visibles.length === 0) return null;
+
+  // Sin filtro, una sección vacía o caída se oculta entera (falla abierto: la
+  // home sirve igual sin ofertas). Con filtro NO: si desapareciera al elegir
+  // una sección, el selector se iría con ella y el usuario no podría volver.
+  if (!section && !state.loading && visibles.length === 0) return null;
+
+  const title = (
+    <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
+      <h2 className="flex items-center gap-2 font-display text-xl font-bold text-ink">
+        <Tag size={20} className="text-state-promo" aria-hidden="true" />
+        Mejores descuentos de hoy
+      </h2>
+      {/* Las secciones salen de GET /categories, igual que el mega-menú: una
+          sección nueva en src/shelves.py aparece acá sola. */}
+      <select
+        value={section}
+        onChange={(event) => setSection(event.target.value)}
+        aria-label="Filtrar descuentos por sección"
+        className="rounded-md border border-line bg-surface px-2 py-1.5 text-sm text-ink"
+      >
+        <option value="">Todas las secciones</option>
+        {sections.map((s) => (
+          <option key={s.section} value={s.section}>
+            {s.section}
+          </option>
+        ))}
+      </select>
+    </div>
+  );
 
   return (
-    <section className="mt-14">
-      <ProductCarousel
-        products={visibles}
-        label="Mejores descuentos de hoy"
-        title={
-          <h2 className="flex items-center gap-2 font-display text-xl font-bold text-ink">
-            <Tag size={20} className="text-state-promo" aria-hidden="true" />
-            Mejores descuentos de hoy
-          </h2>
-        }
-      />
+    <section className={`mt-14 transition-opacity ${state.loading ? "opacity-60" : ""}`}>
+      {visibles.length > 0 ? (
+        // La key por sección remonta el carrusel: al cambiar de sección vuelve
+        // al principio en vez de quedar scrolleado a mitad de la lista vieja.
+        <ProductCarousel key={section} products={visibles} label="Mejores descuentos de hoy" title={title} />
+      ) : (
+        <>
+          <div className="mb-4">{title}</div>
+          <p className="py-8 text-center text-sm text-ink-muted">
+            {state.loading
+              ? "Buscando descuentos…"
+              : state.failed
+                ? "No pudimos cargar los descuentos. Probá de nuevo en un momento."
+                : `No hay descuentos en ${section} hoy.`}
+          </p>
+        </>
+      )}
     </section>
   );
 }

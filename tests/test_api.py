@@ -112,3 +112,18 @@ def test_deals_ordenado_por_descuento():
         # card mostraría un "-60%" sin ningún precio tachado que lo respalde.
         for d in deals:
             assert any(o["promo_unit_price"] for o in d["available_at_stores"])
+
+
+def test_deals_por_seccion():
+    """El filtro por sección de la home. Necesita Postgres poblado."""
+    from src.shelves import SHELVES
+
+    with TestClient(app) as client:
+        response = client.get("/deals", params={"limit": 10, "section": "Congelados"})
+        assert response.status_code == 200
+        deals = response.json()
+        assert deals, "Congelados tiene ~190 productos con descuento"
+        assert all(SHELVES[d["shelf"]].section == "Congelados" for d in deals)
+
+        # Conjunto cerrado: una sección inventada no es "hoy no hay descuentos".
+        assert client.get("/deals", params={"section": "Ferretería"}).status_code == 404
