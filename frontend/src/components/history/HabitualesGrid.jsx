@@ -1,14 +1,17 @@
 import { useHistory } from "../../context/HistoryContext";
 import { useHabitualProducts } from "../../hooks/useHabitualProducts";
-import { ProductGrid } from "../plp/ProductGrid";
+import { ProductCarousel } from "../plp/ProductCarousel";
 
-const HABITUALES_EN_GRILLA = 8;
+// Van en una sola fila con scroll horizontal (el mismo carrusel que los
+// descuentos de la home), así que mostrar más no ocupa más pantalla. Antes eran
+// 8 en grilla: dos filas enteras de la home para una sección secundaria.
+const HABITUALES_EN_GRILLA = 20;
 
 /**
  * "Comprar de nuevo": los productos que más veces aparecieron en carritos
  * optimizados, resueltos contra el catálogo de hoy.
  *
- * Reusa ProductGrid/ProductCard tal cual en vez de dibujar una fila propia: así
+ * Reusa ProductCarousel/ProductCard tal cual en vez de dibujar una fila propia: así
  * hereda gratis el precio con promoción, la imagen, el stepper conectado al
  * carrito y el recorte por cobertura, y no hay una segunda card que pueda
  * mostrar un precio distinto al de la grilla de búsqueda.
@@ -32,14 +35,23 @@ export function HabitualesGrid() {
 
   return (
     <div>
-      <h2 className="mb-3 font-display text-lg font-bold text-ink">Comprar de nuevo</h2>
-
       {loading && products.length === 0 ? (
-        <p className="py-8 text-sm text-ink-muted">Buscando tus habituales…</p>
+        <>
+          <h2 className="mb-3 font-display text-lg font-bold text-ink">Comprar de nuevo</h2>
+          <p className="py-8 text-sm text-ink-muted">Buscando tus habituales…</p>
+        </>
+      ) : products.length === 0 ? (
+        <>
+          <h2 className="mb-3 font-display text-lg font-bold text-ink">Comprar de nuevo</h2>
+          <p className="py-8 text-center text-sm text-ink-muted">
+            Tus habituales no están disponibles en este momento.
+          </p>
+        </>
       ) : (
-        <ProductGrid
+        <ProductCarousel
           products={products}
-          emptyMessage="Tus habituales no están disponibles en este momento."
+          label="Comprar de nuevo"
+          title={<h2 className="font-display text-lg font-bold text-ink">Comprar de nuevo</h2>}
         />
       )}
 

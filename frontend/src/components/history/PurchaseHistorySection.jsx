@@ -20,7 +20,7 @@ export function PurchaseHistorySection({ className = "" }) {
   if (entries.length === 0) return null;
 
   return (
-    <section className={`flex flex-col gap-8 rounded-lg border border-line bg-surface p-5 ${className}`}>
+    <section className={`flex flex-col gap-5 rounded-lg border border-line bg-surface p-5 ${className}`}>
       <HabitualesGrid />
       <RecentCartsList />
     </section>
