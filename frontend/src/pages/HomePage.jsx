@@ -127,6 +127,11 @@ function HowItWorks() {
           </li>
         ))}
       </ol>
+      <p className="mt-4 text-center text-sm">
+        <Link to="/ayuda" className="font-semibold text-brand-violet-700 hover:underline">
+          ¿Dudas? Mirá las preguntas frecuentes
+        </Link>
+      </p>
     </section>
   );
 }

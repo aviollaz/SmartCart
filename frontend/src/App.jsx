@@ -9,6 +9,7 @@ import { HomePage } from "./pages/HomePage";
 import { SearchResultsPage } from "./pages/SearchResultsPage";
 import { CartPage } from "./pages/CartPage";
 import { ProductPage } from "./pages/ProductPage";
+import { HelpPage } from "./pages/HelpPage";
 
 function App() {
   const [isCartOpen, setCartOpen] = useState(false);
@@ -38,6 +39,7 @@ function App() {
           <Route path="/buscar" element={<SearchResultsPage />} />
           <Route path="/categoria/:shelf" element={<SearchResultsPage />} />
           <Route path="/producto/:unifiedId" element={<ProductPage />} />
+          <Route path="/ayuda" element={<HelpPage />} />
           <Route
             path="/carrito"
             element={<CartPage onOpenLocation={() => setLocationOpen(true)} />}

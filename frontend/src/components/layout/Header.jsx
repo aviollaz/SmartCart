@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { Link } from "react-router-dom";
-import { Menu, MapPin, ShoppingCart } from "lucide-react";
+import { CircleHelp, Menu, MapPin, ShoppingCart } from "lucide-react";
 import { SearchBar } from "./SearchBar";
 import { MegaMenu } from "../megamenu/MegaMenu";
 import { useCart } from "../../context/CartContext";
@@ -31,6 +31,10 @@ export function Header({ onOpenCart, onOpenLocation }) {
             <MapPin size={14} aria-hidden="true" />
             {shortAddress ? `Envío a ${shortAddress}` : "Ingresar ubicación"}
           </button>
+          <Link to="/ayuda" className="flex items-center gap-1.5 hover:underline">
+            <CircleHelp size={14} aria-hidden="true" />
+            Ayuda
+          </Link>
         </div>
       </div>
 
