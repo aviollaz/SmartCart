@@ -6,7 +6,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 SmartCart is a shopping-cart price optimizer for Argentine supermarkets (Coto, Día and Carrefour). It scrapes each store's internal API, unifies their catalogs by EAN barcode, lets a user build a cart via semantic search, and runs a constraint solver (Google OR-Tools) to find the cheapest way to split that cart across stores — accounting for promotions, bank/membership discounts, delivery costs, and each store's minimum-purchase threshold.
 
-Full technical spec (data model, architecture rationale): `docs/smartcart_spec.md`.
+Full technical spec, current state (technologies, per-stage inputs/outputs, high-level view): `docs/arquitectura.md`. `docs/smartcart_spec.md` is the original design proposal (data model rationale for sections 2.1/3.1/3.2 is still current; sections 1-2 predate Carrefour and the Streamlit-to-React rewrite) — kept as historical record, not the live spec.
 Pending work and known risks, with the reasoning behind each: `docs/TODO.md`.
 How to publish the API (Cloud Run) and frontend (Vercel) for an external demo, including the redeploy command and Windows/PowerShell-specific gotchas already hit once: `ops/demo-publica.md`.
 

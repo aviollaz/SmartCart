@@ -1,3 +1,9 @@
+> **Documento histórico.** Esta es la propuesta técnica original del proyecto
+> (arquitectura pensada, roadmap por semanas, un frontend en Streamlit que ya
+> no existe). Las secciones 2.1, 3.1 y 3.2 se mantuvieron al día; el resto
+> quedó desactualizado (sólo cubre Coto y Día, por ejemplo). Para el estado
+> actual del sistema, ver [`docs/arquitectura.md`](arquitectura.md).
+
 # Especificación Técnica y Roadmap Simplificado: SmartCart Argentina
 
 SmartCart es un Motor de Recomendación y Optimización de Canastas de Compra diseñado para mitigar el impacto de la dispersión de precios en supermercados mediante programación por restricciones y procesamiento de lenguaje natural (NLP). El sistema resuelve el problema de optimización combinatoria de minimizar el costo total de una lista de compras, considerando precios base, promociones complejas, membresías vigentes del usuario y umbrales de compra mínima por cadena.
