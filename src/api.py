@@ -1279,7 +1279,7 @@ def get_demo_cart():
 # reescribe una vez por noche, así que 10 minutos no esconden nada; lo que
 # ahorran es evaluar ~18.000 ofertas con promo en cada visita a la home.
 DEALS_CACHE_TTL_SECONDS = 600
-DEALS_MAX_LIMIT = 48
+DEALS_MAX_LIMIT = 50
 _deals_cache: Dict[tuple, tuple] = {}
 
 

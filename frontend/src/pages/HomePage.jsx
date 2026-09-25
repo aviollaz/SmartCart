@@ -6,11 +6,13 @@ import { useCart } from "../context/CartContext";
 import { useProfile } from "../context/ProfileContext";
 import { STORES } from "../utils/constants";
 import { stripUnavailableStores } from "../utils/storeAvailability";
-import { ProductGrid } from "../components/plp/ProductGrid";
+import { ProductCarousel } from "../components/plp/ProductCarousel";
 import { PurchaseHistorySection } from "../components/history/PurchaseHistorySection";
 
-// Cuántas ofertas trae la home: dos filas de la grilla en desktop.
-const DEALS_LIMIT = 8;
+// Cuántas ofertas trae la home. Van en un carrusel de una sola fila, así que
+// traer más no ocupa más pantalla: sólo alarga lo que se puede recorrer con
+// las flechas. El backend topea en DEALS_MAX_LIMIT (src/api.py).
+const DEALS_LIMIT = 50;
 
 // El recorrido en tres pasos, con el mínimo de palabras. La home tenía antes un
 // párrafo por paso y las 49 góndolas debajo, que ya están en el mega-menú: a
@@ -178,11 +180,16 @@ function DealsSection() {
 
   return (
     <section className="mt-14">
-      <h2 className="mb-4 flex items-center gap-2 font-display text-xl font-bold text-ink">
-        <Tag size={20} className="text-state-promo" aria-hidden="true" />
-        Mejores descuentos de hoy
-      </h2>
-      <ProductGrid products={visibles} />
+      <ProductCarousel
+        products={visibles}
+        label="Mejores descuentos de hoy"
+        title={
+          <h2 className="flex items-center gap-2 font-display text-xl font-bold text-ink">
+            <Tag size={20} className="text-state-promo" aria-hidden="true" />
+            Mejores descuentos de hoy
+          </h2>
+        }
+      />
     </section>
   );
 }
