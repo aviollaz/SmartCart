@@ -180,15 +180,22 @@ git checkout main && git merge demo-ready && git push
    final. Cargala **antes** del primer deploy: Vite la incrusta en el build, no
    la lee en runtime.
 4. Deploy. Copiar la URL que queda (`https://smartcart-algo.vercel.app`).
-5. **Volver a Cloud Run** y cargar esa URL en `CORS_ORIGINS`:
+5. **Cargar esa URL en `CORS_ORIGINS` dentro de `ops/vars.YAML`** y volver a
+   correr el `gcloud run deploy` de arriba.
 
-   ```bash
-   gcloud run services update smartcart-api --region us-east1 \
-     --update-env-vars CORS_ORIGINS=https://smartcart-algo.vercel.app
+   Va en el archivo y **no** con un `gcloud run services update
+   --update-env-vars` aparte: `--env-vars-file` reemplaza todas las variables
+   del servicio, así que una variable cargada por fuera se borra en el próximo
+   deploy. Pasó: tras un redeploy la demo dejó de cargar entera, sin ningún
+   error del lado del servidor (todas las respuestas daban 200), porque el
+   navegador bloqueaba cada respuesta por CORS. El síntoma se ve sólo en la
+   consola del navegador, y se confirma con:
+
+   ```powershell
+   curl.exe -s -D - -o NUL -H "Origin: https://smart-cart-rouge.vercel.app" https://smartcart-api-996729163198.us-east1.run.app/categories
    ```
 
-   Sin este paso el frontend carga pero no le entra ni un dato, y el error sólo
-   se ve en la consola del navegador.
+   Tiene que aparecer un `access-control-allow-origin` con la URL de Vercel.
 
 De ahí en más, cada push a `main` redespliega el frontend solo. La API no: se
 actualiza volviendo a correr el `gcloud run deploy` de arriba.

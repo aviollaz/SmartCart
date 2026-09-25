@@ -1,2 +1,8 @@
 SMARTCART_POOL_MIN_SIZE: "0"
 ANALYTICS_ENV: "demo"
+# Tiene que vivir acá y no cargarse aparte con --update-env-vars:
+# `gcloud run deploy --env-vars-file` REEMPLAZA todas las variables del
+# servicio, así que cualquier variable que no esté en este archivo se borra en
+# cada deploy. Sin esta, el navegador bloquea toda respuesta de la API hacia
+# Vercel y la demo no carga, aunque el backend conteste 200.
+CORS_ORIGINS: "https://smart-cart-rouge.vercel.app"
