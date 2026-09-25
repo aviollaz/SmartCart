@@ -19,8 +19,7 @@ export function EstimatedSubtotal({ subtotalEstimado, className = "" }) {
       <div>
         <p className="text-sm font-semibold text-ink">Subtotal estimado</p>
         <p className="text-xs text-ink-muted">
-          Sumando el precio más barato de cada producto. Sin envíos ni descuentos: el total real
-          lo calcula “Optimizar compra”.
+          El más barato de cada producto, sin envío. El total real lo da “Optimizar compra”.
         </p>
       </div>
       <p className="font-display text-lg font-bold text-brand-violet-700">
