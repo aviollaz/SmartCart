@@ -24,7 +24,7 @@ from src.coto_logistics import check_coverage, resolve_coto_logistics
 from src.schema import ensure_schema
 from src.shelves import SHELVES, sections as shelf_sections, shelf_label
 from src.strategic_swaps import find_strategic_swaps
-from src.substitutions import build_semantic_suggestions
+from src.substitutions import build_semantic_suggestions, format_size
 
 
 def _dietary_filter_clause(gluten_free: bool, vegan: bool, alias: str = "") -> str:
@@ -118,6 +118,11 @@ class ProductResponse(BaseModel):
     is_vegan: bool = False
     unit_info: UnitInfo
     unit_price: Optional[UnitPrice] = None
+    # Contenido legible ("500 g", "1.5 L") para la ficha del producto, con el
+    # mismo format_size() que ya usan las sugerencias. None cuando el tamaño es
+    # desconocido: 'un' es lo que normalize_magnitude() devuelve cuando se dio
+    # por vencido, y "1 unidad" ahí sería afirmar un dato que nadie midió.
+    size_label: Optional[str] = None
     distance: float = Field(..., description="Distancia de coseno con respecto a la búsqueda (menor es más similar)")
     # Cuántas tiendas ofrecen el producto con stock. Es lo que desempata el
     # ranking (ver STORE_BONUS) y lo que permite verificar el feature desde la
@@ -126,6 +131,10 @@ class ProductResponse(BaseModel):
     # coincidir. Opcional para no romper a ningún consumidor existente.
     store_count: Optional[int] = None
     available_at_stores: List[StoreOffer] = []
+    # Descuento de la mejor oferta, en fracción (0.35 = 35%). Sólo lo llena
+    # GET /deals, que ordena por este número; el resto de los endpoints lo deja
+    # en None en vez de calcular algo que nadie lee.
+    discount_pct: Optional[float] = None
 
 class ShelfResponse(BaseModel):
     slug: str = Field(..., example="yerba-mate")
@@ -197,6 +206,9 @@ MAX_PRODUCTS_BY_IDS = 100
 
 class ProductsByIdsRequest(BaseModel):
     unified_ids: List[str] = Field(..., min_length=1, max_length=MAX_PRODUCTS_BY_IDS)
+    # Cambia PRECIOS, nunca qué ids vuelven: el contrato de "id ausente = lo
+    # borró el pruning" queda intacto. Ver _build_store_offer.
+    user_memberships: Optional[List[str]] = []
 
 # Estado global para mantener el modelo cargado en memoria
 ml_models = {}
@@ -354,7 +366,7 @@ def read_root():
         "db_pool": pool_status(),
     }
 
-def _build_store_offer(sp: dict) -> dict:
+def _build_store_offer(sp: dict, user_memberships: Optional[List[str]] = None) -> dict:
     """
     Arma la oferta de una tienda tal como la devuelven /search y /category.
 
@@ -369,8 +381,13 @@ def _build_store_offer(sp: dict) -> dict:
     descuento de Coto. Se evalúa con quantity=1, así que solo puede ganar una
     promo que rija desde la primera unidad.
 
-    user_memberships va vacío a propósito: la grilla es anónima y una promo que
-    exige tarjeta o club no puede anunciarse como el precio por defecto.
+    `user_memberships` son las membresías que el usuario DECLARÓ en el
+    onboarding (Club Día, Mi Carrefour...). Sin ellas —el default— sale el
+    precio abierto: una promo que exige club no puede anunciarse como el precio
+    por defecto a quien no dijo tenerlo. Con ellas, la grilla muestra lo mismo
+    que después va a cobrar el optimizador, que recibe la misma lista. Las
+    tarjetas bancarias no entran acá: son descuentos sobre el total de la
+    tienda, con tope, y por producto no tienen un precio honesto.
     """
     base_price = float(sp["base_price"]) if sp["base_price"] is not None else 0.0
     raw_promos = parse_promotions_json(sp["promotions_json"]) if sp["promotions_json"] else []
@@ -392,7 +409,7 @@ def _build_store_offer(sp: dict) -> dict:
     promo_unit_price = None
     promo_description = None
     if base_price > 0 and raw_promos:
-        best = evaluate_best_promo(base_price, raw_promos, 1)
+        best = evaluate_best_promo(base_price, raw_promos, 1, user_memberships or [])
         if best["applied_promo_id"] is not None and best["total_cost"] < base_price:
             promo_unit_price = round(best["total_cost"], 2)
             promo_description = best["promo_description"]
@@ -413,7 +430,8 @@ def _build_store_offer(sp: dict) -> dict:
 IMAGE_STORE_PRIORITY = ("coto_online", "dia_online", "carrefour_online")
 
 
-def _fetch_offers_by_product(cur, product_ids: list) -> dict:
+def _fetch_offers_by_product(cur, product_ids: list,
+                             user_memberships: Optional[List[str]] = None) -> dict:
     """
     {unified_product_id: [oferta, ...]} para una lista de productos.
 
@@ -437,7 +455,9 @@ def _fetch_offers_by_product(cur, product_ids: list) -> dict:
 
     offers_by_product: Dict[str, List[Dict[str, Any]]] = {}
     for sp in cur.fetchall():
-        offers_by_product.setdefault(sp["unified_product_id"], []).append(_build_store_offer(sp))
+        offers_by_product.setdefault(sp["unified_product_id"], []).append(
+            _build_store_offer(sp, user_memberships)
+        )
     return offers_by_product
 
 
@@ -558,6 +578,11 @@ def _build_product_response(row: dict, offers: list, distance: float = 0.0) -> d
             "total_volume_weight": float(row["total_volume_weight"]) if row["total_volume_weight"] is not None else None
         },
         "unit_price": _build_unit_price(row, offers),
+        "size_label": (
+            format_size(float(row["total_volume_weight"]), row["unit_type"])
+            if row["unit_type"] in UNIT_PRICE_BASES and row["total_volume_weight"]
+            else None
+        ),
         "distance": distance,
         "store_count": int(row["store_count"]),
         "available_at_stores": offers,
@@ -569,7 +594,8 @@ def search_products(
     q: str = Query(..., description="Texto de búsqueda libre (ej. 'Puré de papas')", min_length=1),
     limit: int = Query(20, description="Cantidad máxima de resultados (entre 1 y 50)", ge=1, le=50),
     gluten_free: bool = Query(False, description="Devolver solo productos con declaración explícita 'sin TACC'"),
-    vegan: bool = Query(False, description="Devolver solo productos con declaración explícita 'vegano'")
+    vegan: bool = Query(False, description="Devolver solo productos con declaración explícita 'vegano'"),
+    memberships: List[str] = Query([], description="Membresías declaradas (ej. mi_carrefour): desbloquean su precio"),
 ):
     """
     Realiza una búsqueda semántica en tiempo real sobre el catálogo de productos unificados.
@@ -656,7 +682,7 @@ def search_products(
                 
                 # 3. Obtener ofertas asociadas de store_products para los productos unificados encontrados
                 product_ids = [p["id"] for p in nearest_products]
-                offers_by_product = _fetch_offers_by_product(cur, product_ids)
+                offers_by_product = _fetch_offers_by_product(cur, product_ids, memberships)
 
         # 4. Estructurar la respuesta final de búsqueda
         #
@@ -1248,12 +1274,110 @@ def get_demo_cart():
     ]
 
 
+# ------------------------------------------------------------------ deals
+# Cuántos segundos vive en memoria el ranking de /deals. El catálogo se
+# reescribe una vez por noche, así que 10 minutos no esconden nada; lo que
+# ahorran es evaluar ~18.000 ofertas con promo en cada visita a la home.
+DEALS_CACHE_TTL_SECONDS = 600
+DEALS_MAX_LIMIT = 48
+_deals_cache: Dict[tuple, tuple] = {}
+
+
+def _rank_deals(cur, memberships: List[str], limit: int) -> List[tuple]:
+    """
+    [(unified_id, descuento), ...] de los `limit` productos con mayor descuento a
+    una unidad, de mayor a menor.
+
+    El descuento sale de `_build_store_offer`, o sea de evaluate_best_promo: el
+    mismo número que la card va a mostrar tachado, no una segunda cuenta sobre
+    los porcentajes que declara cada tienda (que a veces no coinciden con el
+    precio, ver el "52% Off" que en Día da 53%).
+
+    No hay umbral fijo ("más de 70%"): medido sobre el catálogo, sin membresías
+    el máximo es 60% y hay 33 productos arriba de 50%, así que un corte duro
+    dejaría la sección vacía justamente para el usuario anónimo.
+    """
+    cur.execute("""
+        SELECT unified_product_id, store_id, product_url, base_price, in_stock,
+               promotions_json, image_url
+        FROM store_products
+        WHERE in_stock AND base_price > 0 AND promotions_json IS NOT NULL
+    """)
+    best: Dict[str, float] = {}
+    for sp in cur.fetchall():
+        offer = _build_store_offer(sp, memberships)
+        net = offer["promo_unit_price"]
+        if not net:
+            continue
+        descuento = 1 - net / offer["base_price"]
+        uid = sp["unified_product_id"]
+        if descuento > best.get(uid, 0.0):
+            best[uid] = descuento
+    return sorted(best.items(), key=lambda kv: kv[1], reverse=True)[:limit]
+
+
+@app.get("/deals", response_model=List[ProductResponse])
+def get_deals(
+    limit: int = Query(12, ge=1, le=DEALS_MAX_LIMIT),
+    memberships: List[str] = Query([], description="Membresías declaradas: suman sus promos al ranking"),
+):
+    """
+    Los productos con mayor descuento de hoy, para la home.
+
+    Con membresías el ranking cambia —las promos de Mi Carrefour son las más
+    agresivas del catálogo—, y por eso la cache es por conjunto de membresías.
+    `discount_pct` viene lleno (fracción, 0.6 = 60%).
+    """
+    key = (tuple(sorted(set(memberships))), limit)
+    cached = _deals_cache.get(key)
+    if cached and time.monotonic() - cached[0] < DEALS_CACHE_TTL_SECONDS:
+        return cached[1]
+
+    try:
+        db = SmartCartDB()
+        with pooled_connection(db.conn_string) as conn:
+            with conn.cursor() as cur:
+                ranking = _rank_deals(cur, memberships, limit)
+                if not ranking:
+                    return []
+                ids = [uid for uid, _ in ranking]
+                cur.execute("""
+                    SELECT u.id, u.ean, u.name, u.brand, u.shelf,
+                           u.unit_type, u.total_volume_weight, u.is_gluten_free,
+                           u.is_vegan, 0.0 AS distance,
+                           count(DISTINCT sp.store_id) AS store_count
+                    FROM unified_products u
+                    LEFT JOIN store_products sp
+                           ON sp.unified_product_id = u.id AND sp.in_stock
+                    WHERE u.id = ANY(%s)
+                    GROUP BY u.id, u.ean, u.name, u.brand, u.shelf,
+                             u.unit_type, u.total_volume_weight, u.is_gluten_free, u.is_vegan
+                """, (ids,))
+                rows_by_id = {row["id"]: row for row in cur.fetchall()}
+                offers_by_product = _fetch_offers_by_product(cur, ids, memberships)
+
+        result = []
+        for uid, descuento in ranking:
+            if uid not in rows_by_id:
+                continue
+            product = _build_product_response(rows_by_id[uid], offers_by_product.get(uid, []))
+            product["discount_pct"] = round(descuento, 4)
+            result.append(product)
+
+        _deals_cache[key] = (time.monotonic(), result)
+        return result
+    except Exception as e:
+        logger.error(f"Error armando /deals: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
 @app.get("/category/{shelf_slug}", response_model=List[ProductResponse])
 def get_products_by_shelf(
     shelf_slug: str,
     limit: int = 50,
     gluten_free: bool = Query(False, description="Devolver solo productos con declaración explícita 'sin TACC'"),
-    vegan: bool = Query(False, description="Devolver solo productos con declaración explícita 'vegano'")
+    vegan: bool = Query(False, description="Devolver solo productos con declaración explícita 'vegano'"),
+    memberships: List[str] = Query([], description="Membresías declaradas (ej. mi_carrefour): desbloquean su precio"),
 ):
     """
     Los productos de una góndola, por su slug (ver GET /categories).
@@ -1302,7 +1426,7 @@ def get_products_by_shelf(
                     return []
 
                 product_ids = [p["id"] for p in nearest_products]
-                offers_by_product = _fetch_offers_by_product(cur, product_ids)
+                offers_by_product = _fetch_offers_by_product(cur, product_ids, memberships)
 
         return [
             _build_product_response(p, offers_by_product.get(p["id"], []))
@@ -1378,7 +1502,9 @@ def get_products_by_ids(request: ProductsByIdsRequest):
                 if not rows_by_id:
                     return []
 
-                offers_by_product = _fetch_offers_by_product(cur, list(rows_by_id.keys()))
+                offers_by_product = _fetch_offers_by_product(
+                    cur, list(rows_by_id.keys()), request.user_memberships
+                )
 
         # El orden se restituye en Python y no con un ORDER BY array_position():
         # el dict ya esta armado, asi que sale gratis, y evita mandar el array de
