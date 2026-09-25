@@ -25,7 +25,7 @@ const MAX_IDS = 100;
  * es peor que perder la pantalla sólo si la pantalla también se pierde.
  */
 export function useCartProducts(items) {
-  const { unavailableStores } = useProfile();
+  const { unavailableStores, memberships } = useProfile();
   const [byId, setById] = useState(EMPTY);
 
   // Se ordena antes de unir: acá el orden NO es información (a diferencia del
@@ -33,6 +33,7 @@ export function useCartProducts(items) {
   // disparar un pedido nuevo.
   const idsKey = Object.keys(items).sort().join(",");
   const excludedKey = unavailableStores.join(",");
+  const membershipsKey = (memberships || []).join(",");
 
   useEffect(() => {
     if (!idsKey) {
@@ -49,7 +50,7 @@ export function useCartProducts(items) {
     const excluded = excludedKey ? excludedKey.split(",") : [];
     let cancelled = false;
 
-    getProductsByIds(ids)
+    getProductsByIds(ids, membershipsKey ? membershipsKey.split(",") : [])
       .then((data) => {
         if (cancelled) return;
         // Se recorta por cobertura igual que la grilla: si la tienda más barata
@@ -68,7 +69,7 @@ export function useCartProducts(items) {
     return () => {
       cancelled = true;
     };
-  }, [idsKey, excludedKey]);
+  }, [idsKey, excludedKey, membershipsKey]);
 
   return byId;
 }

@@ -18,7 +18,7 @@ const EMPTY = [];
  * que falla abierto es este consumidor — misma división que coto_logistics.py.)
  */
 export function useHabitualProducts(habituales) {
-  const { unavailableStores } = useProfile();
+  const { unavailableStores, memberships } = useProfile();
   const [state, setState] = useState({ products: EMPTY, missing: EMPTY, loading: false });
 
   // Clave estable para el efecto. A diferencia de useUnavailableCartItems, acá
@@ -26,6 +26,7 @@ export function useHabitualProducts(habituales) {
   // es un cambio real y tiene que volver a pedir.
   const idsKey = habituales.map((h) => h.unified_id).join(",");
   const excludedKey = unavailableStores.join(",");
+  const membershipsKey = (memberships || []).join(",");
 
   useEffect(() => {
     if (!idsKey) {
@@ -38,7 +39,7 @@ export function useHabitualProducts(habituales) {
     let cancelled = false;
     setState((prev) => ({ ...prev, loading: true }));
 
-    getProductsByIds(ids)
+    getProductsByIds(ids, membershipsKey ? membershipsKey.split(",") : [])
       .then((data) => {
         if (cancelled) return;
         // `missing` se calcula contra la respuesta CRUDA, antes de recortar por
@@ -67,7 +68,7 @@ export function useHabitualProducts(habituales) {
     return () => {
       cancelled = true;
     };
-  }, [idsKey, excludedKey]);
+  }, [idsKey, excludedKey, membershipsKey]);
 
   return state;
 }

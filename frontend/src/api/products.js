@@ -11,9 +11,19 @@ function appendDietaryParams(params, dietary) {
   return params;
 }
 
-export function searchProducts(query, limit = 20, dietary) {
+// Las membresías que el usuario declaró en el onboarding. Cambian PRECIOS, no
+// qué productos vuelven: el backend las usa para desbloquear las promos de club
+// (ver `_build_store_offer` en src/api.py), así la grilla muestra lo mismo que
+// después cobra el optimizador.
+function appendMemberships(params, memberships) {
+  for (const membership of memberships || []) params.append("memberships", membership);
+  return params;
+}
+
+export function searchProducts(query, limit = 20, dietary, memberships) {
   const params = new URLSearchParams({ q: query, limit: String(limit) });
   appendDietaryParams(params, dietary);
+  appendMemberships(params, memberships);
   return apiFetch(`/search?${params.toString()}`);
 }
 
@@ -24,9 +34,10 @@ export function searchProducts(query, limit = 20, dietary) {
  * contesta 404 y no una lista vacía: "no hay productos" y "esa góndola no
  * existe" son cosas distintas.
  */
-export function getProductsByShelf(shelfSlug, limit = 50, dietary) {
+export function getProductsByShelf(shelfSlug, limit = 50, dietary, memberships) {
   const params = new URLSearchParams({ limit: String(limit) });
   appendDietaryParams(params, dietary);
+  appendMemberships(params, memberships);
   return apiFetch(`/category/${encodeURIComponent(shelfSlug)}?${params.toString()}`);
 }
 
@@ -42,11 +53,22 @@ export function getProductsByShelf(shelfSlug, limit = 50, dietary) {
  * ya no existe en el catálogo, porque lo borró el pruning del scraper. Ese es el
  * contrato del endpoint y es la razón por la que existe.
  */
-export function getProductsByIds(unifiedIds) {
+export function getProductsByIds(unifiedIds, memberships = []) {
   return apiFetch("/products/by-ids", {
     method: "POST",
-    body: JSON.stringify({ unified_ids: unifiedIds }),
+    body: JSON.stringify({ unified_ids: unifiedIds, user_memberships: memberships }),
   });
+}
+
+/**
+ * Los productos con mayor descuento de hoy, para la home. Cada uno trae
+ * `discount_pct` (fracción: 0.6 = 60%). Sin umbral fijo: el backend devuelve
+ * los `limit` mejores, porque sin membresías el techo del catálogo ronda el 60%.
+ */
+export function getDeals(limit = 8, memberships) {
+  const params = new URLSearchParams({ limit: String(limit) });
+  appendMemberships(params, memberships);
+  return apiFetch(`/deals?${params.toString()}`);
 }
 
 /**
