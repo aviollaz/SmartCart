@@ -61,3 +61,54 @@ def test_fastapi_endpoints():
         assert first_item["shelf"], "el producto quedó sin góndola"
 
         logger.info("¡Todas las pruebas del API pasaron con éxito!")
+
+def test_precio_de_membresia_solo_para_quien_la_declaro():
+    """
+    `_build_store_offer` no toca la base: se prueba sobre una fila armada a
+    mano. La asimetría que protege es la de siempre — a quien no declaró Mi
+    Carrefour no se le anuncia el precio de Mi Carrefour; a quien sí, se le
+    muestra el mismo que después cobra el optimizador.
+    """
+    import json
+    from src.api import _build_store_offer
+
+    fila = {
+        "store_id": "carrefour_online",
+        "product_url": None,
+        "base_price": 4599,
+        "in_stock": True,
+        "image_url": None,
+        "promotions_json": json.dumps([{
+            "promo_id": "crf-1",
+            "type": "direct_discount",
+            "description": "80% Off con Mi Carrefour",
+            "discount_price_per_unit": 900,
+            "requires_membership": "mi_carrefour",
+        }]),
+    }
+
+    anonima = _build_store_offer(fila)
+    assert anonima["promo_unit_price"] is None
+
+    con_otra = _build_store_offer(fila, ["club_dia"])
+    assert con_otra["promo_unit_price"] is None
+
+    socio = _build_store_offer(fila, ["mi_carrefour"])
+    assert socio["promo_unit_price"] == 900
+
+
+def test_deals_ordenado_por_descuento():
+    """Necesita Postgres poblado, igual que test_fastapi_endpoints."""
+    with TestClient(app) as client:
+        response = client.get("/deals?limit=8")
+        assert response.status_code == 200
+        deals = response.json()
+        assert deals, "Un catálogo poblado siempre tiene algún descuento directo"
+
+        descuentos = [d["discount_pct"] for d in deals]
+        assert all(0 < d < 1 for d in descuentos)
+        assert descuentos == sorted(descuentos, reverse=True)
+        # El descuento tiene que verse en alguna oferta del producto: si no, la
+        # card mostraría un "-60%" sin ningún precio tachado que lo respalde.
+        for d in deals:
+            assert any(o["promo_unit_price"] for o in d["available_at_stores"])

@@ -53,6 +53,14 @@ const DEFAULT_PROFILE = {
   // que los perfiles viejos lo reciben `undefined` = "no sabemos" = no se filtra
   // nada (fail-open, igual que el backend).
   storeCoverage: {},
+  // Si el usuario ya pasó por el paso de membresías del onboarding (eligiera
+  // alguna o no). Las membresías se preguntan ahí y no al optimizar porque
+  // cambian el precio que muestra la grilla (Mi Carrefour, Club Día): pedirlas
+  // al final dejaba al usuario armando el carrito con precios que no eran los
+  // suyos. Mismo criterio de migración que `location`: los perfiles viejos lo
+  // tienen undefined y ven el paso una vez, con lo que ya hubieran elegido
+  // preseleccionado.
+  membershipsAsked: false,
 };
 
 function stampCoverage(coverageByStore) {
@@ -89,6 +97,10 @@ export function ProfileProvider({ children }) {
 
   function setMemberships(memberships) {
     setProfile((prev) => ({ ...prev, memberships }));
+  }
+
+  function completeMembershipStep(memberships) {
+    setProfile((prev) => ({ ...prev, memberships, membershipsAsked: true }));
   }
 
   // La cobertura pertenece a una coordenada, así que cambiar de dirección la
@@ -152,6 +164,7 @@ export function ProfileProvider({ children }) {
       unavailableStores,
       setCards,
       setMemberships,
+      completeMembershipStep,
       setLocation,
       setStoreCoverage,
       skipLocation,

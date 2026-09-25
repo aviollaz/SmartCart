@@ -40,16 +40,16 @@ def test_dia_transformer():
 # `optimize_cart` compara `promo["card"] in user_cards` por IGUALDAD EXACTA, así
 # que una entidad que el scraper emite pero la UI no ofrece se scrapea todas las
 # noches y ningún usuario puede activarla nunca: descuento real, invisible, sin
-# que falle nada. El comentario de ProfileDrawer.jsx ya advertía la regla; esto
+# que falle nada. El comentario de paymentOptions.js ya advertía la regla; esto
 # la vuelve verificable. Así se encontraron Provincia, HSBC, Itaú e Hipotecario.
 
 
 def _opciones_del_frontend(nombre_const):
-    """Los `{value, label}` de una constante de ProfileDrawer.jsx."""
+    """Los `{value, label}` de una constante de frontend/src/utils/paymentOptions.js."""
     import pathlib
     import re
 
-    ruta = pathlib.Path(__file__).parent.parent / "frontend/src/components/profile/ProfileDrawer.jsx"
+    ruta = pathlib.Path(__file__).parent.parent / "frontend/src/utils/paymentOptions.js"
     fuente = ruta.read_text(encoding="utf-8")
     inicio = fuente.index(f"const {nombre_const} = [")
     bloque = fuente[inicio:fuente.index("];", inicio)]

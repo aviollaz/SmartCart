@@ -1,3 +1,4 @@
+import { Link } from "react-router-dom";
 import { X } from "lucide-react";
 import { QuantityStepper } from "../plp/QuantityStepper";
 import { formatPrice, resolveDisplayImage, resolveDisplayPrice } from "../../utils/formatters";
@@ -10,7 +11,10 @@ import { formatPrice, resolveDisplayImage, resolveDisplayPrice } from "../../uti
  * dibujarse igual con sólo el nombre y la cantidad, que es lo único que
  * `CartContext` guarda.
  */
-export function CartLineItem({ name, quantity, product, onIncrement, onDecrement, onRemove }) {
+// `unifiedId` es opcional: con él, el nombre linkea a la ficha del producto.
+// El drawer del carrito no lo pasa, porque un link ahí navegaría por debajo
+// del panel abierto.
+export function CartLineItem({ unifiedId, name, quantity, product, onIncrement, onDecrement, onRemove }) {
   const unitario = product ? resolveDisplayPrice(product) : null;
   const imagen = product ? resolveDisplayImage(product) : null;
 
@@ -28,7 +32,16 @@ export function CartLineItem({ name, quantity, product, onIncrement, onDecrement
       )}
 
       <div className="flex-1">
-        <p className="text-sm text-ink">{name}</p>
+        {unifiedId ? (
+          <Link
+            to={`/producto/${encodeURIComponent(unifiedId)}`}
+            className="text-sm text-ink hover:text-brand-violet-700 hover:underline"
+          >
+            {name}
+          </Link>
+        ) : (
+          <p className="text-sm text-ink">{name}</p>
+        )}
         {typeof unitario === "number" && (
           <p className="text-xs text-ink-muted">{formatPrice(unitario)} c/u</p>
         )}

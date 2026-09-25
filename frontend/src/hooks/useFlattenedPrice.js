@@ -20,13 +20,18 @@ const DEBOUNCE_MS = 300;
  * `excludeStores` saca del mínimo a las tiendas que no entregan en la dirección
  * del usuario: la respuesta de previewPrices trae todas, y sin esto la card
  * podría anunciar una promo de una tienda cuyas ofertas ya no se listan.
+ *
+ * `memberships` son las del perfil: sin ellas el precio por cantidad ignoraría
+ * las promos de club que la card ya mostró a una unidad, y subir el selector
+ * haría SUBIR el precio.
  */
-export function useFlattenedPrice(unifiedId, quantity, excludeStores = []) {
+export function useFlattenedPrice(unifiedId, quantity, excludeStores = [], memberships = []) {
   const [state, setState] = useState({ data: null, loading: false });
   const cacheRef = useRef(new Map());
   // Las tiendas excluidas entran como string para poder usarlas de dependencia
   // del efecto sin depender de la identidad del array.
   const excludeKey = excludeStores.join(",");
+  const membershipsKey = memberships.join(",");
 
   useEffect(() => {
     if (!unifiedId || quantity <= 1) {
@@ -35,7 +40,7 @@ export function useFlattenedPrice(unifiedId, quantity, excludeStores = []) {
     }
 
     const excluded = excludeKey ? excludeKey.split(",") : [];
-    const cacheKey = `${unifiedId}:${quantity}:${excludeKey}`;
+    const cacheKey = `${unifiedId}:${quantity}:${excludeKey}:${membershipsKey}`;
     if (cacheRef.current.has(cacheKey)) {
       setState({ data: cacheRef.current.get(cacheKey), loading: false });
       return;
@@ -45,7 +50,10 @@ export function useFlattenedPrice(unifiedId, quantity, excludeStores = []) {
     setState((prev) => ({ ...prev, loading: true }));
 
     const timer = setTimeout(() => {
-      previewPrices([{ unified_id: unifiedId, quantity }])
+      previewPrices(
+        [{ unified_id: unifiedId, quantity }],
+        membershipsKey ? membershipsKey.split(",") : []
+      )
         .then((matrix) => {
           const best = pickCheapestStore(matrix?.[unifiedId], excluded);
           cacheRef.current.set(cacheKey, best);
@@ -61,7 +69,7 @@ export function useFlattenedPrice(unifiedId, quantity, excludeStores = []) {
       cancelled = true;
       clearTimeout(timer);
     };
-  }, [unifiedId, quantity, excludeKey]);
+  }, [unifiedId, quantity, excludeKey, membershipsKey]);
 
   return state;
 }

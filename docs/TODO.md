@@ -226,6 +226,21 @@ semana. Si se acerca al tope, las salidas por orden de costo son bajar la
 frecuencia del barrido (día por medio alcanza para precios de supermercado),
 o mudarse a la VM de Oracle (`ops/README.md`).
 
+### 20. Descripción del producto en la ficha
+La página de producto (`frontend/src/pages/ProductPage.jsx`) muestra EAN, marca,
+góndola, contenido y flags dietarios, pero **no la descripción**, porque la base
+no la guarda: los scrapers la descartan a propósito. La `description` de VTEX
+lista productos hermanos en la misma línea (es lo que hizo que un ketchup
+Hellmann's se leyera como vegano, ver los flags dietarios en CLAUDE.md), así que
+guardarla tal cual mostraría en la ficha texto de otro producto.
+
+Traerla es tocar los tres scrapers, sumar una columna en `src/schema.py` (y en el
+`ON CONFLICT DO UPDATE SET` del mismo commit, regla de la etapa 2) y esperar un
+barrido. Antes de hacerlo, medir qué fracción de las descripciones de Día y
+Carrefour son del producto y no del catálogo; Coto no expone una equivalente en
+su BFF. Tampoco hay ratings: ninguna de las tres cadenas los publica en los
+endpoints que se usan.
+
 ---
 
 ## Optimizador

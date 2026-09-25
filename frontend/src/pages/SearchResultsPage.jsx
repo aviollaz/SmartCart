@@ -3,6 +3,7 @@ import { useParams, useSearchParams } from "react-router-dom";
 import { searchProducts, getProductsByShelf } from "../api/products";
 import { useProductFilters } from "../hooks/useProductFilters";
 import { useShelves } from "../hooks/useShelves";
+import { useProfile } from "../context/ProfileContext";
 import { storeLabel } from "../utils/formatters";
 import { FiltersSidebar } from "../components/plp/FiltersSidebar";
 import { SortDropdown } from "../components/plp/SortDropdown";
@@ -20,6 +21,10 @@ export function SearchResultsPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [dietary, setDietary] = useState(NO_DIETARY_FILTERS);
+  const { memberships } = useProfile();
+  // String y no el array: la identidad del array cambia con cada render del
+  // provider y relanzaría la búsqueda sin que nada haya cambiado.
+  const membershipsKey = (memberships || []).join(",");
 
   const mode = shelf ? "shelf" : "search";
   const term = shelf || query;
@@ -43,8 +48,8 @@ export function SearchResultsPage() {
 
     const request =
       mode === "shelf"
-        ? getProductsByShelf(term, undefined, dietary)
-        : searchProducts(term, undefined, dietary);
+        ? getProductsByShelf(term, undefined, dietary, membershipsKey.split(",").filter(Boolean))
+        : searchProducts(term, undefined, dietary, membershipsKey.split(",").filter(Boolean));
     request
       .then((data) => {
         if (!cancelled) setResults(data);
@@ -59,7 +64,7 @@ export function SearchResultsPage() {
     return () => {
       cancelled = true;
     };
-  }, [mode, term, dietary]);
+  }, [mode, term, dietary, membershipsKey]);
 
   const filters = useProductFilters(results);
 

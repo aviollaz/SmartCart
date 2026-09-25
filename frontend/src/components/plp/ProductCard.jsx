@@ -1,118 +1,35 @@
+import { Link } from "react-router-dom";
 import { ShoppingCart } from "lucide-react";
 import { useCart } from "../../context/CartContext";
-import { useProfile } from "../../context/ProfileContext";
-import { useFlattenedPrice } from "../../hooks/useFlattenedPrice";
-import {
-  formatPrice,
-  formatUnitPrice,
-  resolveBestOffer,
-  resolveDisplayImage,
-  resolveDisplayPrice,
-  storeLabel,
-} from "../../utils/formatters";
+import { useProductPricing } from "../../hooks/useProductPricing";
+import { resolveDisplayImage } from "../../utils/formatters";
+import { DietaryBadges } from "./DietaryBadges";
+import { PriceBlock } from "./PriceBlock";
 import { QuantityStepper } from "./QuantityStepper";
 
-// `skipDescription` evita repetir como badge la promo que ya está explicada
-// debajo del precio.
-function PromoBadges({ product, skipDescription }) {
-  const badges = [];
-  for (const offer of product.available_at_stores || []) {
-    for (const promo of offer.promotions || []) {
-      if (!promo.description) continue;
-      if (skipDescription && promo.description === skipDescription) continue;
-      badges.push({ key: `${offer.store_id}-${promo.promo_id || promo.description}`, storeId: offer.store_id, promo });
-    }
-  }
-  if (badges.length === 0) return null;
-
-  return (
-    <ul className="mb-2 space-y-1">
-      {badges.map(({ key, storeId, promo }) => (
-        <li key={key} className="text-xs font-semibold text-state-promo">
-          {storeLabel(storeId)}: {promo.description}
-        </li>
-      ))}
-    </ul>
-  );
-}
-
-// Solo se muestran en afirmativo: la ausencia del flag significa que el parser
-// no encontró una declaración explícita, no que el producto tenga gluten.
-function DietaryBadges({ product }) {
-  const labels = [];
-  if (product.is_gluten_free) labels.push("Sin TACC");
-  if (product.is_vegan) labels.push("Vegano");
-  if (labels.length === 0) return null;
-
-  return (
-    <ul className="mb-2 flex flex-wrap gap-1">
-      {labels.map((label) => (
-        <li
-          key={label}
-          className="rounded-full border border-line px-2 py-0.5 text-[11px] font-semibold text-ink-muted"
-        >
-          {label}
-        </li>
-      ))}
-    </ul>
-  );
-}
-
-function StoreBreakdown({ product }) {
-  const offers = product.available_at_stores || [];
-  if (offers.length === 0) return null;
-
-  return (
-    <p className="mb-2 text-xs text-ink-muted">
-      {/* Se muestra el neto, no el de lista: con un descuento directo el
-          desglose contradecía al precio grande de arriba. */}
-      {offers.map((offer, index) => (
-        <span key={offer.store_id} className={offer.in_stock ? "" : "line-through opacity-60"}>
-          {index > 0 && " · "}
-          {storeLabel(offer.store_id)} {formatPrice(offer.promo_unit_price ?? offer.base_price)}
-        </span>
-      ))}
-    </p>
-  );
-}
-
+/**
+ * Card de la grilla. Muestra UN precio —el más barato para la cantidad
+ * elegida— y el precio por kg/L; el precio de cada supermercado y sus promos
+ * por cantidad viven en la página del producto (`/producto/:id`), a un clic.
+ * Antes la card listaba los tres precios y todas las promos, y con cuatro
+ * columnas de grilla eso era una pared de números que tapaba el que importa.
+ */
 export function ProductCard({ product }) {
-  const { items, addItem, incrementItem, decrementItem } = useCart();
-  const { unavailableStores } = useProfile();
-  const cartEntry = items[product.unified_id];
-  const displayPrice = resolveDisplayPrice(product);
-  const unitPriceLabel = formatUnitPrice(product);
+  const { addItem, incrementItem, decrementItem } = useCart();
+  const pricing = useProductPricing(product);
+  const { cartEntry } = pricing;
   const displayImage = resolveDisplayImage(product);
-
-  // Promo que ya está aplicada en el precio de la card (descuento directo, el
-  // único tipo que rige desde la primera unidad). Las condicionales no entran
-  // acá: el backend manda promo_unit_price en null a cantidad 1.
-  //
-  // El precio tachado es el de lista DE ESTA oferta, no el mínimo entre
-  // tiendas: si Día lista más barato que Coto pero el descuento lo tiene Coto,
-  // tachar el de Día pondría el precio de una tienda al lado del de la otra.
-  const bestOffer = resolveBestOffer(product);
-  const catalogPromo =
-    bestOffer && bestOffer.offer.promo_unit_price != null ? bestOffer.offer : null;
-
-  // La cantidad sale del carrito: antes existía un borrador local que dejaba el
-  // stepper en 3 o 4 unidades sin que el producto estuviera agregado.
-  const quantity = cartEntry ? cartEntry.quantity : 1;
-
-  const { data: flattened, loading: pricing } = useFlattenedPrice(
-    product.unified_id,
-    quantity,
-    unavailableStores
-  );
-
-  // Solo se pisa el precio de la card si el aplanado es efectivamente más barato;
-  // si la promo no aplica a esta cantidad, la card queda igual que siempre.
-  const hasBetterPrice =
-    flattened && typeof displayPrice === "number" && flattened.unitPrice < displayPrice - 0.01;
+  const detailUrl = `/producto/${encodeURIComponent(product.unified_id)}`;
 
   return (
-    <div className="flex flex-col rounded-lg border border-line bg-surface p-4">
-      <div className="mb-3 flex h-36 items-center justify-center">
+    <div className="flex flex-col rounded-lg border border-line bg-surface p-4 transition-shadow hover:shadow-md">
+      <Link to={detailUrl} className="relative mb-3 flex h-36 items-center justify-center">
+        {/* Sólo en /deals: el backend llena discount_pct únicamente ahí. */}
+        {product.discount_pct > 0 && (
+          <span className="absolute left-0 top-0 rounded-md bg-state-promo px-2 py-0.5 text-xs font-bold text-white">
+            −{Math.round(product.discount_pct * 100)}%
+          </span>
+        )}
         {displayImage ? (
           <img
             src={displayImage}
@@ -125,55 +42,18 @@ export function ProductCard({ product }) {
             Sin foto
           </div>
         )}
-      </div>
+      </Link>
 
-      <DietaryBadges product={product} />
-      <PromoBadges product={product} skipDescription={catalogPromo?.promo_description} />
+      <DietaryBadges product={product} className="mb-2" />
+      <PriceBlock product={product} pricing={pricing} />
 
-      {hasBetterPrice ? (
-        <>
-          <p className="text-lg font-bold text-brand-violet-700">
-            {formatPrice(flattened.unitPrice)}
-            <span className="ml-2 text-sm font-normal text-ink-muted line-through">
-              {formatPrice(displayPrice)}
-            </span>
-          </p>
-          <p className="mb-1 text-xs font-semibold text-state-promo">
-            c/u llevando {quantity} en {storeLabel(flattened.storeId)}
-            {flattened.promoDescription ? ` · ${flattened.promoDescription}` : ""}
-          </p>
-        </>
-      ) : (
-        <>
-          {displayPrice != null && (
-            <p className="text-lg font-bold text-brand-violet-700">
-              {formatPrice(displayPrice)}
-              {catalogPromo && (
-                <span className="ml-2 text-sm font-normal text-ink-muted line-through">
-                  {formatPrice(catalogPromo.base_price)}
-                </span>
-              )}
-            </p>
-          )}
-          {/* Un descuento directo ya rige a una unidad, así que se nombra la
-              promo a secas: decir "c/u llevando 1" daría a entender que hace
-              falta una cantidad mínima que no existe. */}
-          {catalogPromo && (
-            <p className="mb-1 text-xs font-semibold text-state-promo">
-              {storeLabel(catalogPromo.store_id)}
-              {catalogPromo.promo_description ? ` · ${catalogPromo.promo_description}` : ""}
-            </p>
-          )}
-          {pricing && <p className="mb-1 text-xs text-ink-muted">Calculando precio por cantidad…</p>}
-        </>
-      )}
-      {unitPriceLabel && <p className="mb-1 text-xs text-ink-muted">{unitPriceLabel}</p>}
-
-      <StoreBreakdown product={product} />
-
-      <p className="mb-3 line-clamp-2 flex-1 text-sm text-ink" title={product.name}>
+      <Link
+        to={detailUrl}
+        className="mb-3 mt-2 line-clamp-2 flex-1 text-sm text-ink hover:text-brand-violet-700 hover:underline"
+        title={product.name}
+      >
         {product.name}
-      </p>
+      </Link>
       {product.brand && <p className="mb-3 -mt-2 text-xs text-ink-muted">{product.brand}</p>}
 
       {/* Patrón e-commerce estándar: hasta que el producto no está en el carrito

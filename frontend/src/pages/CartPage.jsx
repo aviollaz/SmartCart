@@ -6,17 +6,16 @@ import { optimizeCart } from "../api/optimize";
 import { storeName } from "../utils/formatters";
 import { useCartProductsContext } from "../context/CartProductsContext";
 import { CartLineItem } from "../components/cart/CartLineItem";
-import { EstimatedSubtotal } from "../components/cart/EstimatedSubtotal";
+import { CheckoutSidebar } from "../components/cart/CheckoutSidebar";
 import { ClearCartButton } from "../components/cart/ClearCartButton";
 import { CoverageWarning } from "../components/cart/CoverageWarning";
 import { UndoBar } from "../components/cart/UndoBar";
-import { ProfileDrawer } from "../components/profile/ProfileDrawer";
-import { OptimizeButton } from "../components/optimize/OptimizeButton";
 import { InfeasibleNotice } from "../components/optimize/InfeasibleNotice";
 import { OptimizeResultsPanel } from "../components/optimize/OptimizeResultsPanel";
 import { PurchaseHistorySection } from "../components/history/PurchaseHistorySection";
 
 export function CartPage({ onOpenLocation }) {
+  const resultsRef = useRef(null);
   const { items, incrementItem, decrementItem, removeItem, replaceItem, replaceItems, restoreItems } =
     useCart();
   const { cards, memberships, deliveryCosts, coordinates, location, anon_user_id, setStoreCoverage } =
@@ -165,28 +164,38 @@ export function CartPage({ onOpenLocation }) {
     setUndoSnapshot(null);
   }, [undoSnapshot, restoreItems]);
 
+  // Al llegar un resultado se lleva la vista hasta él: con el carrito a la
+  // izquierda y el botón a la derecha, el resultado cae debajo de los dos y sin
+  // esto el usuario tocaba "Optimizar" y no veía que había pasado algo.
+  useEffect(() => {
+    if (optimizeStatus === "success" || optimizeStatus === "infeasible") {
+      resultsRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
+    }
+  }, [optimizeStatus, optimizeResult]);
+
   return (
-    <div className="mx-auto w-full max-w-4xl px-4 py-6">
+    <div className="mx-auto w-full max-w-6xl px-4 py-6">
       <h1 className="mb-6 font-display text-xl font-bold text-ink">Mi carrito</h1>
 
       <div className="flex flex-col gap-6">
         <CoverageWarning />
 
-        <section className="rounded-lg border border-line bg-surface p-5">
-          <div className="mb-2 flex items-start justify-between gap-3">
-            <h2 className="font-display text-lg font-bold text-ink">Productos seleccionados</h2>
-            <ClearCartButton />
-          </div>
-          {entries.length === 0 ? (
-            <p className="text-sm text-ink-muted">
-              Tu carrito está vacío. Buscá productos en la página principal.
-            </p>
-          ) : (
-            <>
+        <div className="grid grid-cols-1 items-start gap-6 lg:grid-cols-[1fr_360px]">
+          <section className="rounded-lg border border-line bg-surface p-5">
+            <div className="mb-2 flex items-start justify-between gap-3">
+              <h2 className="font-display text-lg font-bold text-ink">Productos seleccionados</h2>
+              <ClearCartButton />
+            </div>
+            {entries.length === 0 ? (
+              <p className="text-sm text-ink-muted">
+                Tu carrito está vacío. Buscá productos en la página principal.
+              </p>
+            ) : (
               <ul className="divide-y divide-line">
                 {entries.map(([unifiedId, item]) => (
                   <CartLineItem
                     key={unifiedId}
+                    unifiedId={unifiedId}
                     name={item.name}
                     quantity={item.quantity}
                     product={cartProducts[unifiedId]}
@@ -196,49 +205,53 @@ export function CartPage({ onOpenLocation }) {
                   />
                 ))}
               </ul>
+            )}
+          </section>
 
-              {/* CartContext documenta la decisión contraria ("el carrito no
-                  muestra subtotal antes de optimizar"). Se rompe a propósito:
-                  una lista de nombres sin un solo precio hace que la pregunta
-                  "¿cuánto llevo?" no tenga respuesta en la pantalla donde se
-                  hace, y esa pregunta la va a hacer todo el mundo. Etiquetarlo
-                  como estimado es más barato que no contestarla. */}
-              <EstimatedSubtotal subtotalEstimado={subtotalEstimado} className="mt-3" />
-            </>
-          )}
-        </section>
+          {/* El subtotal estimado vive en el sidebar, al lado del botón.
+              CartContext documenta la decisión contraria ("el carrito no
+              muestra subtotal antes de optimizar"); se rompe a propósito: una
+              lista sin un solo precio deja sin respuesta "¿cuánto llevo?" en la
+              pantalla donde se pregunta, y etiquetarlo como estimado es más
+              barato que no contestarla. */}
+          <CheckoutSidebar
+            onOpenLocation={onOpenLocation}
+            subtotalEstimado={entries.length ? subtotalEstimado : null}
+            onOptimize={runOptimize}
+            disabled={entries.length === 0}
+            loading={optimizeStatus === "loading"}
+          />
+        </div>
 
         {/* Con el carrito vacío, el historial es lo único accionable de la
             pantalla; con productos adentro sería ruido al lado del flujo de
             optimización. */}
         {entries.length === 0 && <PurchaseHistorySection />}
 
-        <ProfileDrawer onOpenLocation={onOpenLocation} />
-
-        <OptimizeButton onClick={runOptimize} disabled={entries.length === 0} loading={optimizeStatus === "loading"} />
-
-        {optimizeStatus === "infeasible" && <InfeasibleNotice detail={infeasibleDetail} />}
-        {optimizeStatus === "error" && (
-          <p className="text-sm text-state-warning">
-            No pudimos calcular la optimización. Probá de nuevo en un momento.
-          </p>
-        )}
-        {/* Vive en la página y no adentro del panel de resultados: el panel se
-            desmonta y vuelve con el resultado nuevo en cada recálculo, y el
-            deshacer tiene que sobrevivir justo a ese recálculo. */}
-        <UndoBar
-          message={undoSnapshot?.message}
-          onUndo={handleUndo}
-          onDismiss={() => setUndoSnapshot(null)}
-        />
-
-        {optimizeStatus === "success" && optimizeResult && (
-          <OptimizeResultsPanel
-            result={optimizeResult}
-            onAcceptSuggestion={handleAcceptSuggestion}
-            onApplyStrategicSwap={handleApplyStrategicSwap}
+        <div ref={resultsRef} className="flex scroll-mt-28 flex-col gap-4">
+          {optimizeStatus === "infeasible" && <InfeasibleNotice detail={infeasibleDetail} />}
+          {optimizeStatus === "error" && (
+            <p className="text-sm text-state-warning">
+              No pudimos calcular la optimización. Probá de nuevo en un momento.
+            </p>
+          )}
+          {/* Vive en la página y no adentro del panel de resultados: el panel se
+              desmonta y vuelve con el resultado nuevo en cada recálculo, y el
+              deshacer tiene que sobrevivir justo a ese recálculo. */}
+          <UndoBar
+            message={undoSnapshot?.message}
+            onUndo={handleUndo}
+            onDismiss={() => setUndoSnapshot(null)}
           />
-        )}
+
+          {optimizeStatus === "success" && optimizeResult && (
+            <OptimizeResultsPanel
+              result={optimizeResult}
+              onAcceptSuggestion={handleAcceptSuggestion}
+              onApplyStrategicSwap={handleApplyStrategicSwap}
+            />
+          )}
+        </div>
       </div>
     </div>
   );

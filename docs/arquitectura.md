@@ -262,6 +262,7 @@ Endpoints, con su input/output real:
 | `GET /categories` | — | las 49 góndolas agrupadas por sección |
 | `GET /category/{slug}` | slug de góndola | productos de esa góndola (404 si el slug no existe en la tabla) |
 | `POST /products/by-ids` | lista de `unified_id` (hasta 100) | esos productos, en el mismo orden, tal como existen hoy (usado para resolver nombre/precio del carrito y del historial, que en `localStorage` sólo guardan el id) |
+| `GET /deals` | `limit`, membresías opcionales | los productos con mayor descuento de hoy, con `discount_pct` (sección de la home) |
 | `GET /demo-cart` | — | un carrito de ejemplo armado por el backend con el catálogo del día (para el botón "Probar con un carrito de ejemplo") |
 | `GET /logistics/coto/coverage?lat=&lng=` | coordenadas | si Coto cubre esa dirección |
 | `POST /price-preview` | ítems del carrito + membresías | precio neto por tienda a la cantidad pedida, evaluando promos |
@@ -429,7 +430,9 @@ Flujo de usuario, en el orden en que ocurre:
 1. **Onboarding de dirección** (`components/onboarding/LocationModal.jsx`) —
    bloqueante la primera vez (geocodifica con Nominatim), reutilizable después
    para cambiar de dirección. Tiene salida ("seguir sin dirección") para no
-   dejar la app inutilizable si Nominatim está caído.
+   dejar la app inutilizable si Nominatim está caído. El segundo paso pregunta
+   las membresías de supermercado (Club Día, Mi Carrefour…), porque cambian
+   los precios que muestra la grilla desde el primer producto.
 2. **Armado del carrito** — por búsqueda semántica (`/buscar`), navegando el
    mega-menú (`/categoria/:slug`), repitiendo del historial de compras
    (`context/HistoryContext.jsx`, guardado en `localStorage`), o escaneando
