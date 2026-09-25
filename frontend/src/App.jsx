@@ -8,6 +8,7 @@ import { useProfile } from "./context/ProfileContext";
 import { HomePage } from "./pages/HomePage";
 import { SearchResultsPage } from "./pages/SearchResultsPage";
 import { CartPage } from "./pages/CartPage";
+import { ProductPage } from "./pages/ProductPage";
 
 function App() {
   const [isCartOpen, setCartOpen] = useState(false);
@@ -36,6 +37,7 @@ function App() {
           <Route path="/" element={<HomePage />} />
           <Route path="/buscar" element={<SearchResultsPage />} />
           <Route path="/categoria/:shelf" element={<SearchResultsPage />} />
+          <Route path="/producto/:unifiedId" element={<ProductPage />} />
           <Route
             path="/carrito"
             element={<CartPage onOpenLocation={() => setLocationOpen(true)} />}
