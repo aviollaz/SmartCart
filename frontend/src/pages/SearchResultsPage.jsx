@@ -75,6 +75,10 @@ export function SearchResultsPage() {
   // Sin este aviso, la grilla filtrada por cobertura se ve simplemente más
   // chica y parece que faltan productos.
   const excludedLabel = filters.unavailableStores.map(storeLabel).join(" y ");
+  const disabledLabel = filters.excludedStores
+    .filter((id) => !filters.unavailableStores.includes(id))
+    .map(storeLabel)
+    .join(" y ");
   const anyDietaryActive = dietary.glutenFree || dietary.vegan;
   const emptyMessage = anyDietaryActive
     ? `No encontramos productos en ${title} con los filtros de dieta aplicados.`
@@ -87,6 +91,11 @@ export function SearchResultsPage() {
       {excludedLabel && (
         <p className="mb-4 rounded-md border border-state-warning/40 bg-state-warning/10 px-3 py-2 text-sm text-ink-muted">
           No mostramos productos de <strong className="text-ink">{excludedLabel}</strong>: no entregan en tu dirección.
+        </p>
+      )}
+      {disabledLabel && (
+        <p className="mb-4 rounded-md border border-line bg-surface px-3 py-2 text-sm text-ink-muted">
+          No mostramos productos de <strong className="text-ink">{disabledLabel}</strong>: lo deshabilitaste en el carrito.
         </p>
       )}
 

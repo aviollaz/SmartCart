@@ -20,7 +20,7 @@ export function FiltersSidebar({ filters, dietary, onToggleDietary }) {
     setPriceRange,
     storeFilter,
     toggleStore,
-    unavailableStores,
+    hiddenStores,
   } = filters;
 
   return (
@@ -32,7 +32,7 @@ export function FiltersSidebar({ filters, dietary, onToggleDietary }) {
       <StoreAvailabilityToggle
         storeFilter={storeFilter}
         onToggle={toggleStore}
-        unavailableStores={unavailableStores}
+        unavailableStores={hiddenStores}
       />
     </aside>
   );

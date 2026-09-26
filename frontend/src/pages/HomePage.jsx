@@ -157,7 +157,7 @@ function SplitDiagram() {
 }
 
 function DealsSection() {
-  const { memberships, unavailableStores } = useProfile();
+  const { memberships, hiddenStores } = useProfile();
   const { sections } = useShelves();
   const membershipsKey = (memberships || []).join(",");
   // "" = todas las secciones. Estado local y sin persistir: es una forma de
@@ -184,7 +184,7 @@ function DealsSection() {
 
   // Una oferta de una tienda que no entrega en la dirección del usuario no es
   // una oferta para él: se saca, igual que en la grilla de resultados.
-  const visibles = stripUnavailableStores(state.deals, unavailableStores).filter((product) =>
+  const visibles = stripUnavailableStores(state.deals, hiddenStores).filter((product) =>
     product.available_at_stores.some((offer) => offer.promo_unit_price != null)
   );
 

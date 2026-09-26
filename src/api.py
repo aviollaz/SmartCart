@@ -6,7 +6,7 @@ from typing import List, Optional, Dict, Any
 from fastapi import FastAPI, Query, HTTPException, BackgroundTasks
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 import psycopg
 from sentence_transformers import SentenceTransformer
 from src.analytics import (
@@ -195,6 +195,25 @@ class OptimizationRequest(BaseModel):
     # ya venía implícita en `delivery_costs`; acá viaja explícita porque un
     # diccionario de costos no se puede volver a mapear a una etiqueta.
     zone: Optional[str] = None
+    # Tiendas que el usuario eligió no usar ("no quiero comprar en Coto"). Es el
+    # primer campo de tienda que decide el usuario: `excluded_stores` de la
+    # respuesta lo sigue calculando el backend, y sólo por cobertura. Se mantienen
+    # separados porque la causa cambia lo que hay que decirle — "Coto no llega a
+    # tu dirección" es falso para una tienda que el usuario sacó a mano.
+    user_excluded_stores: List[str] = []
+
+    @field_validator("user_excluded_stores")
+    @classmethod
+    def _tiendas_conocidas_y_al_menos_una(cls, value: List[str]) -> List[str]:
+        # Contra DEFAULT_MIN_SPEND_LIMITS porque de ahí saca el optimizador su
+        # lista de tiendas: un id que no esté ahí no excluiría nada, y aceptarlo
+        # en silencio escondería un frontend desincronizado.
+        desconocidas = sorted(set(value) - set(DEFAULT_MIN_SPEND_LIMITS))
+        if desconocidas:
+            raise ValueError(f"Tiendas desconocidas: {', '.join(desconocidas)}")
+        if set(DEFAULT_MIN_SPEND_LIMITS) <= set(value):
+            raise ValueError("Tiene que quedar al menos un supermercado habilitado.")
+        return list(dict.fromkeys(value))
 
 class PricePreviewRequest(BaseModel):
     items: List[CartItem]
@@ -1095,15 +1114,29 @@ def optimize_shopping_cart(request: OptimizationRequest, background_tasks: Backg
     try:
         cart_data = [item.model_dump() for item in request.cart]
 
-        delivery_costs, excluded_stores, coto_logistics = _resolve_coto_stage(request)
+        delivery_costs, coverage_excluded, coto_logistics = _resolve_coto_stage(request)
+
+        # El solver, el ahorro y el cierre de tienda ven las dos exclusiones
+        # juntas: para ellos una tienda que no llega y una que el usuario sacó son
+        # lo mismo, una tienda que no puede entrar al reparto. La causa sólo
+        # importa para lo que se le dice al usuario.
+        user_excluded = list(request.user_excluded_stores)
+        excluded_stores = list(dict.fromkeys(coverage_excluded + user_excluded))
 
         result = optimize_cart(
             cart_items=cart_data,
             user_memberships=request.user_memberships,
             user_cards=request.user_cards,
             delivery_costs=delivery_costs,
-            excluded_stores=excluded_stores
+            excluded_stores=excluded_stores,
+            user_excluded_stores=user_excluded,
         )
+        # `excluded_stores` conserva su semántica de siempre —sólo cobertura—
+        # porque la leen LogisticsNotice ("Coto no llega a tu dirección") y el
+        # evento analítico, cuyo KPI es la exclusión por cobertura. Mezclarle la
+        # elección del usuario haría mentir a los dos.
+        result["excluded_stores"] = coverage_excluded
+        result["user_excluded_stores"] = user_excluded
         result["logistics"] = {"coto": coto_logistics}
 
         if result.get("status") == "success":

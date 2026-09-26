@@ -18,14 +18,16 @@ const EMPTY = [];
  * que falla abierto es este consumidor — misma división que coto_logistics.py.)
  */
 export function useHabitualProducts(habituales) {
-  const { unavailableStores, memberships } = useProfile();
+  // `hiddenStores` = sin cobertura + las que el usuario deshabilitó: para el
+  // precio da igual la causa, ninguna de las dos le vende.
+  const { hiddenStores, memberships } = useProfile();
   const [state, setState] = useState({ products: EMPTY, missing: EMPTY, loading: false });
 
   // Clave estable para el efecto. A diferencia de useUnavailableCartItems, acá
   // NO se ordena antes de unir: el orden ES el ranking, así que un reordenamiento
   // es un cambio real y tiene que volver a pedir.
   const idsKey = habituales.map((h) => h.unified_id).join(",");
-  const excludedKey = unavailableStores.join(",");
+  const excludedKey = hiddenStores.join(",");
   const membershipsKey = (memberships || []).join(",");
 
   useEffect(() => {

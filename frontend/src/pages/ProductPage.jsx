@@ -26,7 +26,7 @@ import { QuantityStepper } from "../components/plp/QuantityStepper";
  */
 export function ProductPage() {
   const { unifiedId } = useParams();
-  const { memberships, unavailableStores } = useProfile();
+  const { memberships, unavailableStores, excludedStores, hiddenStores } = useProfile();
   const membershipsKey = (memberships || []).join(",");
   const [state, setState] = useState({ status: "loading", product: null });
 
@@ -66,7 +66,12 @@ export function ProductPage() {
 
   return (
     <PageShell>
-      <ProductDetail product={state.product} unavailableStores={unavailableStores} />
+      <ProductDetail
+        product={state.product}
+        unavailableStores={unavailableStores}
+        excludedStores={excludedStores}
+        hiddenStores={hiddenStores}
+      />
     </PageShell>
   );
 }
@@ -88,11 +93,11 @@ function PageShell({ children }) {
   );
 }
 
-function ProductDetail({ product: rawProduct, unavailableStores }) {
+function ProductDetail({ product: rawProduct, unavailableStores, excludedStores, hiddenStores }) {
   // El precio se resuelve sobre las tiendas que entregan; la lista de tiendas
   // de abajo sí las muestra todas, marcando las que no llegan, porque "está en
   // Coto pero Coto no te entrega" es información y no ruido.
-  const [visible] = stripUnavailableStores([rawProduct], unavailableStores);
+  const [visible] = stripUnavailableStores([rawProduct], hiddenStores);
   const product = visible || { ...rawProduct, available_at_stores: [], min_price: null, unit_price: null };
 
   const { addItem, incrementItem, decrementItem } = useCart();
@@ -146,14 +151,18 @@ function ProductDetail({ product: rawProduct, unavailableStores }) {
           </div>
         )}
 
-        <StoreOffers offers={rawProduct.available_at_stores} unavailableStores={unavailableStores} />
+        <StoreOffers
+          offers={rawProduct.available_at_stores}
+          unavailableStores={unavailableStores}
+          excludedStores={excludedStores}
+        />
         <SpecsTable product={rawProduct} className="md:hidden" />
       </div>
     </div>
   );
 }
 
-function StoreOffers({ offers, unavailableStores }) {
+function StoreOffers({ offers, unavailableStores, excludedStores }) {
   const sorted = [...(offers || [])].sort(
     (a, b) => (a.promo_unit_price ?? a.base_price) - (b.promo_unit_price ?? b.base_price)
   );
@@ -168,7 +177,8 @@ function StoreOffers({ offers, unavailableStores }) {
       <ul className="divide-y divide-line border-t border-line">
         {sorted.map((offer) => {
           const noDelivery = unavailableStores.includes(offer.store_id);
-          const unavailable = noDelivery || !offer.in_stock;
+          const disabled = !noDelivery && excludedStores.includes(offer.store_id);
+          const unavailable = noDelivery || disabled || !offer.in_stock;
           // Acá sí van las promos por cantidad ("2da al 50%", "3x2"): la card
           // las dejó de listar y este es su lugar.
           const promos = (offer.promotions || [])
@@ -193,7 +203,13 @@ function StoreOffers({ offers, unavailableStores }) {
               ))}
               <div className="mt-1 flex items-center justify-between gap-3 text-xs text-ink-muted">
                 <span>
-                  {noDelivery ? "No entrega en tu dirección" : offer.in_stock ? "Con stock" : "Sin stock hoy"}
+                  {noDelivery
+                    ? "No entrega en tu dirección"
+                    : disabled
+                      ? "Deshabilitado en tu carrito"
+                      : offer.in_stock
+                        ? "Con stock"
+                        : "Sin stock hoy"}
                 </span>
                 {offer.product_url && (
                   <a

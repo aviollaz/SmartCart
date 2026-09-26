@@ -25,14 +25,16 @@ const MAX_IDS = 100;
  * es peor que perder la pantalla sólo si la pantalla también se pierde.
  */
 export function useCartProducts(items) {
-  const { unavailableStores, memberships } = useProfile();
+  // `hiddenStores` = sin cobertura + las que el usuario deshabilitó: para el
+  // precio da igual la causa, ninguna de las dos le vende.
+  const { hiddenStores, memberships } = useProfile();
   const [byId, setById] = useState(EMPTY);
 
   // Se ordena antes de unir: acá el orden NO es información (a diferencia del
   // ranking de habituales), así que reordenar el carrito no tiene por qué
   // disparar un pedido nuevo.
   const idsKey = Object.keys(items).sort().join(",");
-  const excludedKey = unavailableStores.join(",");
+  const excludedKey = hiddenStores.join(",");
   const membershipsKey = (memberships || []).join(",");
 
   useEffect(() => {

@@ -18,8 +18,16 @@ export function CartPage({ onOpenLocation }) {
   const resultsRef = useRef(null);
   const { items, incrementItem, decrementItem, removeItem, replaceItem, replaceItems, restoreItems } =
     useCart();
-  const { cards, memberships, deliveryCosts, coordinates, location, anon_user_id, setStoreCoverage } =
-    useProfile();
+  const {
+    cards,
+    memberships,
+    deliveryCosts,
+    coordinates,
+    location,
+    anon_user_id,
+    excludedStores,
+    setStoreCoverage,
+  } = useProfile();
   // Sólo el lado de escritura: `entries` de acá abajo ya nombra a los ítems del
   // carrito, y PurchaseHistorySection hace su propio useHistory() para leer.
   const { recordPurchase } = useHistory();
@@ -61,6 +69,7 @@ export function CartPage({ onOpenLocation }) {
         coordinates,
         anonUserId: anon_user_id,
         zone: location?.zone,
+        excludedStores,
       });
 
       if (response.ok) {
@@ -107,7 +116,7 @@ export function CartPage({ onOpenLocation }) {
       setOptimizeStatus("error");
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [items, memberships, cards, deliveryCosts, coordinates, anon_user_id, location, recordPurchase]);
+  }, [items, memberships, cards, deliveryCosts, coordinates, anon_user_id, location, excludedStores, recordPurchase]);
 
   useEffect(() => {
     if (reoptimizeRef.current) {

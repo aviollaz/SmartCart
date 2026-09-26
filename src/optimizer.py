@@ -25,7 +25,7 @@ MAX_PCT = 100
 DEFAULT_MIN_SPEND_LIMITS = {"coto_online": 15000, "dia_online": 12000, "carrefour_online": 20000}
 DEFAULT_DELIVERY_COSTS = {"coto_online": 3000, "dia_online": 3000, "carrefour_online": 3500}
 
-def optimize_cart(cart_items, user_memberships=None, user_cards=None, min_spend_limits=None, delivery_costs=None, excluded_stores=None, flat_prices=None, bank_promos=None):
+def optimize_cart(cart_items, user_memberships=None, user_cards=None, min_spend_limits=None, delivery_costs=None, excluded_stores=None, flat_prices=None, bank_promos=None, user_excluded_stores=None):
     """
     `flat_prices` es un escape hatch para quien ya tiene la matriz de precios y
     no quiere pagarla de nuevo: flatten_cart_prices() abre una conexión nueva por
@@ -78,11 +78,25 @@ def optimize_cart(cart_items, user_memberships=None, user_cards=None, min_spend_
         # El motivo sólo se puede atribuir a la entrega si efectivamente se
         # excluyó alguna tienda; si no, el producto quedó sin ofertas por otra
         # razón y culpar a la dirección sería inventar una explicación.
-        if excluded_stores:
+        #
+        # Y dentro de las excluidas, la causa cambia el consejo: a una tienda que
+        # el usuario sacó a mano (`user_excluded_stores`, sólo informativo acá —
+        # la exclusión real ya viene en `excluded_stores`) no se le puede echar la
+        # culpa de la dirección, y "elegí otra dirección" no arreglaría nada.
+        elegidas = [s for s in excluded_stores if s in (user_excluded_stores or [])]
+        sin_cobertura = [s for s in excluded_stores if s not in elegidas]
+        if sin_cobertura and not elegidas:
             motivo = (
-                f"sólo están disponibles en {', '.join(excluded_stores)}, que no puede "
+                f"sólo están disponibles en {', '.join(sin_cobertura)}, que no puede "
                 f"entregar en tu dirección. Sacalos del carrito o elegí otra dirección "
                 f"de entrega."
+            )
+        elif elegidas:
+            motivo = (
+                f"sólo están disponibles en {', '.join(excluded_stores)}, que "
+                f"{'no están habilitados' if len(excluded_stores) > 1 else 'no está habilitado'} "
+                f"para esta compra. Sacalos del carrito o volvé a habilitar "
+                f"{'esos supermercados' if len(elegidas) > 1 else 'ese supermercado'}."
             )
         else:
             motivo = "no están disponibles en ninguna de las tiendas consultadas."

@@ -14,6 +14,7 @@ export async function optimizeCart({
   coordinates,
   anonUserId,
   zone,
+  excludedStores,
 }) {
   try {
     const data = await apiFetch("/optimize", {
@@ -41,6 +42,10 @@ export async function optimizeCart({
         // se puede recuperar la etiqueta. Los dos son nullables del otro lado.
         anon_user_id: anonUserId ?? null,
         zone: zone ?? null,
+        // Tiendas que el usuario deshabilitó en el carrito. Distinto de la
+        // cobertura, que la calcula el backend con lat/lng: la causa cambia lo
+        // que el optimizador le explica al usuario.
+        user_excluded_stores: excludedStores ?? [],
       }),
     });
     return { ok: true, data };

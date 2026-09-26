@@ -238,3 +238,53 @@ def test_ninguna_tienda_vtex_sin_item_id_rompe(store):
     api._attach_vtex_checkout_links(cur, split)
 
     assert "checkout_url" not in split[store]
+
+
+# --------------------------------------------------------------------------
+# Tiendas que el usuario eligió no usar
+# --------------------------------------------------------------------------
+
+def test_user_excluded_stores_rechaza_una_tienda_desconocida():
+    with pytest.raises(ValueError, match="desconocidas"):
+        api.OptimizationRequest(cart=[], user_excluded_stores=["jumbo_online"])
+
+
+def test_user_excluded_stores_no_puede_sacar_todas():
+    with pytest.raises(ValueError, match="al menos un supermercado"):
+        api.OptimizationRequest(cart=[], user_excluded_stores=list(api.DEFAULT_MIN_SPEND_LIMITS))
+
+
+def test_user_excluded_stores_deduplica():
+    req = api.OptimizationRequest(cart=[], user_excluded_stores=[COTO, COTO])
+    assert req.user_excluded_stores == [COTO]
+
+
+def test_el_solver_ve_las_dos_exclusiones_y_la_respuesta_las_separa(monkeypatch):
+    """
+    Coto sin cobertura + Carrefour sacado a mano: el solver tiene que excluir a
+    las dos, pero `excluded_stores` de la respuesta sigue siendo sólo cobertura
+    (lo leen LogisticsNotice y el KPI del analyzer).
+    """
+    from fastapi import BackgroundTasks
+
+    monkeypatch.setattr(api, "resolve_coto_logistics",
+                        lambda lat, lng, fallback_delivery_cost: {
+                            "covered": False, "delivery_cost": None, "message": "no llega"})
+    visto = {}
+
+    def fake_optimize_cart(**kwargs):
+        visto.update(kwargs)
+        return {"status": "infeasible", "message": "x", "excluded_stores": kwargs["excluded_stores"]}
+
+    monkeypatch.setattr(api, "optimize_cart", fake_optimize_cart)
+
+    req = api.OptimizationRequest(
+        cart=[api.CartItem(unified_id="prod_a", quantity=1)],
+        lat=-31.4, lng=-64.2,
+        user_excluded_stores=[CARREFOUR],
+    )
+    response = api.optimize_shopping_cart(req, BackgroundTasks())
+
+    assert response.status_code == 400
+    assert set(visto["excluded_stores"]) == {COTO, CARREFOUR}
+    assert visto["user_excluded_stores"] == [CARREFOUR]

@@ -61,6 +61,11 @@ const DEFAULT_PROFILE = {
   // tienen undefined y ven el paso una vez, con lo que ya hubieran elegido
   // preseleccionado.
   membershipsAsked: false,
+  // Tiendas que el usuario eligió no usar (ej. ["coto_online"]), desde el
+  // carrito. Viajan a POST /optimize como `user_excluded_stores` y sacan sus
+  // ofertas de la grilla, igual que una tienda sin cobertura. Mismo criterio de
+  // migración que el resto: ausente en un perfil viejo = [] = todas habilitadas.
+  excludedStores: [],
 };
 
 function stampCoverage(coverageByStore) {
@@ -116,6 +121,10 @@ export function ProfileProvider({ children }) {
     setProfile((prev) => ({ ...prev, location: { skipped: true }, storeCoverage: {} }));
   }
 
+  function setExcludedStores(excludedStores) {
+    setProfile((prev) => ({ ...prev, excludedStores }));
+  }
+
   function setStoreCoverage(storeId, coverage) {
     setProfile((prev) => ({
       ...prev,
@@ -156,13 +165,29 @@ export function ProfileProvider({ children }) {
     return ids.length > 0 ? ids : NO_UNAVAILABLE_STORES;
   }, [profile.storeCoverage]);
 
+  const excludedStores = useMemo(
+    () => (profile.excludedStores?.length ? profile.excludedStores : NO_UNAVAILABLE_STORES),
+    [profile.excludedStores]
+  );
+
+  // Lo que se saca de la grilla: las que no llegan más las que el usuario sacó.
+  // Van separadas en todo lo demás porque la causa cambia el mensaje — "Coto no
+  // entrega en tu dirección" es falso para una tienda deshabilitada a mano.
+  const hiddenStores = useMemo(() => {
+    const union = [...new Set([...unavailableStores, ...excludedStores])];
+    return union.length > 0 ? union : NO_UNAVAILABLE_STORES;
+  }, [unavailableStores, excludedStores]);
+
   const value = useMemo(
     () => ({
       ...profile,
       deliveryCosts,
       coordinates,
       unavailableStores,
+      excludedStores,
+      hiddenStores,
       setCards,
+      setExcludedStores,
       setMemberships,
       completeMembershipStep,
       setLocation,
@@ -170,7 +195,7 @@ export function ProfileProvider({ children }) {
       skipLocation,
     }),
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [profile, deliveryCosts, coordinates, unavailableStores]
+    [profile, deliveryCosts, coordinates, unavailableStores, excludedStores, hiddenStores]
   );
 
   return <ProfileContext.Provider value={value}>{children}</ProfileContext.Provider>;

@@ -28,7 +28,7 @@ function computePriceBounds(results) {
  * ProductResponse[] — sin fabricar campos que el backend no provee.
  */
 export function useProductFilters(results) {
-  const { unavailableStores } = useProfile();
+  const { unavailableStores, excludedStores, hiddenStores } = useProfile();
   const [selectedBrands, setSelectedBrands] = useState(() => new Set());
   const [priceRange, setPriceRange] = useState(null);
   const [storeFilter, setStoreFilter] = useState(emptyStoreFilter);
@@ -39,8 +39,8 @@ export function useProductFilters(results) {
   // todos de esta misma lista, y si siguieran mirando `results` contarían
   // productos que la grilla ya no muestra.
   const usableResults = useMemo(
-    () => stripUnavailableStores(results, unavailableStores),
-    [results, unavailableStores]
+    () => stripUnavailableStores(results, hiddenStores),
+    [results, hiddenStores]
   );
 
   const priceBounds = useMemo(() => computePriceBounds(usableResults), [usableResults]);
@@ -128,7 +128,11 @@ export function useProductFilters(results) {
 
   return {
     filteredResults,
+    // Separadas para el aviso de la grilla (la causa cambia el texto) y unidas
+    // para el filtro por tienda, que no tiene que ofrecer ninguna de las dos.
     unavailableStores,
+    excludedStores,
+    hiddenStores,
     brandOptions,
     selectedBrands,
     toggleBrand,

@@ -392,6 +392,48 @@ def test_producto_solo_en_la_tienda_excluida_explica_el_motivo_real(fake_prices)
     assert "dirección" in result["message"]
 
 
+def test_producto_solo_en_una_tienda_que_el_usuario_saco_no_culpa_a_la_direccion(fake_prices):
+    """
+    Misma trampa, otra causa: si el usuario deshabilitó Coto a mano, "elegí otra
+    dirección de entrega" es un consejo que no puede arreglar nada.
+    """
+    fake_prices({
+        "prod_a": {COTO: 9000, DIA: 9000},
+        "prod_b": {COTO: 8000},
+    })
+
+    result = optimize_cart(
+        _cart("prod_a", "prod_b"),
+        min_spend_limits={COTO: 5000, DIA: 5000},
+        delivery_costs={COTO: 3000, DIA: 3000},
+        excluded_stores=[COTO],
+        user_excluded_stores=[COTO],
+    )
+
+    assert result["status"] == "infeasible"
+    assert result["unavailable_products"] == ["prod_b"]
+    assert "dirección" not in result["message"]
+    assert "habilit" in result["message"]
+
+
+def test_excluir_la_tienda_mas_barata_cambia_el_optimo(fake_prices):
+    """El usuario puede preferir pagar más con tal de no comprar en Coto."""
+    fake_prices({
+        "prod_a": {COTO: 5000, DIA: 9000},
+        "prod_b": {COTO: 5000, DIA: 9000},
+    })
+    args = dict(min_spend_limits={COTO: 5000, DIA: 5000},
+                delivery_costs={COTO: 3000, DIA: 3000})
+
+    libre = optimize_cart(_cart("prod_a", "prod_b"), **args)
+    sin_coto = optimize_cart(_cart("prod_a", "prod_b"), excluded_stores=[COTO],
+                             user_excluded_stores=[COTO], **args)
+
+    assert set(libre["split"]) == {COTO}
+    assert set(sin_coto["split"]) == {DIA}
+    assert sin_coto["total_spent_net"] > libre["total_spent_net"]
+
+
 def test_sin_exclusiones_no_se_culpa_a_la_direccion(fake_prices):
     """
     Un producto sin ofertas en ninguna tienda configurada no tiene nada que ver

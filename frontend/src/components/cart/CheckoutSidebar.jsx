@@ -1,6 +1,7 @@
-import { ChevronDown, CreditCard } from "lucide-react";
+import { ChevronDown, CreditCard, Store } from "lucide-react";
 import { useProfile } from "../../context/ProfileContext";
 import { CARD_OPTIONS, MEMBERSHIP_OPTIONS } from "../../utils/paymentOptions";
+import { STORES } from "../../utils/constants";
 import { AddressField } from "../profile/AddressField";
 import { MultiSelectField } from "../profile/MultiSelectField";
 import { OptimizeButton } from "../optimize/OptimizeButton";
@@ -11,6 +12,68 @@ function paymentSummary(cards, memberships) {
   if (cards.length) parts.push(`${cards.length} tarjeta${cards.length === 1 ? "" : "s"}`);
   if (memberships.length) parts.push(`${memberships.length} membresía${memberships.length === 1 ? "" : "s"}`);
   return parts.length ? parts.join(" · ") : "Ninguno elegido";
+}
+
+function storesSummary(excludedStores) {
+  const enabled = STORES.filter((store) => !excludedStores.includes(store.id));
+  if (enabled.length === STORES.length) return "Todos";
+  return enabled.map((store) => store.name).join(" y ");
+}
+
+/**
+ * Qué supermercados puede usar el optimizador. Existe sobre todo por Coto: no
+ * permite armar el carrito desde otro sitio (hay que agregar producto por
+ * producto), y hay quien prefiere pagar un poco más con tal de no hacerlo.
+ *
+ * La última tienda marcada queda deshabilitada: sin ninguna no hay nada que
+ * optimizar, y el backend lo rechaza igual (422).
+ */
+function StoresField() {
+  const { excludedStores, setExcludedStores } = useProfile();
+  const enabledCount = STORES.length - excludedStores.length;
+
+  const toggle = (storeId) => {
+    setExcludedStores(
+      excludedStores.includes(storeId)
+        ? excludedStores.filter((id) => id !== storeId)
+        : [...excludedStores, storeId]
+    );
+  };
+
+  return (
+    <details className="group rounded-md border border-line">
+      <summary className="flex cursor-pointer select-none items-center justify-between gap-2 px-3 py-2 text-sm">
+        <span className="flex items-center gap-2">
+          <Store size={16} className="shrink-0 text-brand-accent" />
+          <span>
+            <span className="block font-semibold text-ink">Supermercados</span>
+            <span className="block text-xs text-ink-muted">{storesSummary(excludedStores)}</span>
+          </span>
+        </span>
+        <ChevronDown size={16} className="shrink-0 text-ink-muted transition-transform group-open:rotate-180" />
+      </summary>
+      <fieldset className="flex flex-col gap-2 border-t border-line p-3">
+        <legend className="sr-only">Supermercados habilitados</legend>
+        {STORES.map((store) => {
+          const checked = !excludedStores.includes(store.id);
+          const locked = checked && enabledCount === 1;
+          return (
+            <label key={store.id} className={`flex items-center gap-2 text-sm ${locked ? "text-ink-muted" : "text-ink"}`}>
+              <input
+                type="checkbox"
+                checked={checked}
+                disabled={locked}
+                onChange={() => toggle(store.id)}
+                className="accent-brand-accent"
+              />
+              {store.name}
+            </label>
+          );
+        })}
+        <p className="text-xs text-ink-muted">Los que desmarques no se usan al optimizar ni aparecen en los precios.</p>
+      </fieldset>
+    </details>
+  );
 }
 
 /**
@@ -51,6 +114,8 @@ export function CheckoutSidebar({ onOpenLocation, subtotalEstimado, onOptimize, 
           />
         </div>
       </details>
+
+      <StoresField />
 
       <EstimatedSubtotal subtotalEstimado={subtotalEstimado} />
       <OptimizeButton onClick={onOptimize} disabled={disabled} loading={loading} />

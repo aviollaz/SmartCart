@@ -25,7 +25,7 @@ import { useFlattenedPrice } from "./useFlattenedPrice";
  */
 export function useProductPricing(product) {
   const { items } = useCart();
-  const { unavailableStores, memberships } = useProfile();
+  const { hiddenStores, memberships } = useProfile();
   const cartEntry = items[product.unified_id];
   const displayPrice = resolveDisplayPrice(product);
 
@@ -43,7 +43,7 @@ export function useProductPricing(product) {
   const { data: flattened, loading: pricing } = useFlattenedPrice(
     product.unified_id,
     quantity,
-    unavailableStores,
+    hiddenStores,
     memberships || []
   );
 
