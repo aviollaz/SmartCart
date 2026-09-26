@@ -101,16 +101,26 @@ Contexto: `GET /search` ya hace recuperar-y-reordenar en dos etapas con el bonus
 por disponibilidad (`STORE_BONUS`, ver CLAUDE.md etapa 6). Lo que sigue es la
 continuación natural.
 
-### 5. Búsqueda híbrida: sumar la mitad léxica **[hipótesis]**
-Para queries cortas y precisas ("oreo 354g", "coca 2.25") BM25 le gana a los
-embeddings casi siempre; el vector brilla en queries vagas ("algo para untar sin
-azúcar"). Hoy sólo está la mitad densa: grep de `tsvector|ts_rank|pg_trgm` sobre
-`src/` da cero, `src/schema.py` incluido.
+### 5. Búsqueda híbrida: implementada, falta medirla y enchufarla **[hipótesis]**
+**Lo que ya está** (sep-2026): `src/search.py` tiene los dos modos y es el único
+SQL de búsqueda — lo usan `GET /search` y `medir_busqueda.py`, que antes copiaba
+la consulta a mano y sin el bonus por disponibilidad. El híbrido suma una mitad
+léxica sobre `unified_products.name_tsv` (tsvector `spanish` sin acentos,
+columna generada + GIN, en `src/schema.py`; se rellena sola al aplicar el
+esquema, sin re-scrapear) y fusiona por Reciprocal Rank Fusion (k=60). La mitad
+densa entra con su orden de siempre, así que `STORE_BONUS` no se recalibra.
 
-Postgres ya trae `tsvector`/`ts_rank` y `pg_trgm`, así que **no hacen falta
-dependencias nuevas**: se fusionan las dos listas (Reciprocal Rank Fusion es lo
-estándar) dentro del mismo CTE `pool` que ya existe. Probablemente la mejora más
-grande por línea de código en un catálogo de este tamaño.
+**Lo que falta, en este orden:**
+
+1. Con una base poblada: `python -m src.scripts.medir_busqueda --modo denso` y
+   `--modo hibrido`. Además de las 10 queries de una palabra (79/100 hoy) el
+   script mide 5 precisas de marca ("playadito", "coca cola 2.25"…), que es
+   donde se espera la ganancia.
+2. **Gate:** el híbrido no puede bajar el total de una palabra ni romper
+   ninguna query que hoy da 10/10. Si pasa, `DEFAULT_SEARCH_MODE = "hibrido"`
+   en `src/search.py` y actualizar `tests/test_search_ranking.py`, cuyo test de
+   orden replica el score denso y dejaría de valer con RRF.
+3. Si no pasa, se registra en Cerrados con la tabla, como el ítem 4.
 
 ### 6. Atributos de la query como filtro duro
 "leche descremada 1L" o "fideos sin tacc": el embedding **difumina** el `1L` y
@@ -197,23 +207,9 @@ Lo que **no** hace falta tocar: `src/embeddings.py`, `src/schema.py` y
 
 ## Catálogo
 
-### 10. Helados: falta Carrefour
-La única góndola de alimentos relevada que **no** entró al segundo tramo. Coto
-tiene 150 productos y Día 48, pero `congelados/helados-y-postres` de Carrefour
-devuelve **0 productos en vivo** aunque el nodo exista en su árbol de categorías,
-así que no cumple la regla de las tres tiendas de `src/shelves.py`.
-
-Dos hipótesis, sin verificar: que sea estacional (el relevamiento es de
-principios de septiembre, arrancando la primavera) o que Carrefour los cuelgue de
-otra rama. **Revisar en verano**; si aparecen productos es una fila más en la
-tabla, con las claves de Coto y Día ya relevadas:
-
-* Coto `catv00003247` (Helados en Pote), `catv00003248` (en Palito),
-  `catv00003147` (Postres Helados), `catv00003183` (Yogur Helado)
-* Día `congelados/postres-congelados`
-
 ### 11. Medir el consumo de Neon después del segundo tramo **[hipótesis]**
-El catálogo pasó de 20 a 49 góndolas, así que el barrido nocturno pasa de ~77
+El catálogo pasó de 20 a 49 góndolas (y después a 56, con helados y la sección
+Limpieza), así que el barrido nocturno pasa de ~77
 minutos a un estimado de ~1,5 h por tienda en paralelo. El plan gratuito de Neon
 da **100 CU-hours por mes** y la base se suspende sola tras 5 minutos sin
 actividad, o sea que lo que se paga es el tiempo que está despierta.
@@ -226,20 +222,21 @@ semana. Si se acerca al tope, las salidas por orden de costo son bajar la
 frecuencia del barrido (día por medio alcanza para precios de supermercado),
 o mudarse a la VM de Oracle (`ops/README.md`).
 
-### 20. Descripción del producto en la ficha
-La página de producto (`frontend/src/pages/ProductPage.jsx`) muestra EAN, marca,
-góndola, contenido y flags dietarios, pero **no la descripción**, porque la base
-no la guarda: los scrapers la descartan a propósito. La `description` de VTEX
-lista productos hermanos en la misma línea (es lo que hizo que un ketchup
-Hellmann's se leyera como vegano, ver los flags dietarios en CLAUDE.md), así que
-guardarla tal cual mostraría en la ficha texto de otro producto.
+### 21. Tamaños de Limpieza: papel en metros y paños
+Toda la sección Limpieza de papel (papel higiénico, rollos, servilletas) queda con
+`unit_type = 'un'`: el tamaño real está en metros ("4 rollos x 30 m"), metros
+cuadrados o paños, y `src/size_parser.py` no lee ninguna de esas unidades. Es la
+dirección segura —no inventa un peso ni un precio por kilo—, pero tiene un costo
+concreto: `substitutions.is_comparable` trata a dos productos en `'un'` como
+comparables sin mirar tamaño, así que la única barrera que queda entre un rollo
+de 30 m y uno de 80 m es `same_pack_format` (la cantidad de rollos del pack).
 
-Traerla es tocar los tres scrapers, sumar una columna en `src/schema.py` (y en el
-`ON CONFLICT DO UPDATE SET` del mismo commit, regla de la etapa 2) y esperar un
-barrido. Antes de hacerlo, medir qué fracción de las descripciones de Día y
-Carrefour son del producto y no del catálogo; Coto no expone una equivalente en
-su BFF. Tampoco hay ratings: ninguna de las tres cadenas los publica en los
-endpoints que se usan.
+Relacionado: Coto archiva film adherente y papel manteca en `catv00003020`
+("Rollo de Cocina"), así que esos dos productos quedan en `rollos-y-servilletas`.
+Son dos filas; no se agregó una exclusión por nombre para eso.
+
+Si se arregla, el lugar es `size_parser` (una unidad `m`/`m2` con su propio
+vocabulario), no un umbral en las sustituciones.
 
 ---
 
@@ -275,9 +272,11 @@ mensaje propio cuando el solver falla con el cap puesto.
 `OptimizationRequest` en `src/api.py` no tiene ningún campo de este tipo hoy
 — a diferencia de lo que uno esperaría, `excluded_stores` **no** viaja desde
 el frontend: lo calcula el propio backend a partir de `lat`/`lng`
-(`_resolve_coto_stage`). `max_stores` sí sería el primer campo puramente
-elegido por el usuario, así que hay que agregarlo como
-`Optional[int] = None` y pasarlo a `optimize_cart(...)`.
+(`_resolve_coto_stage`). Ya hay un precedente: `user_excluded_stores`
+(las tiendas que el usuario deshabilitó en el carrito) es un campo elegido por el
+usuario, validado en `OptimizationRequest`, y `optimize_cart` ya distingue su
+mensaje de inviabilidad del de cobertura. `max_stores` seguiría ese mismo patrón:
+`Optional[int] = None`, validado, y pasado a `optimize_cart(...)`.
 `frontend/src/api/optimize.js` sigue el mismo patrón que `zone`/`anon_user_id`
 para sumarlo al body.
 
@@ -356,6 +355,44 @@ donde se lee cuando se toca el código.
   de `tests/test_scraper_truncation.py`. **No elimina los fallos reales**
   (hash de persisted query rotado, sitio caído) — esos tienen que seguir
   pintando el job en rojo.
+* **10 — Helados en Carrefour** → fila `helados` en `src/shelves.py`. No era
+  otra rama: el catálogo público de Carrefour tiene ~27 helados en
+  `congelados/helados-y-postres`, pero el listado filtra los sin stock
+  (`hideUnavailableItems`) y a fin de invierno quedaba 1. Con >0 la fila cumple
+  la regla de las tres tiendas; en invierno puede volver a 0 y pintar el barrido
+  de PARTIAL por categoría vacía, que es la señal funcionando.
+* **20 — Descripción del producto en la ficha** → `store_products.description`,
+  que llenan Día y Carrefour desde el próximo barrido (Coto no expone
+  descripción: su BFF de listado sólo repite el nombre y no hay endpoint público
+  de detalle). Medido sobre 97 productos: ~41% trae texto, y
+  `vtex.clean_description()` descarta la plantilla de marca propia de Carrefour,
+  el HTML sin texto y el nombre repetido — quedan ~32%, todas del producto.
+  Sólo para mostrar (atribuida a la tienda en la ficha); **nunca** evidencia
+  dietaria. CLAUDE.md etapas 2 y 6.
+* **Carrito de Coto** (pedido fuera del backlog) — investigado: Coto agrega al
+  carrito con un POST a su API ATG (`cCarritoActor/addOrRemoveItemToOrderV2`) que
+  depende de las cookies de coto.com.ar, así que SmartCart no puede llamarlo, y
+  no hay carrito por URL. Lo único que funcionaría es un bookmarklet o una
+  extensión corriendo dentro de coto.com.ar; **AV lo descartó** por ser sólo de
+  escritorio. Se arregló el problema de fondo que sí tenía solución: el botón que
+  abría N pestañas (y el navegador bloqueaba desde la segunda) es ahora una
+  lista con un link por producto. Y se agregó la salida para quien no quiere
+  pasar por eso: **deshabilitar supermercados** en el carrito
+  (`user_excluded_stores`), que los saca del optimizador y de los precios de la
+  grilla. Razonamiento del endpoint en el comentario de `VTEX_CHECKOUT_DOMAINS`
+  (`src/api.py`).
+* **Sección Limpieza** (pedido fuera del backlog) — seis góndolas: papel
+  higiénico, rollos y servilletas, detergente, jabón para la ropa, suavizantes y
+  lavandina. Dos nodos de Día quedaron afuera a propósito por mezclar otra
+  góndola en la misma hoja (servilletas con pañuelos, jabón en barra con
+  aprestos). Ver el ítem 21 para lo que no resuelve.
+* **Día reorganizó su taxonomía y 20 claves estaban muertas** (encontrado al
+  agregar Limpieza, sep-2026) — todo Desayuno (`desayuno/…` pasó a
+  `desayuno-y-merienda/…`) y casi todo Congelados devolvían 0 productos, o sea
+  que Día no aportaba nada a 15 góndolas. Se regeneró
+  `src/scrapers/dia_categories.json` y se remapearon las claves. Es exactamente
+  el caso que `categories_empty` (CLAUDE.md etapa 10) existe para hacer ruidoso:
+  si el barrido nocturno lo venía marcando PARTIAL, nadie lo había leído.
 * **4 — Modelo multilingüe → medido y descartado, no se migra.** Se corrió
   `medir_busqueda.py` con los dos candidatos contra una copia local del
   catálogo (12.961 productos, dump de sólo lectura de Neon — la base de

@@ -127,8 +127,8 @@ después sin borrar catálogo vivo por error (etapa 3.2, poda).
 Es la única taxonomía del proyecto. Una fila (`Shelf`) = un slug canónico
 ("yerba-mate") + una etiqueta ("Yerba y mate") + una sección de menú
 ("Desayuno y merienda") + las claves que identifican esa góndola en cada una
-de las tres tiendas. Hoy son **49 góndolas**, con **104** claves de Coto, **77**
-de Día y **57** de Carrefour (una góndola puede necesitar más de una clave por
+de las tres tiendas. Hoy son **56 góndolas** en seis secciones (la última, Limpieza), con **118**
+claves de Coto, **86** de Día y **64** de Carrefour (una góndola puede necesitar más de una clave por
 tienda, porque las tres taxonomías anidan a profundidades distintas).
 
 Esta tabla existe porque la unificación es por EAN: un producto sólo es
@@ -259,14 +259,14 @@ Endpoints, con su input/output real:
 | Endpoint | Input | Output |
 | --- | --- | --- |
 | `GET /search?q=` | texto libre | lista de productos, ordenada por relevancia semántica ponderada por disponibilidad multi-tienda (ver más abajo) |
-| `GET /categories` | — | las 49 góndolas agrupadas por sección |
+| `GET /categories` | — | las 56 góndolas agrupadas por sección |
 | `GET /category/{slug}` | slug de góndola | productos de esa góndola (404 si el slug no existe en la tabla) |
-| `POST /products/by-ids` | lista de `unified_id` (hasta 100) | esos productos, en el mismo orden, tal como existen hoy (usado para resolver nombre/precio del carrito y del historial, que en `localStorage` sólo guardan el id) |
+| `POST /products/by-ids` | lista de `unified_id` (hasta 100) | esos productos, en el mismo orden, tal como existen hoy, más la descripción de alguna tienda para la ficha (usado para resolver nombre/precio del carrito y del historial, que en `localStorage` sólo guardan el id) |
 | `GET /deals` | `limit`, membresías y sección opcionales | los productos con mayor descuento de hoy, con `discount_pct` (sección de la home, filtrable por sección) |
 | `GET /demo-cart` | — | un carrito de ejemplo armado por el backend con el catálogo del día (para el botón "Probar con un carrito de ejemplo") |
 | `GET /logistics/coto/coverage?lat=&lng=` | coordenadas | si Coto cubre esa dirección |
 | `POST /price-preview` | ítems del carrito + membresías | precio neto por tienda a la cantidad pedida, evaluando promos |
-| `POST /optimize` | carrito, coordenadas opcionales, tarjetas/membresías declaradas, costos de envío por zona | el reparto óptimo entre tiendas, o 400 con motivo si es inviable |
+| `POST /optimize` | carrito, coordenadas opcionales, tarjetas/membresías declaradas, costos de envío por zona, supermercados que el usuario deshabilitó | el reparto óptimo entre tiendas, o 400 con motivo si es inviable |
 | `POST /receipt/parse` | una foto de ticket (`multipart/form-data`) | por línea leída: el texto OCR y, si hubo un match confiable, el producto del catálogo |
 
 **Búsqueda (`GET /search`):** no es sólo "los vecinos más cercanos por
@@ -279,6 +279,12 @@ sistemáticamente contra uno idéntico en relevancia pero vendido en una sola.
 El bonus está calibrado contra el spread real de distancias del catálogo, no
 elegido a ojo: subirlo demasiado termina ordenando por cantidad de tiendas en
 vez de por relevancia semántica.
+
+El SQL vive en `src/search.py`, que también usa `medir_busqueda.py`, y tiene
+un segundo modo **híbrido**: suma una mitad léxica (tsvector sobre
+`unified_products.name_tsv`) y fusiona las dos listas por Reciprocal Rank
+Fusion. Está apagado (`DEFAULT_SEARCH_MODE = "denso"`) hasta que la medición
+demuestre que no pierde contra el denso (`docs/TODO.md`, ítem 5).
 
 **Optimización (`POST /optimize`):** ver 3.6.1 más abajo — es el corazón del
 proyecto y tiene su propia etapa (`flattener.py` + `optimizer.py`).
