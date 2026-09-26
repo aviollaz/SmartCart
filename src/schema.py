@@ -60,6 +60,20 @@ def resolve_conn_string(conn_string: str | None = None) -> str:
 
 _EXTENSIONS = (
     "CREATE EXTENSION IF NOT EXISTS vector;",
+    # La mitad léxica de GET /search (src/search.py) compara sin acentos: "cafe"
+    # tiene que encontrar "Café". Viene con Postgres (contrib), no es una
+    # dependencia nueva.
+    "CREATE EXTENSION IF NOT EXISTS unaccent;",
+    # `unaccent()` es STABLE (depende del diccionario configurado), y una columna
+    # generada sólo acepta funciones IMMUTABLE. El envoltorio fija el diccionario
+    # explícitamente, que es lo que la vuelve inmutable en los hechos; es el
+    # patrón estándar para indexar texto sin acentos. Va acá y no con las columnas
+    # porque tiene que existir antes que el CREATE TABLE que la usa.
+    """
+    CREATE OR REPLACE FUNCTION smartcart_unaccent(text) RETURNS text
+        LANGUAGE sql IMMUTABLE PARALLEL SAFE STRICT
+        AS $$ SELECT public.unaccent('public.unaccent'::regdictionary, $1) $$;
+    """,
 )
 
 # Las tablas tal como están en la base viva, menos las columnas que ya no lee
@@ -83,7 +97,11 @@ _TABLES = (
         total_volume_weight NUMERIC(10,2),
         name_embedding      vector(384),
         is_gluten_free      BOOLEAN DEFAULT FALSE,
-        is_vegan            BOOLEAN DEFAULT FALSE
+        is_vegan            BOOLEAN DEFAULT FALSE,
+        name_tsv            tsvector GENERATED ALWAYS AS (
+            to_tsvector('spanish'::regconfig,
+                        smartcart_unaccent(coalesce(brand, '') || ' ' || name))
+        ) STORED
     );
     """,
     # `last_updated` lleva su DEFAULT declarado acá. En la base hecha a mano el
@@ -158,6 +176,19 @@ _COLUMNS = (
         ADD COLUMN IF NOT EXISTS is_gluten_free BOOLEAN DEFAULT FALSE,
         ADD COLUMN IF NOT EXISTS is_vegan       BOOLEAN DEFAULT FALSE;
     """,
+    # name_tsv: la mitad léxica de la búsqueda híbrida (src/search.py). Generada
+    # y STORED, así que Postgres la mantiene sola en cada INSERT/UPDATE y se
+    # rellena entera en el momento de agregarla: no hace falta re-scrapear. Es
+    # la única excepción a la regla del ON CONFLICT DO UPDATE SET de
+    # save_store_products, y no por olvido: una columna generada no se puede
+    # escribir, se recalcula cuando cambian `name` o `brand`.
+    """
+    ALTER TABLE unified_products
+        ADD COLUMN IF NOT EXISTS name_tsv tsvector GENERATED ALWAYS AS (
+            to_tsvector('spanish'::regconfig,
+                        smartcart_unaccent(coalesce(brand, '') || ' ' || name))
+        ) STORED;
+    """,
     # store_item_id: el itemId de VTEX, que es lo que espera
     # /checkout/cart/add?sku= para armar un carrito por URL. Va aparte de
     # `store_sku` —que en las dos tiendas VTEX guarda el productId— porque son
@@ -212,6 +243,12 @@ _INDEXES = (
     """
     CREATE INDEX IF NOT EXISTS idx_unified_products_shelf
         ON unified_products (shelf);
+    """,
+    # GIN sobre el tsvector: es lo que hace barato el `@@` de la mitad léxica de
+    # GET /search.
+    """
+    CREATE INDEX IF NOT EXISTS idx_unified_products_name_tsv
+        ON unified_products USING gin (name_tsv);
     """,
     """
     CREATE INDEX IF NOT EXISTS idx_store_products_source_category
