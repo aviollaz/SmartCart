@@ -209,7 +209,7 @@ Lo que **no** hace falta tocar: `src/embeddings.py`, `src/schema.py` y
 
 ### 11. Medir el consumo de Neon después del segundo tramo **[hipótesis]**
 El catálogo pasó de 20 a 49 góndolas (y después a 56, con helados y la sección
-Limpieza), así que el barrido nocturno pasa de ~77
+Limpieza, y a 60 con frutas, verduras y carnes, ~700 productos más), así que el barrido nocturno pasa de ~77
 minutos a un estimado de ~1,5 h por tienda en paralelo. El plan gratuito de Neon
 da **100 CU-hours por mes** y la base se suspende sola tras 5 minutos sin
 actividad, o sea que lo que se paga es el tiempo que está despierta.
@@ -237,6 +237,23 @@ Son dos filas; no se agregó una exclusión por nombre para eso.
 
 Si se arregla, el lugar es `size_parser` (una unidad `m`/`m2` con su propio
 vocabulario), no un umbral en las sustituciones.
+
+### 22. Frescos: kilos fraccionarios y mantenimiento de la tabla
+Las frutas, verduras y carnes de `src/fresh_items.py` se comparan por kilo, pero
+el carrito sólo acepta cantidades enteras (`CartItem.quantity: int`): 1 = 1 kg.
+Alcanza para papas o bananas, no para 300 g de jamón o medio kilo de bife. El
+cambio toca el modelo de la API, el flattener (las promos por cantidad asumen
+unidades enteras), el optimizador (trabaja en centavos enteros) y el stepper del
+frontend, así que no es un parche.
+
+Aparte, la tabla se degrada sola: cuando una cadena re-publica un producto con un
+SKU nuevo, el ítem pierde esa tienda sin que falle nada. Hay que correr
+`python -m src.scripts.curar_frescos` cada tanto y mirar "Obsoletos"; si se
+vuelve tedioso, el paso siguiente es que el barrido nocturno cuente los SKUs de
+la tabla que no vio y lo reporte como PARTIAL, igual que una categoría vacía.
+
+Primera versión revisada por AV: pendiente. Las líneas `REVISAR` de la tabla
+llevan un supuesto a confirmar mirando la góndola real.
 
 ---
 

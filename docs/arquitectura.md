@@ -127,8 +127,8 @@ después sin borrar catálogo vivo por error (etapa 3.2, poda).
 Es la única taxonomía del proyecto. Una fila (`Shelf`) = un slug canónico
 ("yerba-mate") + una etiqueta ("Yerba y mate") + una sección de menú
 ("Desayuno y merienda") + las claves que identifican esa góndola en cada una
-de las tres tiendas. Hoy son **56 góndolas** en seis secciones (la última, Limpieza), con **118**
-claves de Coto, **86** de Día y **64** de Carrefour (una góndola puede necesitar más de una clave por
+de las tres tiendas. Hoy son **60 góndolas** en ocho secciones (las últimas, Frutas y verduras y Carnes), con **123**
+claves de Coto, **91** de Día y **69** de Carrefour (una góndola puede necesitar más de una clave por
 tienda, porque las tres taxonomías anidan a profundidades distintas).
 
 Esta tabla existe porque la unificación es por EAN: un producto sólo es
@@ -141,9 +141,31 @@ sin operadores de solapamiento ni vocabulario por tienda):
 - qué puede sustituir a qué (`src/substitutions.py`, `src/strategic_swaps.py`),
 - qué dibuja el mega-menú (`GET /categories`).
 
-Rubros sin código de barras — verdulería, carnicería, pescadería, panadería de
-elaboración propia — quedan afuera a propósito: se venden por peso con códigos
-internos de cada tienda y nunca unifican por EAN.
+Pescadería y panadería de elaboración propia quedan afuera a propósito: se
+venden por peso con códigos internos de cada tienda y nunca unifican por EAN.
+
+Verdulería y carnicería (`frutas`, `verduras`, `carnes`, `pollo`) tienen el mismo
+problema y entran igual, por otra puerta: `src/fresh_items.py`.
+
+#### 3.1.2 Frescos emparejados a mano (`src/fresh_items.py`)
+
+**Entrada:** los productos de las cuatro góndolas frescas, con el SKU de cada
+tienda. **Salida:** para los SKUs listados en la tabla, un `unified_id =
+fresh_{slug}` compartido entre cadenas, con nombre y medida canónicos
+(`resolve_identity()`, llamada desde `save_store_products`).
+
+El código de barras de un producto pesado en balanza es un número de circulación
+restringida (prefijo 20-29) que cada cadena inventa: la misma manzana roja es
+`2000529000008` en Coto, `2490039000000` en Día y `2300397000002` en Carrefour.
+`normalize_ean()` los descarta, así que sin la tabla cada fresco es una oferta de
+una sola tienda.
+
+La tabla la cura una persona con criterio estricto (misma variedad y calidad
+común, sin líneas premium, sin piezas vendidas con peso aproximado, un SKU por
+tienda, al menos dos cadenas). `python -m src.scripts.curar_frescos` baja las
+góndolas en vivo, propone candidatos por embedding y reporta los SKUs que una
+cadena dejó de publicar. Los embeddings sólo proponen: medido, "ananá" queda más
+cerca de "nalga" de lo que muchos pares correctos quedan entre sí.
 
 ### 3.2 Normalización y persistencia (`src/database.py`, `src/schema.py`, `src/promotion_parser.py`, `src/ean.py`, `src/dietary_parser.py`, `src/size_parser.py`)
 
@@ -259,7 +281,7 @@ Endpoints, con su input/output real:
 | Endpoint | Input | Output |
 | --- | --- | --- |
 | `GET /search?q=` | texto libre | lista de productos, ordenada por relevancia semántica ponderada por disponibilidad multi-tienda (ver más abajo) |
-| `GET /categories` | — | las 56 góndolas agrupadas por sección |
+| `GET /categories` | — | las 60 góndolas agrupadas por sección |
 | `GET /category/{slug}` | slug de góndola | productos de esa góndola (404 si el slug no existe en la tabla) |
 | `POST /products/by-ids` | lista de `unified_id` (hasta 100) | esos productos, en el mismo orden, tal como existen hoy, más la descripción de alguna tienda para la ficha (usado para resolver nombre/precio del carrito y del historial, que en `localStorage` sólo guardan el id) |
 | `GET /deals` | `limit`, membresías y sección opcionales | los productos con mayor descuento de hoy, con `discount_pct` (sección de la home, filtrable por sección) |
