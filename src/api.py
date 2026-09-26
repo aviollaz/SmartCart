@@ -770,6 +770,17 @@ def _compute_price_savings(result: dict, flat_prices: dict, excluded_stores: lis
 # (/checkout/cart/add). Coto no está: su sitio es un SPA de ATG sin equivalente,
 # y por eso sigue existiendo el fallback de abrir los productos de a uno.
 #
+# Investigado a fondo (sep-2026) para no repetirlo: el bundle de coto.com.ar
+# agrega al carrito con `POST /rest/model/atg/actors/cCarritoActor/
+# addOrRemoveItemToOrderV2` (body `{skuId, quantity, prodId, sucPickUp,
+# cambiaSuc}`, `withCredentials` y el token `_dynSessConf` en la query). Depende
+# de las cookies de sesión de coto.com.ar, así que ni el backend ni el frontend
+# de SmartCart pueden llamarlo por el usuario, y no existe ningún parámetro de
+# URL que cargue productos. Lo único que funcionaría es código corriendo DENTRO
+# de coto.com.ar (un bookmarklet o una extensión); se descartó por ser sólo de
+# escritorio. El frontend muestra una lista con un link por producto
+# (StoreBreakdownCard.jsx), que el navegador nunca bloquea como popup.
+#
 # Agregar una tienda VTEX es agregar una fila acá, pero su scraper tiene que
 # guardar `store_item_id` (ver save_store_products): sin esa columna la tienda
 # no arma link, a propósito.
