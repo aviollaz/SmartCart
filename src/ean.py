@@ -34,6 +34,18 @@ Dos reglas, y las dos son deliberadas:
    valida. Un 14 que no valida no es un GTIN-14 mal interpretado, es un dato que no
    sabemos leer, y ahí la respuesta correcta es None.
 
+3. **Un EAN-13 que empieza con 2 no se usa para unificar.** Los prefijos 20-29 son
+   de circulación restringida: GS1 no los asigna, cada comercio los inventa para lo
+   que pesa en balanza (`2` + PLU interno + peso/importe + check digit). La misma
+   manzana roja es `2000529000008` en Coto, `2490039000000` en Día y
+   `2300397000002` en Carrefour, así que no identifican el producto sino el ítem en
+   el sistema de ESA cadena. Hoy los rangos casi no se pisan (Coto usa 20/28,
+   Carrefour 23/25/26/29, Día 24), pero Coto y Carrefour comparten el 29: un
+   choque haría que `prod_{ean}` fusionara dos productos distintos sin error, porque
+   el id se deriva del mismo código. Es la única excepción a la regla 1, y es
+   deliberadamente angosta: exactamente 13 dígitos. Un UPC de 12 que empieza con 2
+   se queda como está.
+
 `None` no pierde el producto: `save_store_products` cae a
 `unified_id = f"{store_id}_{store_sku}"`, así que entra al catálogo como oferta de
 una sola tienda. Es la asimetría de siempre — no unificar cuesta una comparación,
@@ -81,13 +93,19 @@ def normalize_ean(raw) -> str | None:
     if not code:
         return None
 
+    if len(code) == MAX_EAN_LEN and code.isdigit() and code[0] == "2":
+        # Regla 3: código interno de la cadena, no identifica al producto.
+        return None
+
     if len(code) <= MAX_EAN_LEN:
         # Ver la regla 1 del docstring del módulo: acá NO se valida.
         return code
 
     if len(code) == 14 and code.isdigit() and _check_digit(code[:13]) == code[13]:
         base = code[1:13]
-        return base + _check_digit(base)
+        # La salida pasa de nuevo por la regla 3: una caja de un ítem de balanza
+        # contiene un código interno, no un EAN.
+        return normalize_ean(base + _check_digit(base))
 
     logger.warning(
         "EAN descartado por no ser convertible a %d caracteres: %r. "

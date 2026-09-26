@@ -45,6 +45,27 @@ CORTOS_REALES = [
 ]
 
 
+# La misma manzana roja por kilo en las tres cadenas: tres códigos de circulación
+# restringida (prefijo 2) que no se parecen en nada, más un fiambre al peso de
+# Carrefour. Ninguno puede llegar a `prod_{ean}`.
+INTERNOS_REALES = [
+    "2000529000008",  # Manzana Red x Kg (Coto)
+    "2490039000000",  # Manzana roja x kg (Día)
+    "2300397000002",  # Manzana roja x kg (Carrefour)
+    "2506620000003",  # Panceta ahumada mini x kg (Carrefour)
+]
+
+
+@pytest.mark.parametrize("codigo", INTERNOS_REALES)
+def test_un_codigo_interno_de_balanza_no_unifica(codigo):
+    assert normalize_ean(codigo) is None
+
+
+def test_la_excepcion_del_prefijo_2_es_solo_para_13_digitos():
+    # Un UPC de 12 con prefijo 2 sigue la regla 1: intacto.
+    assert normalize_ean("200052900000") == "200052900000"
+
+
 @pytest.mark.parametrize("crudo, esperado", GTIN14_REALES)
 def test_un_gtin14_valido_se_convierte_al_ean13_que_contiene(crudo, esperado):
     assert normalize_ean(crudo) == esperado
