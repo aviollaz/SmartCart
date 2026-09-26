@@ -6,6 +6,7 @@ import psycopg
 from psycopg.rows import dict_row
 
 from src.db_pool import connection as pooled_connection
+from src.fresh_items import resolve_identity
 from src.promotion_parser import PromoTransformer
 from src.schema import ensure_schema, resolve_conn_string
 
@@ -59,8 +60,11 @@ class SmartCartDB:
                 self._ensure_schema(conn)
                 with conn.cursor() as cur:
                     for prod in products:
-                        # 1. Resolver identificador único
-                        unified_id = f"prod_{prod['ean']}" if prod['ean'] else f"{store_id}_{prod['store_sku']}"
+                        # 1. Resolver identificador único. Los frescos curados
+                        # en src/fresh_items.py se unifican por la tabla, no por
+                        # EAN; el resto sigue el camino de siempre.
+                        identity = resolve_identity(store_id, prod)
+                        unified_id = identity['unified_id']
                         
                         # 2. TRANSFORMACIÓN: Normalizamos precio y promos según el origen
                         base_price = prod['base_price']
@@ -131,12 +135,12 @@ class SmartCartDB:
                                 is_vegan = EXCLUDED.is_vegan
                         """, (
                             unified_id,
-                            prod['ean'],
-                            prod['name'],
-                            prod['brand'],
-                            prod['unit_type'],
+                            identity['ean'],
+                            identity['name'],
+                            identity['brand'],
+                            identity['unit_type'],
                             shelf,
-                            prod['total_volume_weight'],
+                            identity['total_volume_weight'],
                             bool(prod.get('is_gluten_free', False)),
                             bool(prod.get('is_vegan', False))))
 
