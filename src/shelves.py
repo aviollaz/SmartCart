@@ -274,11 +274,6 @@ _SHELF_LIST = (
     #     catálogo que sirve para comparar.
     #   * **Ninguna clave adentro de otra** (ver el test homónimo): por eso varias
     #     de acá usan hojas donde el nivel 2 hubiera alcanzado.
-    #
-    # Una que se relevó y NO entró: `helados`. Coto tiene 150 productos y Día 48,
-    # pero `congelados/helados-y-postres` de Carrefour devuelve 0 en vivo, así que
-    # la góndola no cumple la regla de las tres tiendas. Está anotada en
-    # docs/TODO.md para revisarla en verano.
 
     # ---------------------------------------------------------------- Almacén
     _shelf(
@@ -503,6 +498,18 @@ _SHELF_LIST = (
         coto=("catv00004499", "catv00004501", "catv00004500"),
         dia=("congelados/pescaderia-congelada",),
         carrefour=("congelados/pescados-y-mariscos",),
+    ),
+    _shelf(
+        # Entró tarde: en el segundo tramo Carrefour devolvía 0. Su catálogo
+        # público tiene ~27 helados en este nodo, pero el listado filtra los sin
+        # stock (`hideUnavailableItems`) y a fin de invierno quedaba 1: es
+        # estacional, no una rama distinta. En invierno esta clave puede volver a
+        # cero y pintar el barrido de PARTIAL por categoría vacía — es la señal
+        # funcionando, no un bug.
+        "helados", "Helados", "Congelados",
+        coto=("catv00003247", "catv00003248", "catv00003147", "catv00003183"),
+        dia=("congelados/helados-y-postres",),
+        carrefour=("congelados/helados-y-postres",),
     ),
 )
 
