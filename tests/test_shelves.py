@@ -126,9 +126,9 @@ def test_clave_ajena_a_la_tabla_no_recibe_gondola():
     inventada. `save_store_products` la rechaza, que es la dirección segura: un
     producto sin góndola desaparece de GET /category y se queda sin sustitutos.
     """
-    carnes = "catv00001460"  # Frescos -> Carniceria -> Carnes
+    filete = "catv00002651"  # Frescos -> Pescaderia -> Filete
 
-    assert shelf_for_key("coto", carnes) is None
+    assert shelf_for_key("coto", filete) is None
 
 
 @pytest.mark.parametrize("store", STORES)

@@ -51,8 +51,8 @@ STORE_IDS = {
 # Los niveles superiores del mega-menú, en el orden en que se muestran. Son
 # etiquetas, no una jerarquía real de ninguna cadena: agrupan las góndolas para
 # que el menú sea navegable, y nada del backend depende de ellas.
-SECTIONS = ("Almacén", "Frescos", "Desayuno y merienda", "Bebidas", "Congelados",
-            "Limpieza")
+SECTIONS = ("Almacén", "Frescos", "Frutas y verduras", "Carnes", "Desayuno y merienda",
+            "Bebidas", "Congelados", "Limpieza")
 
 
 @dataclass(frozen=True)
@@ -89,8 +89,12 @@ def _shelf(slug: str, label: str, section: str, **keys: tuple[str, ...]) -> Shel
 #
 # El criterio de selección fue producto ENVASADO DE MARCA: es donde el EAN
 # coincide de verdad entre cadenas. La fruta suelta, la carnicería y la fiambrería
-# al corte usan códigos internos por tienda y no unifican, así que barrerlas suma
-# catálogo pero no suma comparaciones.
+# al corte usan códigos internos por tienda y no unifican por EAN.
+#
+# La verdulería y la carnicería son la excepción, y entran por otra puerta: sus
+# productos se emparejan a mano en `src/fresh_items.py`, una tabla curada que les
+# da un unified_id canónico. Lo que la tabla no lista queda como oferta de una
+# sola tienda, igual que cualquier producto sin EAN.
 _SHELF_LIST = (
     _shelf(
         "aceites-y-aderezos", "Aceites y aderezos", "Almacén",
@@ -511,6 +515,36 @@ _SHELF_LIST = (
         coto=("catv00003247", "catv00003248", "catv00003147", "catv00003183"),
         dia=("congelados/helados-y-postres",),
         carrefour=("congelados/helados-y-postres",),
+    ),
+
+    # ------------------------------------------------ Frutas, verduras y carnes
+    # Sin EAN que unifique: ver `src/fresh_items.py`. Vaca y cerdo comparten
+    # góndola porque Coto los mezcla en una sola hoja (`catv00001460` trae
+    # "Asado De Cerdo" junto al bife); separarlos inventaría una jerarquía que
+    # Coto no tiene.
+    _shelf(
+        "frutas", "Frutas", "Frutas y verduras",
+        coto=("catv00003286",),
+        dia=("frescos/frutas-y-verduras/frutas",),
+        carrefour=("frutas-y-verduras/frutas",),
+    ),
+    _shelf(
+        "verduras", "Verduras", "Frutas y verduras",
+        coto=("catv00003308",),
+        dia=("frescos/frutas-y-verduras/verduras",),
+        carrefour=("frutas-y-verduras/verduras",),
+    ),
+    _shelf(
+        "carnes", "Carne de vaca y cerdo", "Carnes",
+        coto=("catv00001460",),
+        dia=("frescos/carniceria/carnes-de-vaca", "frescos/carniceria/carnes-de-cerdo"),
+        carrefour=("carnes-y-pescados/carne-vacuna", "carnes-y-pescados/carne-de-cerdo"),
+    ),
+    _shelf(
+        "pollo", "Pollo", "Carnes",
+        coto=("catv00005187", "catv00005189"),
+        dia=("frescos/carniceria/pollo",),
+        carrefour=("carnes-y-pescados/pollo-y-granja",),
     ),
 
     # --------------------------------------------------------------- Limpieza

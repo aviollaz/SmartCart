@@ -1,7 +1,7 @@
-import { Beef, Cookie, ShoppingBasket, Snowflake, SprayCan, Tag, Wine } from "lucide-react";
+import { Apple, Beef, Cookie, Milk, ShoppingBasket, Snowflake, SprayCan, Tag, Wine } from "lucide-react";
 
 // Sección -> ícono. Las secciones salen de `SECTIONS` en src/shelves.py y hoy
-// son seis, así que el mapeo es exacto y no un matching por substring: la
+// son ocho, así que el mapeo es exacto y no un matching por substring: la
 // versión anterior tenía 18 reglas regex porque tenía que cubrir la taxonomía
 // completa de dos cadenas, con top-levels que el catálogo nunca tuvo
 // ("Perfumería", "Mascotas", "Rodados").
@@ -10,7 +10,9 @@ import { Beef, Cookie, ShoppingBasket, Snowflake, SprayCan, Tag, Wine } from "lu
 // una góndola en una sección inédita no puede romper el menú.
 const SECTION_ICONS = {
   "Almacén": ShoppingBasket,
-  "Frescos": Beef,
+  "Frescos": Milk,
+  "Frutas y verduras": Apple,
+  "Carnes": Beef,
   "Desayuno y merienda": Cookie,
   "Bebidas": Wine,
   "Congelados": Snowflake,
