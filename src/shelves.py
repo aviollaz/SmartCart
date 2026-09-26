@@ -183,13 +183,14 @@ _SHELF_LIST = (
     _shelf(
         "dulce-de-leche", "Dulce de leche", "Desayuno y merienda",
         coto=("catv00003250",),
-        dia=("desayuno/para-untar/dulces-de-leche",),
+        dia=("desayuno-y-merienda/dulces-y-untables/dulces-de-leche",),
         carrefour=("desayuno-y-merienda/mermeladas-y-otros-dulces/dulce-de-leche",),
     ),
     _shelf(
         "mermeladas-y-miel", "Mermeladas y miel", "Desayuno y merienda",
         coto=("catv00001408", "catv00001407"),
-        dia=("desayuno/para-untar/mermeladas", "desayuno/para-untar/miel"),
+        dia=("desayuno-y-merienda/dulces-y-untables/mermeladas-y-dulces",
+             "desayuno-y-merienda/dulces-y-untables/miel"),
         # Las HOJAS, no el nivel 2. La clave de nivel 2 contenía a la de
         # `dulce-de-leche`, y como los scrapers recorren las góndolas en orden,
         # el barrido del padre pisaba `shelf` y `source_category` de los 27
@@ -205,8 +206,8 @@ _SHELF_LIST = (
     _shelf(
         "galletitas", "Galletitas", "Desayuno y merienda",
         coto=("catv00004082", "catv00003534"),
-        dia=("desayuno/galletitas-y-cereales/galletitas-dulces",
-             "desayuno/galletitas-y-cereales/galletitas-saladas"),
+        dia=("desayuno-y-merienda/galletitas/galletitas-dulces",
+             "desayuno-y-merienda/galletitas/galletitas-saladas"),
         carrefour=("desayuno-y-merienda/galletitas-bizcochitos-y-tostadas",),
     ),
     _shelf(
@@ -224,20 +225,20 @@ _SHELF_LIST = (
     _shelf(
         "cafe", "Café", "Desayuno y merienda",
         coto=("catv00001420",),
-        dia=("desayuno/infusiones-y-endulzantes/cafe",),
+        dia=("desayuno-y-merienda/infusiones/cafe",),
         carrefour=("desayuno-y-merienda/cafe",),
     ),
     _shelf(
         "yerba-mate", "Yerba y mate", "Desayuno y merienda",
         coto=("catv00001416",),
-        dia=("desayuno/infusiones-y-endulzantes/yerba-mate",),
+        dia=("desayuno-y-merienda/infusiones/yerba-mate",),
         carrefour=("desayuno-y-merienda/yerba",),
     ),
     _shelf(
         "azucar-y-endulzantes", "Azúcar y endulzantes", "Desayuno y merienda",
         coto=("catv00002784", "catv00002785"),
-        dia=("desayuno/infusiones-y-endulzantes/azucar",
-             "desayuno/infusiones-y-endulzantes/edulcorantes"),
+        dia=("desayuno-y-merienda/endulzantes/azucar",
+             "desayuno-y-merienda/endulzantes/edulcorantes"),
         carrefour=("desayuno-y-merienda/azucar-y-endulzantes",),
     ),
     _shelf(
@@ -323,23 +324,22 @@ _SHELF_LIST = (
         "cereales", "Cereales y granolas", "Desayuno y merienda",
         coto=("catv00003559", "catv00003555", "catv00003560", "catv00003556",
               "catv00003564", "catv00003557"),
-        dia=("desayuno/galletitas-y-cereales/cereales",
-             "desayuno/galletitas-y-cereales/avena-y-granola",
-             "desayuno/galletitas-y-cereales/barras-de-cereal"),
+        dia=("desayuno-y-merienda/cereales-y-barras/cereales",
+             "desayuno-y-merienda/cereales-y-barras/avena-y-granola",
+             "desayuno-y-merienda/cereales-y-barras/barras-de-cereal"),
         carrefour=("desayuno-y-merienda/cereales-y-barritas",),
     ),
     _shelf(
         "te-e-infusiones", "Té e infusiones", "Desayuno y merienda",
         coto=("catv00001415", "catv00001417", "catv00005756"),
-        dia=("desayuno/infusiones-y-endulzantes/te",
-             "desayuno/infusiones-y-endulzantes/mate-cocido"),
+        dia=("desayuno-y-merienda/infusiones/te-y-mate-cocido",),
         carrefour=("desayuno-y-merienda/infusiones/te",
                    "desayuno-y-merienda/infusiones/mate-cocido"),
     ),
     _shelf(
         "cacao-y-chocolatadas", "Cacao y chocolatadas", "Desayuno y merienda",
         coto=("catv00001421",),
-        dia=("desayuno/infusiones-y-endulzantes/cacao",),
+        dia=("desayuno-y-merienda/infusiones/cacao-y-polvos",),
         carrefour=("desayuno-y-merienda/infusiones/cacao",),
     ),
     _shelf(
@@ -453,20 +453,24 @@ _SHELF_LIST = (
         "papas-congeladas", "Papas congeladas", "Congelados",
         coto=("catv00003195", "catv00003194", "catv00003197", "catv00003196",
               "catv00003193"),
-        dia=("congelados/papas-congeladas",),
+        dia=("congelados/vegetales-frutas-y-papas/papas-fritas-congeladas",),
         carrefour=("congelados/papas",),
     ),
     _shelf(
         "hamburguesas-congeladas", "Hamburguesas y milanesas", "Congelados",
         coto=("catv00003159", "catv00003149"),
-        dia=("congelados/hamburguesas-y-medallones",),
+        # Día movió las hamburguesas a `comidas-preparadas-y-rebozados` y dejó el
+        # nodo viejo con 1 producto: se barren los dos para no perder ese uno.
+        dia=("congelados/comidas-preparadas-y-rebozados/hamburguesas-y-milanesas",
+             "congelados/hamburguesas-y-medallones"),
         carrefour=("congelados/hamburguesas-y-medallones",),
     ),
     _shelf(
         "rebozados-congelados", "Nuggets y rebozados", "Congelados",
         coto=("catv00003172", "catv00004513", "catv00004514", "catv00004516",
               "catv00004515"),
-        dia=("congelados/rebozados",),
+        dia=("congelados/comidas-preparadas-y-rebozados/nuggets-patitas-y-bocaditos",
+             "congelados/comidas-preparadas-y-rebozados/opciones-veganas-y-vegetarianas"),
         carrefour=("congelados/nuggets-y-rebozados",),
     ),
     _shelf(
@@ -474,7 +478,7 @@ _SHELF_LIST = (
         coto=("catv00003162", "catv00003169", "catv00003161", "catv00003173",
               "catv00003163", "catv00003166", "catv00003209", "catv00005477",
               "catv00005480"),
-        dia=("congelados/vegetales-congelados",),
+        dia=("congelados/vegetales-frutas-y-papas/vegetales-congelados",),
         # El nivel 2 y no la hoja `vegetales-congelados`: la hoja devuelve 0 en
         # vivo aunque exista en el árbol (mismo caso que los yogures de Día), y el
         # padre trae 24. Cuesta que entre también algo de fruta congelada.
@@ -491,13 +495,13 @@ _SHELF_LIST = (
         "comidas-congeladas", "Comidas congeladas", "Congelados",
         coto=("catv00003211", "catv00003235", "catv00003184", "catv00003236",
               "catv00003214"),
-        dia=("congelados/comidas-congeladas",),
+        dia=("congelados/comidas-preparadas-y-rebozados/pizzas-empanadas-y-panes",),
         carrefour=("congelados/comidas-y-panificados",),
     ),
     _shelf(
         "pescados-congelados", "Pescados congelados", "Congelados",
         coto=("catv00004499", "catv00004501", "catv00004500"),
-        dia=("congelados/pescaderia",),
+        dia=("congelados/pescaderia-congelada",),
         carrefour=("congelados/pescados-y-mariscos",),
     ),
 )
