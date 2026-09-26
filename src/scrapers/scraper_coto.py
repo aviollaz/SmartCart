@@ -257,6 +257,11 @@ class CotoScraper:
                         "unit_type": unit_type,
                         "is_gluten_free": is_gluten_free,
                         "is_vegan": is_vegan,
+                        # El BFF de listado no trae descripción (`sku_description`
+                        # es el nombre repetido) y no hay endpoint público de
+                        # detalle: se manda None explícito para que las tres
+                        # tiendas entreguen las mismas claves.
+                        "description": None,
                         "raw_promos": prod_data.get("discounts", [])
                     }
                     # Sólo los nuevos: si el endpoint repite un tramo, guardar el

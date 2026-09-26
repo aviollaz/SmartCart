@@ -114,6 +114,7 @@ _TABLES = (
         image_url          TEXT,
         store_item_id      TEXT,
         source_category    TEXT,
+        description        TEXT,
         CONSTRAINT unique_store_sku UNIQUE (store_id, store_sku)
     );
     """,
@@ -171,11 +172,18 @@ _COLUMNS = (
     # categoría caída.
     #
     # name: el nombre propio de la tienda. Ver el comentario del CREATE de arriba.
+    #
+    # description: el texto descriptivo que publica ESTA tienda, ya aplanado a
+    # texto plano (src/scrapers/vtex.py::clean_description). Por tienda y no por
+    # EAN por la misma razón que `name`. Sólo para mostrar en la ficha: nunca es
+    # evidencia dietaria. NULL = la tienda no publica una útil (Coto nunca: su BFF
+    # no la expone).
     """
     ALTER TABLE store_products
         ADD COLUMN IF NOT EXISTS store_item_id   TEXT,
         ADD COLUMN IF NOT EXISTS source_category TEXT,
-        ADD COLUMN IF NOT EXISTS name            VARCHAR(255);
+        ADD COLUMN IF NOT EXISTS name            VARCHAR(255),
+        ADD COLUMN IF NOT EXISTS description     TEXT;
     """,
     # categories_empty: categorías que cerraron su barrido sin devolver un solo
     # producto. No es un fallo —hay categorías legítimamente vacías— pero es la

@@ -90,3 +90,16 @@ def test_no_se_emiten_las_claves_que_nadie_persiste(barrer, monkeypatch):
 
     for prod in productos:
         assert not {"category", "tags", "is_weighable"} & set(prod)
+
+
+@pytest.mark.parametrize("barrer", BARRIDOS, ids=lambda f: f.__name__)
+def test_las_tres_tiendas_emiten_la_clave_description(barrer, monkeypatch):
+    """
+    `save_store_products` la lee con `.get()` (es opcional), así que su ausencia
+    no rompería nada: escribiría NULL para siempre en silencio. Se exige la
+    CLAVE, no un valor — Coto la manda en None a propósito.
+    """
+    productos, _, _ = barrer(monkeypatch)
+
+    for prod in productos:
+        assert "description" in prod

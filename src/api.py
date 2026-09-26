@@ -135,6 +135,13 @@ class ProductResponse(BaseModel):
     # GET /deals, que ordena por este número; el resto de los endpoints lo deja
     # en None en vez de calcular algo que nadie lee.
     discount_pct: Optional[float] = None
+    # El texto descriptivo que publica una de las tiendas, para la ficha. Sólo lo
+    # llena POST /products/by-ids (que es lo que lee la ficha): /search y
+    # /category no cargan ese texto en cada tarjeta de la grilla. Es copy de la
+    # tienda, no un dato verificado, así que viaja con `description_store` para
+    # que la UI lo atribuya ("Según Día"). Coto nunca tiene: su BFF no la expone.
+    description: Optional[str] = None
+    description_store: Optional[str] = None
 
 class ShelfResponse(BaseModel):
     slug: str = Field(..., example="yerba-mate")
@@ -1457,6 +1464,31 @@ def get_products_by_shelf(
         raise HTTPException(status_code=500, detail=str(e))
 
 
+def _fetch_descriptions(cur, product_ids: list) -> dict:
+    """
+    La descripción a mostrar por producto: `{uid: {description, description_store}}`.
+
+    Cada tienda publica la suya (`store_products.description`, ya limpia en el
+    scraper); se elige la más larga, que en lo medido es la que más dice del
+    producto — las cortas suelen ser el nombre con otra ortografía, y esas ya las
+    descarta clean_description(). Un producto sin ninguna no aparece en el dict.
+    """
+    cur.execute("""
+        SELECT DISTINCT ON (unified_product_id)
+               unified_product_id, store_id, description
+        FROM store_products
+        WHERE unified_product_id = ANY(%s) AND description IS NOT NULL
+        ORDER BY unified_product_id, length(description) DESC, store_id
+    """, (product_ids,))
+    return {
+        row["unified_product_id"]: {
+            "description": row["description"],
+            "description_store": row["store_id"],
+        }
+        for row in cur.fetchall()
+    }
+
+
 @app.post("/products/by-ids", response_model=List[ProductResponse])
 def get_products_by_ids(request: ProductsByIdsRequest):
     """
@@ -1525,13 +1557,17 @@ def get_products_by_ids(request: ProductsByIdsRequest):
                 offers_by_product = _fetch_offers_by_product(
                     cur, list(rows_by_id.keys()), request.user_memberships
                 )
+                descriptions = _fetch_descriptions(cur, list(rows_by_id.keys()))
 
         # El orden se restituye en Python y no con un ORDER BY array_position():
         # el dict ya esta armado, asi que sale gratis, y evita mandar el array de
         # ids dos veces. El orden del request lleva informacion — es el ranking
         # del llamador —, devolver el de Postgres lo obligaria a reordenar.
         return [
-            _build_product_response(rows_by_id[uid], offers_by_product.get(uid, []))
+            {
+                **_build_product_response(rows_by_id[uid], offers_by_product.get(uid, [])),
+                **descriptions.get(uid, {}),
+            }
             for uid in ordered_ids
             if uid in rows_by_id
         ]

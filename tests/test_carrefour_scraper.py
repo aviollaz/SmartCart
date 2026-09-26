@@ -230,3 +230,53 @@ def test_availability_default_true_si_el_campo_no_esta():
 def test_availability_tolera_un_valor_ilegible():
     assert read_availability({"sellers": [{"commertialOffer": {"AvailableQuantity": None}}]}) is True
     assert read_availability({"sellers": [{"commertialOffer": {"AvailableQuantity": "x"}}]}) is True
+
+
+# ---------------------------------------------------------------- descripción
+from src.scrapers.vtex import clean_description
+
+
+def test_descripcion_real_se_conserva_como_texto_plano():
+    raw = "Queso procesado untable.<br/>Libre de gluten &amp; sin TACC."
+    assert clean_description(raw, "Queso Untable Finlandia 180 Gr.") == (
+        "Queso procesado untable. Libre de gluten & sin TACC."
+    )
+
+
+def test_plantilla_de_marca_propia_de_carrefour_se_descarta():
+    raw = ("<h3>✅ Características Destacadas</h3>✔️ Producto de la línea Carrefour, "
+           "pensado para tus necesidades diarias.<br/>✔️ Presentación: 1 l.<br/>")
+    assert clean_description(raw, "Vinagre de alcohol Carrefour classic 1 l.") is None
+
+
+def test_html_sin_texto_se_descarta():
+    raw = '<img src="https://contenidos.carrefour.com.ar/x.jpg" style="width:100%"/>'
+    assert clean_description(raw, "Puré de papas instantáneo Carrefour classic 100 g.") is None
+
+
+def test_el_nombre_repetido_no_es_una_descripcion():
+    assert clean_description("NESTLE Chocotrio Pasta de maní x 90g",
+                             "Nestle Chocotrio Pasta De Maní X 90 Gr.") is None
+
+
+def test_un_texto_largo_que_empieza_con_el_nombre_si_describe():
+    raw = ("Knorr Caldo de Verdura 12 cubos es una opción deliciosa y sostenible "
+           "para realzar tus comidas favoritas.")
+    assert clean_description(raw, "Knorr Caldo de Verdura 12 cubos") == raw
+
+
+@pytest.mark.parametrize("raw", [None, "", "   ", 123])
+def test_descripcion_ausente_o_invalida_es_none(raw):
+    assert clean_description(raw, "Algo") is None
+
+
+def test_parse_vtex_offer_no_usa_la_descripcion_como_evidencia_dietaria():
+    """La regla de CLAUDE.md: el copy de marketing habla de productos hermanos."""
+    from src.scrapers.vtex import parse_vtex_offer
+
+    producto = _producto_vtex(description="Probá también nuestra mayonesa vegana y sin TACC.")
+    parsed = parse_vtex_offer(producto, "aceites-y-aderezos", None, "almacen/aceites-y-vinagres",
+                              url="https://x")
+    assert parsed["description"] == "Probá también nuestra mayonesa vegana y sin TACC."
+    assert parsed["is_vegan"] is False
+    assert parsed["is_gluten_free"] is False

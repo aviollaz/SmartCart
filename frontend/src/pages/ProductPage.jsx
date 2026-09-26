@@ -232,6 +232,20 @@ function SpecsTable({ product, className = "" }) {
     // afirmar algo que el parser nunca vio.
     ["Sin TACC", product.is_gluten_free && "Sí"],
     ["Vegano", product.is_vegan && "Sí"],
+    // Es el texto de UNA tienda, no un dato que SmartCart verificó: por eso va
+    // atribuido. Coto no publica descripción, así que en productos sólo de Coto
+    // la fila no aparece.
+    [
+      "Descripción",
+      product.description && (
+        <div key="description">
+          <p>{product.description}</p>
+          {product.description_store && (
+            <p className="mt-1 text-xs text-ink-muted">Según {storeName(product.description_store)}</p>
+          )}
+        </div>
+      ),
+    ],
   ].filter(([, value]) => value);
 
   return (

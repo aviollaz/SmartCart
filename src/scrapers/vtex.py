@@ -10,7 +10,9 @@ las dos tiendas repetían ~70 líneas prácticamente idénticas, con el riesgo d
 que un fix a una (un nuevo caso de `unit_type`, un ajuste al parser dietario)
 se aplicara a una copia y no a la otra.
 """
+import html
 import logging
+import re
 
 from src.dietary_parser import detect_dietary_flags
 from src.ean import normalize_ean
@@ -18,6 +20,62 @@ from src.scrapers.errors import CategoryScrapeError
 from src.size_parser import extract_real_volume, normalize_magnitude
 
 logger = logging.getLogger(__name__)
+
+# La plantilla con la que Carrefour rellena la descripción de su marca propia
+# ("✅ Características Destacadas ✔️ Producto de la línea Carrefour, pensado para
+# tus necesidades diarias. ✔️ Presentación: formato práctico..."). Es idéntica
+# para un aceite y para unas formitas de merluza: no describe nada, y mostrarla
+# en la ficha sería ruido con apariencia de dato.
+_TEMPLATE_MARKERS = ("producto de la línea carrefour, pensado para tus necesidades",)
+
+_TAG = re.compile(r"<[^>]+>")
+_SPACES = re.compile(r"\s+")
+_ALNUM = re.compile(r"[^0-9a-záéíóúñü]+")
+
+
+def clean_description(raw, name) -> str | None:
+    """
+    La `description` de VTEX lista para mostrar, o None si no aporta nada.
+
+    Se guarda para la ficha del producto, **nunca** como evidencia dietaria: es
+    copy de marketing y a veces habla de productos hermanos (ver el comentario de
+    `dietary_sources` en `parse_vtex_offer`). Medido sobre 97 productos de las dos
+    tiendas, ~41% trae texto; de eso, lo que no sirve tiene tres formas, y las
+    tres se descartan acá:
+
+      * la plantilla de marca propia de Carrefour (`_TEMPLATE_MARKERS`),
+      * HTML sin texto (una descripción que es sólo un `<img>`),
+      * el nombre del producto repetido ("NESTLE Chocotrio Pasta de maní x 90g").
+
+    El HTML se aplana a texto plano en vez de guardarse: el frontend lo muestra
+    como texto, y renderizar HTML de un tercero sería abrirle la puerta a lo que
+    ese tercero quiera inyectar.
+    """
+    if not raw or not isinstance(raw, str):
+        return None
+
+    texto = html.unescape(_TAG.sub(" ", raw))
+    texto = _SPACES.sub(" ", texto).strip().strip('"').strip()
+    if not texto:
+        return None
+
+    bajo = texto.lower()
+    if any(marca in bajo for marca in _TEMPLATE_MARKERS):
+        return None
+
+    if name:
+        solo_texto = _ALNUM.sub("", bajo)
+        solo_nombre = _ALNUM.sub("", str(name).lower())
+        # "Es el nombre": o idéntico, o uno contiene al otro sin agregar casi
+        # nada. Un texto largo que *empieza* con el nombre sí describe.
+        if solo_texto and solo_nombre and (
+            solo_texto == solo_nombre
+            or (len(solo_texto) <= len(solo_nombre) + 8
+                and (solo_nombre in solo_texto or solo_texto in solo_nombre))
+        ):
+            return None
+
+    return texto
 
 
 def extract_search_payload(response_json, label: str) -> dict:
@@ -220,6 +278,8 @@ def parse_vtex_offer(p: dict, shelf: str | None, taxonomy_path: str | None,
         "unit_type": unit_type,
         "is_gluten_free": is_gluten_free,
         "is_vegan": is_vegan,
+        # Para mostrar en la ficha, no para decidir nada: ver clean_description().
+        "description": clean_description(p.get("description"), p.get("productName")),
         # `{}` y no `[]`: viaja tal cual a `PromoTransformer.dia()`/`.carrefour()`,
         # que llaman `.get()` sobre esto. Día lo devolvía como `[]` cuando el
         # producto no tenía sellers, lo que reventaba esa llamada con

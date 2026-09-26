@@ -143,9 +143,9 @@ class SmartCartDB:
                         # 4. Guardar la Instancia Comercial con el JSON de promos y la IMAGEN
                         cur.execute("""
                             INSERT INTO store_products (
-                                unified_product_id, store_id, store_sku, name, store_item_id, product_url, base_price, in_stock, promotions_json, image_url, source_category
+                                unified_product_id, store_id, store_sku, name, store_item_id, product_url, base_price, in_stock, promotions_json, image_url, source_category, description
                             )
-                            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
                             ON CONFLICT (store_id, store_sku) DO UPDATE SET
                                 -- El unified_product_id se DERIVA del EAN, así que
                                 -- también tiene que refrescarse: congelado en el
@@ -178,6 +178,11 @@ class SmartCartDB:
                                 -- apuntando a una categoría que ya no es la que
                                 -- ofrece el producto.
                                 source_category = EXCLUDED.source_category,
+                                -- Pisa también con NULL: si la tienda borra la
+                                -- descripción (o clean_description empieza a
+                                -- descartarla), la ficha tiene que dejar de
+                                -- mostrarla.
+                                description = EXCLUDED.description,
                                 last_updated = CURRENT_TIMESTAMP
                         """, (
                             unified_id,
@@ -195,7 +200,11 @@ class SmartCartDB:
                             prod['in_stock'],
                             json.dumps(standardized_promos),
                             prod.get('image_url'),  # <-- Guardamos la URL de la imagen extraída del scraper
-                            source_category
+                            source_category,
+                            # Opcional, a diferencia de shelf/source_category: un
+                            # NULL acá significa "la tienda no publica una
+                            # descripción útil", no un dato perdido.
+                            prod.get('description'),
                         ))
             logger.info("Guardado exitoso: %d filas en '%s'.", len(products), store_id)
             return len(products)
