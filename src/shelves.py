@@ -51,7 +51,8 @@ STORE_IDS = {
 # Los niveles superiores del mega-menú, en el orden en que se muestran. Son
 # etiquetas, no una jerarquía real de ninguna cadena: agrupan las góndolas para
 # que el menú sea navegable, y nada del backend depende de ellas.
-SECTIONS = ("Almacén", "Frescos", "Desayuno y merienda", "Bebidas", "Congelados")
+SECTIONS = ("Almacén", "Frescos", "Desayuno y merienda", "Bebidas", "Congelados",
+            "Limpieza")
 
 
 @dataclass(frozen=True)
@@ -510,6 +511,51 @@ _SHELF_LIST = (
         coto=("catv00003247", "catv00003248", "catv00003147", "catv00003183"),
         dia=("congelados/helados-y-postres",),
         carrefour=("congelados/helados-y-postres",),
+    ),
+
+    # --------------------------------------------------------------- Limpieza
+    # La primera sección que no es comida. Mismo criterio que el resto: marcas
+    # envasadas con EAN, que es donde las tres cadenas coinciden. Quedan afuera
+    # a propósito dos nodos de Día que mezclan otra góndola en la misma hoja:
+    # `servilletas-y-panuelos` (pañuelos no es servilleta) y
+    # `jabon-en-barra-y-aprestos` (un apresto no reemplaza a un jabón). Guardarlos
+    # acá habilitaría al optimizador a ofrecer uno como sustituto del otro.
+    _shelf(
+        "papel-higienico", "Papel higiénico", "Limpieza",
+        coto=("catv00003018",),
+        dia=("limpieza/papeleria-y-descartables/papel-higienico",),
+        carrefour=("limpieza/papeles-higienicos",),
+    ),
+    _shelf(
+        "rollos-y-servilletas", "Rollos de cocina y servilletas", "Limpieza",
+        coto=("catv00003020", "catv00003021"),
+        dia=("limpieza/papeleria-y-descartables/rollos-de-cocina",),
+        carrefour=("limpieza/rollos-de-cocina-y-servilletas",),
+    ),
+    _shelf(
+        "detergente", "Detergente", "Limpieza",
+        coto=("catv00003043",),
+        dia=("limpieza/cocina-y-vajilla/detergentes",),
+        carrefour=("limpieza/limpieza-de-cocina/detergentes",),
+    ),
+    _shelf(
+        "jabon-para-ropa", "Jabón para la ropa", "Limpieza",
+        coto=("catv00003026", "catv00005372", "catv00002756"),
+        dia=("limpieza/ropa-y-lavado/jabon-en-polvo",
+             "limpieza/ropa-y-lavado/jabon-liquido"),
+        carrefour=("limpieza/limpieza-de-la-ropa/jabones-para-la-ropa",),
+    ),
+    _shelf(
+        "suavizantes", "Suavizantes", "Limpieza",
+        coto=("catv00003027",),
+        dia=("limpieza/ropa-y-lavado/suavizantes",),
+        carrefour=("limpieza/limpieza-de-la-ropa/suavizantes-para-la-ropa",),
+    ),
+    _shelf(
+        "lavandina", "Lavandina", "Limpieza",
+        coto=("catv00004753", "catv00004754"),
+        dia=("limpieza/banos-pisos-y-superficies/lavandinas",),
+        carrefour=("limpieza/lavandinas",),
     ),
 )
 
