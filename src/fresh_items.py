@@ -72,8 +72,9 @@ def _item(slug: str, label: str, shelf: str, unit: str, **skus: str) -> FreshIte
 
 
 # Primera versión, curada el 2026-09-26 sobre lo que las tres cadenas publicaban
-# ese día (`python -m src.scripts.curar_frescos`). Las líneas con `REVISAR`
-# tienen un supuesto que conviene confirmar mirando la góndola real.
+# ese día (`python -m src.scripts.curar_frescos`) y revisada por AV. Los
+# comentarios de línea dejan asentado por qué se juntaron dos nombres que no son
+# idénticos, para no volver a discutirlo en el próximo curado.
 #
 # Convenciones que valen para toda la tabla:
 # - Coto: "Estancias Coto" es su línea común de carnicería, no una premium (sus
@@ -87,33 +88,33 @@ FRESH_ITEMS: tuple[FreshItem, ...] = (
     # ------------------------------------------------------------------ frutas
     _item("banana", "Banana x kg", "frutas", "kg",
           coto="sku00000446", dia="90110",
-          carrefour="719074"),  # REVISAR: Carrefour la llama "selección"
+          carrefour="719074"),  # Carrefour la llama "selección"
     _item("limon", "Limón x kg", "frutas", "kg",
           coto="sku00061007", dia="90114", carrefour="8312"),
     _item("manzana-roja", "Manzana roja x kg", "frutas", "kg",
           coto="sku00000529", dia="90039", carrefour="432782"),
     _item("manzana-verde", "Manzana verde (Granny Smith) x kg", "frutas", "kg",
           coto="sku00000527", dia="90112",
-          carrefour="8342"),  # REVISAR: Carrefour la llama "especial"
+          carrefour="8342"),  # Carrefour la llama "especial"
     _item("naranja-jugo", "Naranja de jugo x kg", "frutas", "kg",
           coto="sku00061005", dia="90117",
-          carrefour="8314"),  # REVISAR: Carrefour publica dos SKUs iguales (8314 y 270997)
+          carrefour="8314"),  # Carrefour publica dos SKUs iguales (8314 y 270997)
     _item("naranja-ombligo", "Naranja ombligo x kg", "frutas", "kg",
           coto="sku00000420", dia="90118"),
     _item("pera", "Pera x kg", "frutas", "kg",
-          dia="90113", carrefour="8357"),  # REVISAR: ninguna de las dos dice la variedad
+          dia="90113", carrefour="8357"),  # ninguna de las dos dice la variedad
     _item("ciruela", "Ciruela x kg", "frutas", "kg",
           coto="sku00063594", dia="90138", carrefour="612068"),
     _item("anana", "Ananá x kg", "frutas", "kg",
           coto="sku00017541", dia="90137",
-          carrefour="8352"),  # REVISAR: el de Carrefour es marca Dole
+          carrefour="8352"),  # el de Carrefour es marca Dole
     _item("melon-amarillo", "Melón amarillo x kg", "frutas", "kg",
           coto="sku00000538", carrefour="8332"),
     _item("melon-blanco", "Melón blanco x kg", "frutas", "kg",
           coto="sku00000536",
-          carrefour="8331"),  # REVISAR: Carrefour tiene otro a $1.999 (719170)
+          carrefour="8331"),  # Carrefour tiene otro a $1.999 (719170)
     _item("sandia-mini", "Sandía mini x kg", "frutas", "kg",
-          coto="sku00000443", carrefour="8338"),  # REVISAR: "mini" en Coto, "baby" en Carrefour
+          coto="sku00000443", carrefour="8338"),  # "mini" en Coto, "baby" en Carrefour
     _item("mango", "Mango x unidad", "frutas", "un",
           dia="225863", carrefour="691815"),
     _item("coco", "Coco x kg", "frutas", "kg",
@@ -129,7 +130,7 @@ FRESH_ITEMS: tuple[FreshItem, ...] = (
     _item("cebolla", "Cebolla x kg", "verduras", "kg",
           coto="sku00000602", carrefour="8404"),
     _item("cebolla-morada", "Cebolla morada x kg", "verduras", "kg",
-          coto="sku00036144", dia="263485"),  # REVISAR: Coto la llama "roja"
+          coto="sku00036144", dia="263485"),  # Coto la llama "roja"
     _item("lechuga-mantecosa", "Lechuga mantecosa x kg", "verduras", "kg",
           coto="sku00000424", dia="90143", carrefour="8427"),
     _item("lechuga-francesa", "Lechuga francesa x kg", "verduras", "kg",
@@ -146,18 +147,17 @@ FRESH_ITEMS: tuple[FreshItem, ...] = (
           coto="sku00000672", dia="90124", carrefour="8388"),
     _item("morron-amarillo", "Morrón amarillo x kg", "verduras", "kg",
           coto="sku00000709", carrefour="8392"),
-    _item("papa-blanca", "Papa blanca x kg", "verduras", "kg",
-          coto="sku00000695", dia="90090"),  # REVISAR: la de Día viene en malla
+    # Sin papa blanca: la única otra oferta es la "Papa Blanca en malla" de Día,
+    # que suele ser una selección mejor que la suelta. Coto sola no compara nada.
     _item("remolacha", "Remolacha x kg", "verduras", "kg",
           coto="sku00000677", dia="90125", carrefour="8447"),
     _item("repollo-blanco", "Repollo blanco x kg", "verduras", "kg",
-          coto="sku00000678", carrefour="8433",
-          dia="90144"),  # REVISAR: Día dice sólo "Repollo"
+          coto="sku00000678", carrefour="8433"),  # el "Repollo" de Día no es blanco
     _item("tomate-perita", "Tomate perita x kg", "verduras", "kg",
           coto="sku00000683", dia="90074", carrefour="8396"),
     _item("tomate-redondo", "Tomate redondo x kg", "verduras", "kg",
           coto="sku00000684", dia="90127",
-          carrefour="432751"),  # REVISAR: "Tomate Red" en Coto, "Tomate" a secas en Carrefour
+          carrefour="432751"),  # "Tomate Red" en Coto, "Tomate" a secas en Carrefour
     _item("tomate-cherry", "Tomate cherry x kg", "verduras", "kg",
           coto="sku00000567", dia="90314"),
     _item("zapallito-redondo", "Zapallito redondo x kg", "verduras", "kg",
@@ -184,8 +184,8 @@ FRESH_ITEMS: tuple[FreshItem, ...] = (
           coto="sku00092926", carrefour="150888"),
     _item("aji-picante", "Ají picante x kg", "verduras", "kg",
           coto="sku00000696", carrefour="89127"),
-    # REVISAR el bloque: Coto vende estas hojas "x Uni" y Carrefour "x atado".
-    # Se toman como la misma unidad de venta, un atado.
+    # Coto vende estas hojas "x Uni" y Carrefour "x atado": es la misma unidad de
+    # venta, un atado.
     _item("rucula", "Rúcula x atado", "verduras", "un",
           coto="sku00039566", carrefour="504734"),
     _item("perejil", "Perejil x atado", "verduras", "un",
@@ -211,7 +211,7 @@ FRESH_ITEMS: tuple[FreshItem, ...] = (
     _item("bife-americano", "Bife americano x kg", "carnes", "kg",
           coto="sku00041414", carrefour="678571"),
     _item("bife-de-chorizo", "Bife de chorizo x kg", "carnes", "kg",
-          coto="sku00029804", carrefour="662854"),  # REVISAR: Carrefour sólo tiene Novillito
+          coto="sku00029804", carrefour="662854"),  # Carrefour sólo tiene Novillito
     _item("bola-de-lomo", "Bola de lomo x kg", "carnes", "kg",
           coto="sku00047993", carrefour="678581"),
     _item("carnaza", "Carnaza común x kg", "carnes", "kg",
@@ -227,10 +227,10 @@ FRESH_ITEMS: tuple[FreshItem, ...] = (
     _item("espinazo", "Espinazo x kg", "carnes", "kg",
           coto="sku00042304", carrefour="678574"),
     _item("falda", "Falda x kg", "carnes", "kg",
-          coto="sku00041392", dia="125302"),  # REVISAR: Día la llama "parrillera"
+          coto="sku00041392", dia="125302"),  # Día la llama "parrillera"
     _item("lomo", "Lomo x kg", "carnes", "kg",
           coto="sku00047989", dia="279548",
-          carrefour="662859"),  # REVISAR: Carrefour sólo tiene Novillito
+          carrefour="662859"),  # Carrefour sólo tiene Novillito
     _item("marucha", "Marucha x kg", "carnes", "kg",
           coto="sku00043060", carrefour="678576"),
     _item("matambre", "Matambre x kg", "carnes", "kg",
@@ -239,20 +239,20 @@ FRESH_ITEMS: tuple[FreshItem, ...] = (
           coto="sku00047991", carrefour="743074"),
     _item("ojo-de-bife", "Ojo de bife x kg", "carnes", "kg",
           coto="sku00029810", dia="279509",
-          carrefour="662864"),  # REVISAR: Carrefour sólo tiene Novillito
+          carrefour="662864"),  # Carrefour sólo tiene Novillito
     _item("osobuco", "Osobuco x kg", "carnes", "kg",
           coto="sku00041463", dia="90357",
-          carrefour="678577"),  # REVISAR: Coto especifica "de garrón"
+          carrefour="678577"),  # Coto especifica "de garrón"
     _item("paleta", "Paleta x kg", "carnes", "kg",
-          coto="sku00047984", carrefour="662849"),  # REVISAR: Coto dice "del centro"
+          coto="sku00047984", carrefour="662849"),  # Coto dice "del centro"
     _item("palomita", "Palomita x kg", "carnes", "kg",
           coto="sku00041448", carrefour="678578",
-          dia="161330"),  # REVISAR: la de Día viene en medallones
+          dia="161330"),  # la de Día viene en medallones
     _item("peceto", "Peceto x kg", "carnes", "kg",
           coto="sku00047994", carrefour="743071"),
     _item("picada-especial", "Carne picada especial x kg", "carnes", "kg",
           coto="sku00069607",
-          carrefour="678597"),  # REVISAR: Carrefour publica dos SKUs con el mismo nombre (678597 y 681076)
+          carrefour="678597"),  # Carrefour publica dos SKUs con el mismo nombre (678597 y 681076)
     _item("roast-beef", "Roast beef x kg", "carnes", "kg",
           coto="sku00047985", carrefour="662851"),
     _item("tapa-de-asado", "Tapa de asado x kg", "carnes", "kg",
@@ -263,7 +263,7 @@ FRESH_ITEMS: tuple[FreshItem, ...] = (
           coto="sku00042294", dia="163845", carrefour="662853"),
     _item("vacio", "Vacío x kg", "carnes", "kg",
           coto="sku00047980", dia="162846",
-          carrefour="627287"),  # REVISAR: Coto dice "del centro"
+          carrefour="627287"),  # Coto dice "del centro"
     _item("azotillo", "Azotillo x kg", "carnes", "kg",
           coto="sku00041457", carrefour="678570"),
     _item("aranita", "Arañita x kg", "carnes", "kg",
@@ -283,15 +283,15 @@ FRESH_ITEMS: tuple[FreshItem, ...] = (
     _item("peceto-de-cerdo", "Peceto de cerdo x kg", "carnes", "kg",
           coto="sku00017725", dia="90174"),
     _item("matambre-de-cerdo", "Matambre de cerdo x kg", "carnes", "kg",
-          coto="sku00000335", carrefour="687696"),  # REVISAR: Carrefour lo llama "matambrito"
+          coto="sku00000335", carrefour="687696"),  # Carrefour lo llama "matambrito"
     _item("pechito-de-cerdo", "Pechito de cerdo x kg", "carnes", "kg",
-          coto="sku00017410", carrefour="687694"),  # REVISAR: Coto especifica "con manta"
+          coto="sku00017410", carrefour="687694"),  # Coto especifica "con manta"
 
     # ------------------------------------------------------------------- pollo
     _item("pollo-entero", "Pollo entero x kg", "pollo", "kg",
-          dia="90150", carrefour="700475"),  # REVISAR: Día tiene otro igual, "Pollo Entero" (90164)
+          dia="90150", carrefour="700475"),  # Día tiene otro igual, "Pollo Entero" (90164)
     _item("pata-muslo", "Pata muslo de pollo x kg", "pollo", "kg",
-          dia="162805", carrefour="704564"),  # REVISAR: Carrefour lo llama "cuarto trasero"
+          dia="162805", carrefour="704564"),  # Carrefour lo llama "cuarto trasero"
     _item("pata-de-pollo", "Pata de pollo x kg", "pollo", "kg",
           dia="162803", carrefour="704566"),
     _item("suprema", "Suprema de pollo x kg", "pollo", "kg",

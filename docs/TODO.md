@@ -252,9 +252,6 @@ SKU nuevo, el ítem pierde esa tienda sin que falle nada. Hay que correr
 vuelve tedioso, el paso siguiente es que el barrido nocturno cuente los SKUs de
 la tabla que no vio y lo reporte como PARTIAL, igual que una categoría vacía.
 
-Primera versión revisada por AV: pendiente. Las líneas `REVISAR` de la tabla
-llevan un supuesto a confirmar mirando la góndola real.
-
 ---
 
 ## Optimizador
