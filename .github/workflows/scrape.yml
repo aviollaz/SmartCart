@@ -143,11 +143,22 @@ jobs:
         with:
           python-version: "3.12"
           cache: pip
+          # El workflow entra en la clave del cache a propósito: el cache viejo
+          # tenía adentro los wheels de CUDA (varios GB) y, con la clave derivada
+          # sólo de requirements.txt, se seguía restaurando al disco del runner.
+          cache-dependency-path: |
+            requirements.txt
+            .github/workflows/scrape.yml
 
-      # torch pesa varios cientos de MB: sin el cache de pip de arriba, esto solo
-      # se lleva la mitad del tiempo del job.
+      # torch va PRIMERO y desde el índice CPU, igual que en el Dockerfile. Desde
+      # PyPI, `sentence-transformers` resuelve el torch con CUDA 13 entero
+      # (nvidia-*-cu13, cuda-toolkit, triton): el 26 y el 27-sep-2026 los cuatro
+      # jobs murieron acá con "No space left on device" y el barrido ni arrancó.
+      # Con torch ya instalado, el `-r requirements.txt` lo da por satisfecho.
       - name: Instalar dependencias
-        run: pip install -r requirements.txt
+        run: |
+          pip install torch --index-url https://download.pytorch.org/whl/cpu
+          pip install -r requirements.txt
 
       # La única rama del workflow, y se la gana. Sin el secreto, SmartCartDB()
       # cae al default de docker-compose, _wait_for_db reintenta contra localhost
@@ -211,9 +222,15 @@ jobs:
         with:
           python-version: "3.12"
           cache: pip
+          cache-dependency-path: |
+            requirements.txt
+            .github/workflows/scrape.yml
 
+      # torch del índice CPU primero: ver el paso homónimo del job `tiendas`.
       - name: Instalar dependencias
-        run: pip install -r requirements.txt
+        run: |
+          pip install torch --index-url https://download.pytorch.org/whl/cpu
+          pip install -r requirements.txt
 
       # El modelo de sentence-transformers (~90 MB) se baja de HuggingFace la
       # primera vez que se usa. Sin cache eso se repite todas las noches. La clave
