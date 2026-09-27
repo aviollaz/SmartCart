@@ -1,6 +1,8 @@
 # src/database.py
 import json
 import logging
+import random
+import time
 
 import psycopg
 from psycopg.rows import dict_row
@@ -56,165 +58,225 @@ class SmartCartDB:
 
         logger.info("Estandarizando y guardando %d productos en '%s'...", len(products), store_id)
         try:
-            with psycopg.connect(self.conn_string) as conn:
-                self._ensure_schema(conn)
-                with conn.cursor() as cur:
-                    for prod in products:
-                        # 1. Resolver identificador único. Los frescos curados
-                        # en src/fresh_items.py se unifican por la tabla, no por
-                        # EAN; el resto sigue el camino de siempre.
-                        identity = resolve_identity(store_id, prod)
-                        unified_id = identity['unified_id']
-                        
-                        # 2. TRANSFORMACIÓN: Normalizamos precio y promos según el origen
-                        base_price = prod['base_price']
-                        standardized_promos = []
+            filas = [self._prepare_row(prod, store_id) for prod in products]
+            # Orden de locks determinístico. Las tres tiendas corren en paralelo
+            # y cada categoría es UNA transacción que va tomando locks de fila en
+            # `unified_products`; dos tiendas que comparten EANs y los recorren
+            # en órdenes distintos se esperan mutuamente. Entre el 20 y el
+            # 25-sep-2026 eso costó 9 categorías (`DeadlockDetected ... while
+            # inserting index tuple in relation "unified_products"`). Si todas
+            # las transacciones toman esos locks en orden creciente de id, no
+            # puede cerrarse un ciclo.
+            filas.sort(key=lambda fila: (fila[0][0], fila[1][2]))
 
-                        if store_id == "coto_online":
-                            standardized_promos = PromoTransformer.coto(prod['raw_promos'])
-                        elif store_id == "dia_online":
-                            # Para día, raw_promos contiene el 'commertialOffer' crudo de VTEX
-                            base_price, standardized_promos = PromoTransformer.dia(
-                                prod['raw_promos'],
-                                prod['store_sku']
-                            )
-                        elif store_id == "carrefour_online":
-                            # Carrefour también es VTEX: mismo 'commertialOffer' crudo,
-                            # pero su hueco ListPrice/Price puede ser precio de socio
-                            # (ver PromoTransformer.carrefour).
-                            base_price, standardized_promos = PromoTransformer.carrefour(
-                                prod['raw_promos'],
-                                prod['store_sku']
-                            )
+            for intento in range(1, self.MAX_SAVE_ATTEMPTS + 1):
+                try:
+                    self._write_rows(filas)
+                    break
+                except self._TRANSIENT_WRITE_ERRORS as exc:
+                    # Red por si queda algún ciclo que el orden no cubre (el DDL
+                    # del primer `_ensure_schema` corre en la misma transacción).
+                    # Reintentar es seguro: la transacción ya se revirtió entera,
+                    # DDL incluido, así que el esquema se vuelve a emitir.
+                    self._schema_ready = False
+                    if intento == self.MAX_SAVE_ATTEMPTS:
+                        raise
+                    logger.warning("'%s': %s en el intento %d/%d, reintentando el lote...",
+                                   store_id, type(exc).__name__, intento, self.MAX_SAVE_ATTEMPTS)
+                    time.sleep(intento + random.uniform(0, 1.0))
 
-                        # 2.5 Góndola y categoría de origen: las dos se exigen, no
-                        # se leen con .get(). Un scraper que dejara de mandarlas no
-                        # rompería nada visible —se escribiría NULL en silencio— y a
-                        # partir de ahí todo barrido parcial podaría CERO filas
-                        # reportando `deleted: 0` con `skipped: False`, que es
-                        # indistinguible de "no se dio de baja nada". La góndola en
-                        # NULL es igual de silenciosa: el producto desaparece de
-                        # GET /category y deja de tener sustitutos posibles.
-                        shelf = prod['shelf']
-                        source_category = prod['source_category']
-
-                        # 3. Guardar el Producto Unificado
-                        # Los flags dietarios se PISAN en cada scrapeo en vez de
-                        # acumularse con OR. Acumular preservaba la evidencia de
-                        # ambas tiendas, pero volvía los flags monotónicos: un
-                        # falso positivo no se podía corregir nunca, ni siquiera
-                        # arreglando el parser. Para un campo del que depende
-                        # alguien celíaco eso es inaceptable, y la asimetría
-                        # juega a favor de pisar: un FALSE de más solo significa
-                        # "sin evidencia" (seguro), mientras que un TRUE de más
-                        # es el error peligroso.
-                        cur.execute("""
-                            INSERT INTO unified_products (
-                                id, ean, name, brand, unit_type, shelf, total_volume_weight,
-                                is_gluten_free, is_vegan
-                            )
-                            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
-                            ON CONFLICT (id) DO UPDATE SET
-                                name = EXCLUDED.name,
-                                brand = EXCLUDED.brand,
-                                shelf = EXCLUDED.shelf,
-                                -- unit_type va junto con total_volume_weight: los
-                                -- dos salen de la misma llamada a
-                                -- extract_real_volume() y describen una sola
-                                -- medida. Actualizar el número sin la unidad
-                                -- dejaba el peso nuevo pegado a la unidad vieja
-                                -- del primer INSERT, y así quedaron en la base
-                                -- cosas como "Fritolim 120 g" guardado en 'ml'.
-                                -- Además congelaba en 'un' a todo producto cuyo
-                                -- tamaño el parser no supo leer la primera vez,
-                                -- volviendo inútil cualquier arreglo posterior
-                                -- del parser sin borrar la tabla.
-                                unit_type = EXCLUDED.unit_type,
-                                total_volume_weight = EXCLUDED.total_volume_weight,
-                                is_gluten_free = EXCLUDED.is_gluten_free,
-                                is_vegan = EXCLUDED.is_vegan
-                        """, (
-                            unified_id,
-                            identity['ean'],
-                            identity['name'],
-                            identity['brand'],
-                            identity['unit_type'],
-                            shelf,
-                            identity['total_volume_weight'],
-                            bool(prod.get('is_gluten_free', False)),
-                            bool(prod.get('is_vegan', False))))
-
-                        # 4. Guardar la Instancia Comercial con el JSON de promos y la IMAGEN
-                        cur.execute("""
-                            INSERT INTO store_products (
-                                unified_product_id, store_id, store_sku, name, store_item_id, product_url, base_price, in_stock, promotions_json, image_url, source_category, description
-                            )
-                            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
-                            ON CONFLICT (store_id, store_sku) DO UPDATE SET
-                                -- El unified_product_id se DERIVA del EAN, así que
-                                -- también tiene que refrescarse: congelado en el
-                                -- primer INSERT, un SKU al que la tienda le corrige
-                                -- el EAN sigue colgando del producto unificado
-                                -- viejo para siempre y deja de unificar contra las
-                                -- otras cadenas, sin error y sin síntoma. El
-                                -- producto nuevo, mientras tanto, queda sin ofertas
-                                -- y lo borra el pruning de huérfanos esa misma
-                                -- noche — o sea que el agujero se repite en cada
-                                -- barrido.
-                                unified_product_id = EXCLUDED.unified_product_id,
-                                -- El nombre propio de la tienda. NO es el de
-                                -- unified_products: aquel es por EAN y lo pisa la
-                                -- última cadena que escribió, así que de los tres
-                                -- nombres de un producto sobrevivía uno solo y la
-                                -- base no decía cuál.
-                                name = EXCLUDED.name,
-                                store_item_id = EXCLUDED.store_item_id,
-                                product_url = EXCLUDED.product_url,
-                                base_price = EXCLUDED.base_price,
-                                in_stock = EXCLUDED.in_stock,
-                                promotions_json = EXCLUDED.promotions_json,
-                                image_url = EXCLUDED.image_url,
-                                -- Va en el DO UPDATE SET como todo lo demás: una
-                                -- columna que falte acá queda congelada en lo que
-                                -- escribió el primer INSERT, y un re-scrapeo es el
-                                -- único mecanismo del proyecto para corregir datos.
-                                -- Congelada, además, dejaría el alcance del pruning
-                                -- apuntando a una categoría que ya no es la que
-                                -- ofrece el producto.
-                                source_category = EXCLUDED.source_category,
-                                -- Pisa también con NULL: si la tienda borra la
-                                -- descripción (o clean_description empieza a
-                                -- descartarla), la ficha tiene que dejar de
-                                -- mostrarla.
-                                description = EXCLUDED.description,
-                                last_updated = CURRENT_TIMESTAMP
-                        """, (
-                            unified_id,
-                            store_id,
-                            prod['store_sku'],
-                            prod['name'],
-                            # Sólo lo mandan los scrapers VTEX. Va también en el
-                            # DO UPDATE SET: una columna que falte ahí queda
-                            # congelada en lo que escribió el primer INSERT, y un
-                            # re-scrapeo es el único mecanismo del proyecto para
-                            # corregir datos.
-                            prod.get('store_item_id'),
-                            prod['url'],
-                            base_price,
-                            prod['in_stock'],
-                            json.dumps(standardized_promos),
-                            prod.get('image_url'),  # <-- Guardamos la URL de la imagen extraída del scraper
-                            source_category,
-                            # Opcional, a diferencia de shelf/source_category: un
-                            # NULL acá significa "la tienda no publica una
-                            # descripción útil", no un dato perdido.
-                            prod.get('description'),
-                        ))
             logger.info("Guardado exitoso: %d filas en '%s'.", len(products), store_id)
             return len(products)
         except Exception:
             logger.exception("Error guardando %d productos en '%s'.", len(products), store_id)
             raise
+
+    MAX_SAVE_ATTEMPTS = 3
+    # `UniqueViolation` está porque `unified_products` tiene DOS índices únicos
+    # (`id` y `ean`) y el `ON CONFLICT (id)` sólo arbitra el primero: si dos
+    # tiendas insertan a la vez un producto que todavía no existe, la segunda
+    # choca contra `unified_products_ean_key` en vez de tomar el camino del
+    # UPDATE. En el reintento la fila ya está commiteada y el upsert funciona.
+    # `id` se deriva del EAN (`prod_{ean}`), así que fuera de esa carrera esta
+    # violación no puede darse; si se diera por otra cosa, falla igual al tercer
+    # intento.
+    _TRANSIENT_WRITE_ERRORS = (
+        psycopg.errors.DeadlockDetected,
+        psycopg.errors.SerializationFailure,
+        psycopg.errors.UniqueViolation,
+    )
+
+    @staticmethod
+    def _prepare_row(prod: dict, store_id: str) -> tuple[tuple, tuple]:
+        """
+        Arma los parámetros de los dos upserts de un producto, sin tocar la base.
+
+        Separado de la escritura para poder ordenar el lote antes de abrir la
+        transacción (ver `save_store_products`). Devuelve
+        `(params_unified_products, params_store_products)`; el primer elemento de
+        cada uno es el `unified_id` y el tercero del segundo, el `store_sku`.
+        """
+        # 1. Resolver identificador único. Los frescos curados
+        # en src/fresh_items.py se unifican por la tabla, no por
+        # EAN; el resto sigue el camino de siempre.
+        identity = resolve_identity(store_id, prod)
+        unified_id = identity['unified_id']
+
+        # 2. TRANSFORMACIÓN: Normalizamos precio y promos según el origen
+        base_price = prod['base_price']
+        standardized_promos = []
+
+        if store_id == "coto_online":
+            standardized_promos = PromoTransformer.coto(prod['raw_promos'])
+        elif store_id == "dia_online":
+            # Para día, raw_promos contiene el 'commertialOffer' crudo de VTEX
+            base_price, standardized_promos = PromoTransformer.dia(
+                prod['raw_promos'],
+                prod['store_sku']
+            )
+        elif store_id == "carrefour_online":
+            # Carrefour también es VTEX: mismo 'commertialOffer' crudo,
+            # pero su hueco ListPrice/Price puede ser precio de socio
+            # (ver PromoTransformer.carrefour).
+            base_price, standardized_promos = PromoTransformer.carrefour(
+                prod['raw_promos'],
+                prod['store_sku']
+            )
+
+        # 2.5 Góndola y categoría de origen: las dos se exigen, no
+        # se leen con .get(). Un scraper que dejara de mandarlas no
+        # rompería nada visible —se escribiría NULL en silencio— y a
+        # partir de ahí todo barrido parcial podaría CERO filas
+        # reportando `deleted: 0` con `skipped: False`, que es
+        # indistinguible de "no se dio de baja nada". La góndola en
+        # NULL es igual de silenciosa: el producto desaparece de
+        # GET /category y deja de tener sustitutos posibles.
+        shelf = prod['shelf']
+        source_category = prod['source_category']
+
+        params_unified = (
+            unified_id,
+            identity['ean'],
+            identity['name'],
+            identity['brand'],
+            identity['unit_type'],
+            shelf,
+            identity['total_volume_weight'],
+            bool(prod.get('is_gluten_free', False)),
+            bool(prod.get('is_vegan', False)),
+        )
+        params_store = (
+            unified_id,
+            store_id,
+            prod['store_sku'],
+            prod['name'],
+            # Sólo lo mandan los scrapers VTEX. Va también en el
+            # DO UPDATE SET: una columna que falte ahí queda
+            # congelada en lo que escribió el primer INSERT, y un
+            # re-scrapeo es el único mecanismo del proyecto para
+            # corregir datos.
+            prod.get('store_item_id'),
+            prod['url'],
+            base_price,
+            prod['in_stock'],
+            json.dumps(standardized_promos),
+            prod.get('image_url'),  # <-- Guardamos la URL de la imagen extraída del scraper
+            source_category,
+            # Opcional, a diferencia de shelf/source_category: un
+            # NULL acá significa "la tienda no publica una
+            # descripción útil", no un dato perdido.
+            prod.get('description'),
+        )
+        return params_unified, params_store
+
+    def _write_rows(self, filas: list[tuple[tuple, tuple]]) -> None:
+        """Escribe un lote ya preparado y ordenado, en una sola transacción."""
+        with psycopg.connect(self.conn_string) as conn:
+            self._ensure_schema(conn)
+            with conn.cursor() as cur:
+                for params_unified, params_store in filas:
+                    # 3. Guardar el Producto Unificado
+                    # Los flags dietarios se PISAN en cada scrapeo en vez de
+                    # acumularse con OR. Acumular preservaba la evidencia de
+                    # ambas tiendas, pero volvía los flags monotónicos: un
+                    # falso positivo no se podía corregir nunca, ni siquiera
+                    # arreglando el parser. Para un campo del que depende
+                    # alguien celíaco eso es inaceptable, y la asimetría
+                    # juega a favor de pisar: un FALSE de más solo significa
+                    # "sin evidencia" (seguro), mientras que un TRUE de más
+                    # es el error peligroso.
+                    cur.execute("""
+                        INSERT INTO unified_products (
+                            id, ean, name, brand, unit_type, shelf, total_volume_weight,
+                            is_gluten_free, is_vegan
+                        )
+                        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
+                        ON CONFLICT (id) DO UPDATE SET
+                            name = EXCLUDED.name,
+                            brand = EXCLUDED.brand,
+                            shelf = EXCLUDED.shelf,
+                            -- unit_type va junto con total_volume_weight: los
+                            -- dos salen de la misma llamada a
+                            -- extract_real_volume() y describen una sola
+                            -- medida. Actualizar el número sin la unidad
+                            -- dejaba el peso nuevo pegado a la unidad vieja
+                            -- del primer INSERT, y así quedaron en la base
+                            -- cosas como "Fritolim 120 g" guardado en 'ml'.
+                            -- Además congelaba en 'un' a todo producto cuyo
+                            -- tamaño el parser no supo leer la primera vez,
+                            -- volviendo inútil cualquier arreglo posterior
+                            -- del parser sin borrar la tabla.
+                            unit_type = EXCLUDED.unit_type,
+                            total_volume_weight = EXCLUDED.total_volume_weight,
+                            is_gluten_free = EXCLUDED.is_gluten_free,
+                            is_vegan = EXCLUDED.is_vegan
+                    """, params_unified)
+
+                    # 4. Guardar la Instancia Comercial con el JSON de promos y la IMAGEN
+                    cur.execute("""
+                        INSERT INTO store_products (
+                            unified_product_id, store_id, store_sku, name, store_item_id, product_url, base_price, in_stock, promotions_json, image_url, source_category, description
+                        )
+                        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                        ON CONFLICT (store_id, store_sku) DO UPDATE SET
+                            -- El unified_product_id se DERIVA del EAN, así que
+                            -- también tiene que refrescarse: congelado en el
+                            -- primer INSERT, un SKU al que la tienda le corrige
+                            -- el EAN sigue colgando del producto unificado
+                            -- viejo para siempre y deja de unificar contra las
+                            -- otras cadenas, sin error y sin síntoma. El
+                            -- producto nuevo, mientras tanto, queda sin ofertas
+                            -- y lo borra el pruning de huérfanos esa misma
+                            -- noche — o sea que el agujero se repite en cada
+                            -- barrido.
+                            unified_product_id = EXCLUDED.unified_product_id,
+                            -- El nombre propio de la tienda. NO es el de
+                            -- unified_products: aquel es por EAN y lo pisa la
+                            -- última cadena que escribió, así que de los tres
+                            -- nombres de un producto sobrevivía uno solo y la
+                            -- base no decía cuál.
+                            name = EXCLUDED.name,
+                            store_item_id = EXCLUDED.store_item_id,
+                            product_url = EXCLUDED.product_url,
+                            base_price = EXCLUDED.base_price,
+                            in_stock = EXCLUDED.in_stock,
+                            promotions_json = EXCLUDED.promotions_json,
+                            image_url = EXCLUDED.image_url,
+                            -- Va en el DO UPDATE SET como todo lo demás: una
+                            -- columna que falte acá queda congelada en lo que
+                            -- escribió el primer INSERT, y un re-scrapeo es el
+                            -- único mecanismo del proyecto para corregir datos.
+                            -- Congelada, además, dejaría el alcance del pruning
+                            -- apuntando a una categoría que ya no es la que
+                            -- ofrece el producto.
+                            source_category = EXCLUDED.source_category,
+                            -- Pisa también con NULL: si la tienda borra la
+                            -- descripción (o clean_description empieza a
+                            -- descartarla), la ficha tiene que dejar de
+                            -- mostrarla.
+                            description = EXCLUDED.description,
+                            last_updated = CURRENT_TIMESTAMP
+                    """, params_store)
 
 
     # Fracción de las filas de una tienda que un pruning puede borrar antes de
