@@ -6,7 +6,7 @@ import random
 from src.database import SmartCartDB
 from src.scrapers.errors import CategoryScrapeError
 from src.scrapers.http_retry import request_with_retry
-from src.scrapers.vtex import extract_search_payload, parse_vtex_offer
+from src.scrapers.vtex import extract_search_payload, is_transient_graphql_error, parse_vtex_offer
 from src.shelves import keys_for_store, shelf_for_key
 from src.taxonomy import category_path
 
@@ -112,7 +112,8 @@ class CarrefourScraper:
         # con cero productos, que su regla de "página vacía = fin de categoría"
         # lee como éxito, y el pruning después borra lo que no se recorrió.
         try:
-            response = request_with_retry(lambda: self.client.post(GRAPHQL_URL, json=payload), "CARREFOUR")
+            response = request_with_retry(lambda: self.client.post(GRAPHQL_URL, json=payload), "CARREFOUR",
+                                          is_retryable=is_transient_graphql_error)
         except Exception as exc:
             logger.exception("[CARREFOUR] Excepción en request POST.")
             raise CategoryScrapeError(

@@ -15,6 +15,14 @@ otro 4xx, o el 200-con-`errors` de GraphQL cuando rota el hash de la persisted
 query (ver `extract_search_payload` en src/scrapers/vtex.py), sigue fallando en
 el primer intento — un reintento no cambia esos resultados, sólo demora el
 diagnóstico.
+
+Hay un 5xx que NO llega como status: el gateway GraphQL de VTEX contesta
+**HTTP 200** con `errors: [{"message": "Request failed with status code 500"}]`
+cuando el servicio de búsqueda de atrás falla. Visto en 5 categorías de Día y
+Carrefour entre el 20 y el 25-sep-2026, cada una perdida al primer intento. Para
+eso existe `is_retryable`: el llamador VTEX pasa
+`vtex.is_transient_graphql_error`, que reconoce ese caso y deja afuera el hash
+rotado.
 """
 import logging
 import random
@@ -29,7 +37,11 @@ MAX_ATTEMPTS = 3
 RETRYABLE_STATUS = {429, 500, 502, 503, 504}
 
 
-def request_with_retry(make_request: Callable[[], httpx.Response], label: str) -> httpx.Response:
+def request_with_retry(
+    make_request: Callable[[], httpx.Response],
+    label: str,
+    is_retryable: Callable[[httpx.Response], bool] | None = None,
+) -> httpx.Response:
     """
     Ejecuta `make_request` hasta MAX_ATTEMPTS veces.
 
@@ -37,7 +49,8 @@ def request_with_retry(make_request: Callable[[], httpx.Response], label: str) -
     siendo el llamador quien decide si ese status es un error (mismo
     comportamiento que antes de que esta función existiera). La única
     excepción es un status en RETRYABLE_STATUS, que se trata como si hubiera
-    sido una excepción de transporte y dispara un nuevo intento.
+    sido una excepción de transporte y dispara un nuevo intento. Lo mismo vale
+    para una respuesta sobre la que `is_retryable` devuelve True.
 
     Al agotar los intentos, relanza la última excepción de transporte si la
     hubo; si lo que se agotó fue una racha de status reintentables, devuelve
@@ -57,8 +70,10 @@ def request_with_retry(make_request: Callable[[], httpx.Response], label: str) -
             time.sleep(_backoff(intento))
             continue
 
-        if response.status_code in RETRYABLE_STATUS and intento < MAX_ATTEMPTS:
-            logger.warning("[%s] intento %s/%s respondió HTTP %s, reintentando...",
+        reintentable = (response.status_code in RETRYABLE_STATUS
+                        or (is_retryable is not None and is_retryable(response)))
+        if reintentable and intento < MAX_ATTEMPTS:
+            logger.warning("[%s] intento %s/%s respondió HTTP %s con error pasajero, reintentando...",
                             label, intento, MAX_ATTEMPTS, response.status_code)
             ultima_respuesta = response
             time.sleep(_backoff(intento))

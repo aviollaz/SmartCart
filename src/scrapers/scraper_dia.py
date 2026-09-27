@@ -6,7 +6,7 @@ import random
 from src.database import SmartCartDB
 from src.scrapers.errors import CategoryScrapeError
 from src.scrapers.http_retry import request_with_retry
-from src.scrapers.vtex import extract_search_payload, parse_vtex_offer
+from src.scrapers.vtex import extract_search_payload, is_transient_graphql_error, parse_vtex_offer
 from src.shelves import keys_for_store, shelf_for_key
 from src.taxonomy import category_path
 
@@ -76,7 +76,8 @@ class DiaScraper:
         # `_run_store` la contaba OK y el pruning borraba las otras cuatro como
         # discontinuadas. Es el mismo bug que ya se corrigió en Coto.
         try:
-            response = request_with_retry(lambda: self.client.post(url, json=payload), "DÍA")
+            response = request_with_retry(lambda: self.client.post(url, json=payload), "DÍA",
+                                          is_retryable=is_transient_graphql_error)
         except Exception as exc:
             logger.exception("[DÍA] Excepción en request POST.")
             raise CategoryScrapeError(

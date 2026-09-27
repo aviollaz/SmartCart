@@ -78,6 +78,36 @@ def clean_description(raw, name) -> str | None:
     return texto
 
 
+# El mensaje con que el gateway GraphQL de VTEX envuelve un 5xx (o 429) del
+# servicio de búsqueda que tiene atrás, contestando igual HTTP 200.
+_TRANSIENT_GRAPHQL_ERROR = re.compile(r"status code (429|5\d\d)\b")
+
+
+def is_transient_graphql_error(response) -> bool:
+    """
+    True si la respuesta es un 200 cuyo `errors` describe SÓLO fallas pasajeras
+    del backend de VTEX ("Request failed with status code 500/504").
+
+    Es el predicado `is_retryable` de `request_with_retry`. Exige que **todos**
+    los errores sean de ese tipo: un PERSISTED_QUERY_NOT_FOUND (hash rotado) no
+    se arregla reintentando y tiene que llegar a `extract_search_payload` al
+    primer intento, como siempre. Cualquier cosa que no se pueda leer como JSON
+    devuelve False: decidir qué es ese error sigue siendo trabajo del llamador.
+    """
+    if response.status_code != 200:
+        return False
+    try:
+        errors = response.json().get("errors")
+    except Exception:
+        return False
+    if not errors or not isinstance(errors, list):
+        return False
+    return all(
+        isinstance(err, dict) and _TRANSIENT_GRAPHQL_ERROR.search(str(err.get("message", "")))
+        for err in errors
+    )
+
+
 def extract_search_payload(response_json, label: str) -> dict:
     """
     Devuelve el bloque `productSearch` de una respuesta de `productSearchV3`.
