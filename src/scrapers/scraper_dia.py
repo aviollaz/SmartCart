@@ -6,11 +6,17 @@ import random
 from src.database import SmartCartDB
 from src.scrapers.errors import CategoryScrapeError
 from src.scrapers.http_retry import request_with_retry
-from src.scrapers.vtex import extract_search_payload, is_transient_graphql_error, parse_vtex_offer
+from src.scrapers.vtex import (extract_search_payload, is_transient_graphql_error,
+                               parse_vtex_offer, storefront_url)
 from src.shelves import keys_for_store, shelf_for_key
 from src.taxonomy import category_path
 
 logger = logging.getLogger(__name__)
+
+# El dominio PÚBLICO de la tienda. Los links de producto se arman siempre sobre
+# éste (ver `storefront_url`): VTEX devuelve a veces el dominio interno, que
+# manda al login del admin en vez de a la ficha.
+BASE_URL = "https://diaonline.supermercadosdia.com.ar"
 
 # Las góndolas que se barren viven en src/shelves.py, alineadas con las de Coto y
 # Carrefour: el catálogo sólo sirve para comparar precios si las tres tiendas
@@ -31,12 +37,12 @@ class DiaScraper:
             "Accept": "*/*",
             "Accept-Language": "en-US,en;q=0.9",
             "Content-Type": "application/json",
-            "Referer": "https://diaonline.supermercadosdia.com.ar/"
+            "Referer": f"{BASE_URL}/"
         }
         self.client = httpx.Client(headers=self.headers, http2=True, timeout=15.0)
 
     def scrape_category_slice(self, category_query: str, from_idx: int, to_idx: int):
-        url = "https://diaonline.supermercadosdia.com.ar/_v/segment/graphql/v1?workspace=master&maxAge=short&appsEtag=remove&domain=store&locale=es-AR"
+        url = f"{BASE_URL}/_v/segment/graphql/v1?workspace=master&maxAge=short&appsEtag=remove&domain=store&locale=es-AR"
         
         payload = {
             "operationName": "productSearchV3",
@@ -114,9 +120,10 @@ class DiaScraper:
         for p in products_data:
             # El parseo del producto (precio, talla, flags dietarios, etc.) es
             # idéntico al de Carrefour por correr las dos sobre VTEX — vive en
-            # src/scrapers/vtex.py. Sólo la URL difiere: Día la manda absoluta.
+            # src/scrapers/vtex.py. El `link` NO se guarda crudo: viene con el
+            # dominio interno de VTEX, que redirige al login del admin.
             product = parse_vtex_offer(p, shelf, taxonomy_path, source_category,
-                                        url=p.get("link"))
+                                        url=storefront_url(p.get("link"), BASE_URL))
             if product is None:
                 continue
             parsed_products.append(product)

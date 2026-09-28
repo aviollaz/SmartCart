@@ -6,7 +6,8 @@ import random
 from src.database import SmartCartDB
 from src.scrapers.errors import CategoryScrapeError
 from src.scrapers.http_retry import request_with_retry
-from src.scrapers.vtex import extract_search_payload, is_transient_graphql_error, parse_vtex_offer
+from src.scrapers.vtex import (extract_search_payload, is_transient_graphql_error,
+                               parse_vtex_offer, storefront_url)
 from src.shelves import keys_for_store, shelf_for_key
 from src.taxonomy import category_path
 
@@ -40,15 +41,11 @@ def build_carrefour_url(link: str | None) -> str | None:
 
     El campo viene relativo ("/vinagre-de-alcohol-alcazar-1-lt-100650/p"), así
     que guardarlo crudo deja links rotos en la ficha del producto — el mismo
-    problema que en su momento tuvo Coto y que resolvió build_coto_url().
+    problema que en su momento tuvo Coto y que resolvió build_coto_url(). Si
+    viniera absoluto tampoco se confía en su dominio: a Día le llegó el interno
+    de VTEX, que manda al login del admin (ver `storefront_url`).
     """
-    if not link:
-        return None
-
-    if link.startswith("http"):
-        return link
-
-    return f"{BASE_URL}/{link.lstrip('/')}"
+    return storefront_url(link, BASE_URL)
 
 
 class CarrefourScraper:

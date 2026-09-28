@@ -12,7 +12,8 @@ from src.promotion_parser import PromoTransformer
 from src.scrapers.errors import CategoryScrapeError
 from src.scrapers.vtex import read_availability
 from src.scrapers.scraper_carrefour import CarrefourScraper, build_carrefour_url
-from src.scrapers.vtex import extract_search_payload
+from src.scrapers.scraper_dia import DiaScraper
+from src.scrapers.vtex import extract_search_payload, storefront_url
 
 
 def _producto_vtex(**overrides):
@@ -69,6 +70,33 @@ def test_url_absoluta():
     # Idempotente si algún día VTEX empezara a mandarla completa.
     assert build_carrefour_url("https://www.carrefour.com.ar/x/p") == "https://www.carrefour.com.ar/x/p"
     assert build_carrefour_url(None) is None
+    # Un dominio interno de VTEX no se conserva nunca: manda al login del admin.
+    assert (build_carrefour_url("https://carrefourar.vtexcommercestable.com.br/x/p")
+            == "https://www.carrefour.com.ar/x/p")
+
+
+@pytest.mark.parametrize("link", [
+    # Lo que VTEX devuelve hoy para Día: el dominio interno, que redirige al
+    # login del admin ("confirm your identity") en vez de a la ficha.
+    "https://diaio.vtexcommercestable.com.br/papas-air-fryer-mas-finitas-mccain-700-gr-308953/p",
+    "https://diaio.myvtex.com/papas-air-fryer-mas-finitas-mccain-700-gr-308953/p",
+    "https://diaonline.supermercadosdia.com.ar/papas-air-fryer-mas-finitas-mccain-700-gr-308953/p",
+    "/papas-air-fryer-mas-finitas-mccain-700-gr-308953/p",
+])
+def test_link_de_dia_siempre_sale_con_el_dominio_publico(link):
+    scraper = DiaScraper()
+    producto = _producto_vtex(link=link)
+    [parsed] = scraper.process_products(_respuesta([producto]), "papas-congeladas")
+    assert parsed["url"] == (
+        "https://diaonline.supermercadosdia.com.ar/papas-air-fryer-mas-finitas-mccain-700-gr-308953/p"
+    )
+
+
+def test_storefront_url_conserva_la_query_y_tolera_none():
+    assert storefront_url("https://diaio.myvtex.com/x/p?skuId=9", "https://a.com") == "https://a.com/x/p?skuId=9"
+    assert storefront_url("x/p", "https://a.com/") == "https://a.com/x/p"
+    assert storefront_url(None, "https://a.com") is None
+    assert storefront_url("", "https://a.com") is None
 
 
 def test_process_products_extrae_los_campos_del_producto():

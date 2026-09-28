@@ -13,6 +13,7 @@ se aplicara a una copia y no a la otra.
 import html
 import logging
 import re
+from urllib.parse import urlsplit
 
 from src.dietary_parser import detect_dietary_flags
 from src.ean import normalize_ean
@@ -191,15 +192,36 @@ def read_availability(first_item: dict) -> bool:
     return True
 
 
+def storefront_url(link: str | None, base_url: str) -> str | None:
+    """
+    La URL pública de la ficha a partir del `link` de VTEX: su path (y query)
+    sobre el dominio de la tienda, **ignorando el dominio que traiga**.
+
+    Nunca se confía en el dominio del `link`. Carrefour lo manda relativo
+    ("/aceite-123/p") y Día lo mandaba absoluto con su dominio público, hasta
+    que VTEX empezó a devolver el interno (`diaio.vtexcommercestable.com.br`):
+    ese dominio redirige al login del admin de VTEX ("confirm your identity"),
+    así que todos los links de Día quedaron rotos sin que nada fallara. Es el
+    segundo drift del mismo tipo — el primero rompió `get_dia_categories.py`
+    con `diaio.myvtex.com`.
+    """
+    if not link:
+        return None
+
+    parts = urlsplit(link)
+    path = "/" + parts.path.lstrip("/")
+    query = f"?{parts.query}" if parts.query else ""
+    return f"{base_url.rstrip('/')}{path}{query}"
+
+
 def parse_vtex_offer(p: dict, shelf: str | None, taxonomy_path: str | None,
                       source_category: str | None, url: str | None) -> dict | None:
     """
     Convierte un producto crudo de `productSearchV3` en el dict que espera
     `SmartCartDB.save_store_products()`. Común a Día y Carrefour porque el JSON
     que devuelve VTEX para un producto es idéntico entre las dos — sólo cambia
-    cómo cada tienda arma la `url` final (Día la manda absoluta, Carrefour
-    relativa vía `build_carrefour_url`), así que eso lo resuelve el llamador y
-    entra ya armado.
+    el dominio público de cada tienda, así que la `url` la arma el llamador con
+    `storefront_url` y entra ya armada.
 
     Devuelve `None` cuando el producto no trae `items` (sin oferta, nada que
     guardar) — el llamador decide si eso es un `continue` o un error.
