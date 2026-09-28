@@ -66,7 +66,7 @@ export function HomePage() {
           Tu changuito, al menor precio
         </h1>
         <p className="mx-auto mb-8 max-w-xl text-ink-muted">
-          Comparamos Coto, Día y Carrefour y repartimos tu compra donde sale más barata.
+          Comparamos Coto, Día y Carrefour y armamos tu lista de compras al mejor precio.
         </p>
 
         <div className="flex flex-wrap items-center justify-center gap-3">
