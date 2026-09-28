@@ -1,5 +1,5 @@
-import { useState } from "react";
-import { BadgePercent, Check } from "lucide-react";
+import { useEffect, useState } from "react";
+import { BadgePercent, Check, X } from "lucide-react";
 import { useProfile } from "../../context/ProfileContext";
 import { MEMBERSHIP_OPTIONS } from "../../utils/paymentOptions";
 
@@ -24,22 +24,58 @@ const MEMBERSHIP_STORE = {
  * recién el optimizador le revelaba el descuento.
  *
  * Se puede saltear ("No tengo ninguna") y se puede cambiar después desde el
- * carrito: no bloquea más que un clic.
+ * chip "Mis clubes" del Header o desde el carrito.
+ *
+ * `onClose`, igual que en `LocationModal`, es lo único que distingue el
+ * onboarding de la edición desde el Header. Con él, el modal se abandona sin
+ * guardar (X, Escape o clic en el fondo) y "Guardar" acepta cero clubes: sacar
+ * uno que se marcó por error es justo el caso para el que existe. Sin él queda
+ * como paso bloqueante del onboarding. Antes la única forma de corregirlo era
+ * llegar al carrito, y hasta entonces la grilla mostraba precios de socio que
+ * el usuario no tenía.
  */
-export function MembershipModal() {
+export function MembershipModal({ onClose }) {
   const { memberships, completeMembershipStep } = useProfile();
   const [selected, setSelected] = useState(memberships || []);
+  const isEditing = Boolean(onClose);
+
+  useEffect(() => {
+    if (!onClose) return;
+    function onKeyDown(event) {
+      if (event.key === "Escape") onClose();
+    }
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [onClose]);
+
+  function save(value) {
+    completeMembershipStep(value);
+    onClose?.();
+  }
 
   function toggle(value) {
     setSelected((prev) => (prev.includes(value) ? prev.filter((v) => v !== value) : [...prev, value]));
   }
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4"
+      onClick={onClose ? (event) => event.target === event.currentTarget && onClose() : undefined}
+    >
       <div className="w-full max-w-md rounded-lg border border-line bg-surface p-6 shadow-lg">
         <div className="mb-2 flex items-center gap-2">
           <BadgePercent className="text-brand-accent" size={20} />
           <h2 className="font-display text-lg font-bold text-ink">¿Sos socio de algún club?</h2>
+          {onClose && (
+            <button
+              type="button"
+              onClick={onClose}
+              aria-label="Cerrar"
+              className="ml-auto rounded-md p-1 text-ink-muted hover:bg-surface-muted hover:text-ink"
+            >
+              <X size={18} />
+            </button>
+          )}
         </div>
         <p className="mb-5 text-sm text-ink-muted">
           Así te mostramos los precios con tus descuentos desde el principio.
@@ -79,19 +115,21 @@ export function MembershipModal() {
 
         <button
           type="button"
-          onClick={() => completeMembershipStep(selected)}
-          disabled={selected.length === 0}
+          onClick={() => save(selected)}
+          disabled={!isEditing && selected.length === 0}
           className="w-full rounded-md bg-brand-violet-700 px-4 py-2 text-sm font-semibold text-white hover:bg-brand-violet-900 disabled:opacity-50"
         >
-          Listo
+          {isEditing ? "Guardar" : "Listo"}
         </button>
-        <button
-          type="button"
-          onClick={() => completeMembershipStep([])}
-          className="mt-3 w-full text-center text-xs text-ink-muted underline hover:text-ink"
-        >
-          No tengo ninguna
-        </button>
+        {!isEditing && (
+          <button
+            type="button"
+            onClick={() => save([])}
+            className="mt-3 w-full text-center text-xs text-ink-muted underline hover:text-ink"
+          >
+            No tengo ninguna
+          </button>
+        )}
       </div>
     </div>
   );

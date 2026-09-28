@@ -62,7 +62,7 @@ const FAQ = [
       },
       {
         q: "¿Y las membresías (Club Día, Mi Carrefour…)?",
-        a: "Si declarás una, los precios que ves ya incluyen sus descuentos. Para que el súper te los respete, tenés que estar logueado como socio al pagar. Las podés cambiar en «Medios de pago».",
+        a: "Si declarás una, los precios que ves ya incluyen sus descuentos. Para que el súper te los respete, tenés que estar logueado como socio al pagar. Las podés cambiar desde «Mis clubes», arriba de todo en cualquier página, o en «Medios de pago» del carrito.",
       },
     ],
   },

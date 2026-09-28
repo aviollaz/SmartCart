@@ -1,22 +1,25 @@
 import { useState } from "react";
 import { Link } from "react-router-dom";
-import { CircleHelp, Menu, MapPin, ShoppingCart } from "lucide-react";
+import { BadgePercent, CircleHelp, Menu, MapPin, ShoppingCart } from "lucide-react";
 import { SearchBar } from "./SearchBar";
 import { MegaMenu } from "../megamenu/MegaMenu";
 import { useCart } from "../../context/CartContext";
 import { useProfile } from "../../context/ProfileContext";
 import { formatShortAddress } from "../../utils/formatters";
 
-export function Header({ onOpenCart, onOpenLocation }) {
+export function Header({ onOpenCart, onOpenLocation, onOpenMemberships }) {
   const [isMegaMenuOpen, setMegaMenuOpen] = useState(false);
   const { itemCount } = useCart();
-  const { location } = useProfile();
+  const { location, memberships } = useProfile();
 
   // Reemplaza al viejo "Envío a {zona}", que linkeaba al carrito: la zona es un
   // dato secundario que se sigue editando en el perfil, mientras que la
   // dirección decide qué tiendas entregan y hay que poder cambiarla desde
   // cualquier página.
   const shortAddress = formatShortAddress(location);
+  // Las membresías cambian los precios de toda la grilla, así que corregirlas
+  // tiene que estar a un clic desde cualquier página, igual que la dirección.
+  const membershipCount = memberships?.length ?? 0;
 
   return (
     <header className="sticky top-0 z-30">
@@ -30,6 +33,15 @@ export function Header({ onOpenCart, onOpenLocation }) {
           >
             <MapPin size={14} aria-hidden="true" />
             {shortAddress ? `Envío a ${shortAddress}` : "Ingresar ubicación"}
+          </button>
+          <button
+            type="button"
+            onClick={onOpenMemberships}
+            title="Clubes de supermercado: cambian los precios que ves"
+            className="ml-4 mr-auto flex items-center gap-1.5 hover:underline"
+          >
+            <BadgePercent size={14} aria-hidden="true" />
+            {membershipCount > 0 ? `Mis clubes (${membershipCount})` : "Sin clubes"}
           </button>
           <Link to="/ayuda" className="flex items-center gap-1.5 hover:underline">
             <CircleHelp size={14} aria-hidden="true" />

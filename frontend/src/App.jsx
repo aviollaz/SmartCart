@@ -14,6 +14,7 @@ import { HelpPage } from "./pages/HelpPage";
 function App() {
   const [isCartOpen, setCartOpen] = useState(false);
   const [isLocationOpen, setLocationOpen] = useState(false);
+  const [isMembershipsOpen, setMembershipsOpen] = useState(false);
   const { location, membershipsAsked } = useProfile();
 
   // Sin dirección el modal es el onboarding y no se puede abandonar: se monta
@@ -31,7 +32,15 @@ function App() {
         <LocationModal onClose={isOnboarding ? undefined : () => setLocationOpen(false)} />
       )}
       {askMemberships && !isLocationOpen && <MembershipModal />}
-      <Header onOpenCart={() => setCartOpen(true)} onOpenLocation={() => setLocationOpen(true)} />
+      {/* Edición desde el Header: descartable, y nunca encima de otro modal. */}
+      {isMembershipsOpen && !isOnboarding && !askMemberships && !isLocationOpen && (
+        <MembershipModal onClose={() => setMembershipsOpen(false)} />
+      )}
+      <Header
+        onOpenCart={() => setCartOpen(true)}
+        onOpenLocation={() => setLocationOpen(true)}
+        onOpenMemberships={() => setMembershipsOpen(true)}
+      />
 
       <main className="flex-1">
         <Routes>
