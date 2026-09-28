@@ -266,6 +266,10 @@ _INDEXES = (
 
 STATEMENTS = _EXTENSIONS + _TABLES + _COLUMNS + _INDEXES
 
+# Clave del advisory lock que serializa el DDL entre procesos. Arbitraria; sólo
+# tiene que ser la misma en todos los que llaman a `ensure_schema`.
+_SCHEMA_LOCK_KEY = 0x534D_4344  # "SMCD"
+
 
 # --------------------------------------------------------------------------
 # Aplicación
@@ -279,8 +283,19 @@ def ensure_schema(conn) -> None:
     propagar (sin esquema no hay nada que guardar), y src/api.py lo atrapa y sigue,
     porque un backend con credenciales de sólo lectura tiene que poder servir
     aunque no pueda emitir DDL.
+
+    Idempotente no es lo mismo que concurrente. Las tres tiendas corren en
+    paralelo (el matrix de Actions) y cada una emite este DDL al arrancar; dos
+    sesiones haciendo `CREATE OR REPLACE FUNCTION` o `ALTER TABLE` a la vez chocan
+    en el catálogo con `tuple concurrently updated` (InternalError, no se
+    reintenta). El 28-sep-2026 eso tumbó la telemetría de toda la corrida de Día y
+    su primera categoría. El advisory lock los pone en fila: el segundo encuentra
+    todo creado y no toca nada. Es `_xact_`, así que se suelta con el commit del
+    DDL; requiere una conexión que no esté en autocommit, como todas las del
+    proyecto.
     """
     with conn.cursor() as cur:
+        cur.execute("SELECT pg_advisory_xact_lock(%s)", (_SCHEMA_LOCK_KEY,))
         for statement in STATEMENTS:
             cur.execute(statement)
 

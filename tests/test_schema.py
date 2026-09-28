@@ -10,10 +10,12 @@ SmartCartDB.
 Corre contra la base poblada sin tocar datos: sólo emite DDL que ya está
 aplicado, y consulta el catálogo de Postgres.
 """
+from concurrent.futures import ThreadPoolExecutor
+
 import psycopg
 import pytest
 
-from src.schema import STATEMENTS, ensure_schema, resolve_conn_string
+from src.schema import STATEMENTS, ensure_schema, ensure_schema_at, resolve_conn_string
 
 TABLAS = ("unified_products", "store_products", "scraper_execution_logs")
 
@@ -104,6 +106,23 @@ def test_los_indices_estan(conn):
         "idx_scraper_exec_logs_time",
     }
     assert esperados <= indices, f"faltan: {esperados - indices}"
+
+
+def test_ensure_schema_tolera_procesos_en_paralelo(conn):
+    """
+    Lo que pasa cada noche: las tres tiendas emiten el DDL a la vez. Sin el
+    advisory lock de `ensure_schema`, alguna choca con `tuple concurrently
+    updated` (28-sep-2026: la telemetría de Día y su primera categoría).
+    """
+    # El fixture comparte conexión entre tests y nunca commitea: soltar su
+    # transacción, que tiene tomado el mismo lock, o los hilos esperan para
+    # siempre.
+    conn.rollback()
+
+    with ThreadPoolExecutor(max_workers=4) as pool:
+        futuros = [pool.submit(ensure_schema_at, connect_timeout=30) for _ in range(4)]
+        for futuro in futuros:
+            futuro.result()
 
 
 def test_el_ddl_no_borra_nada():
