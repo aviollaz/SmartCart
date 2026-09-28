@@ -209,7 +209,8 @@ Lo que **no** hace falta tocar: `src/embeddings.py`, `src/schema.py` y
 
 ### 11. Medir el consumo de Neon después del segundo tramo **[hipótesis]**
 El catálogo pasó de 20 a 49 góndolas (y después a 56, con helados y la sección
-Limpieza, y a 60 con frutas, verduras y carnes, ~700 productos más), así que el barrido nocturno pasa de ~77
+Limpieza, a 60 con frutas, verduras y carnes, ~700 productos más, y a 75 con
+Perfumería, ~+20% de claves por tienda), así que el barrido nocturno pasa de ~77
 minutos a un estimado de ~1,5 h por tienda en paralelo. El plan gratuito de Neon
 da **100 CU-hours por mes** y la base se suspende sola tras 5 minutos sin
 actividad, o sea que lo que se paga es el tiempo que está despierta.

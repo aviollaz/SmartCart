@@ -52,7 +52,7 @@ STORE_IDS = {
 # etiquetas, no una jerarquía real de ninguna cadena: agrupan las góndolas para
 # que el menú sea navegable, y nada del backend depende de ellas.
 SECTIONS = ("Almacén", "Frescos", "Frutas y verduras", "Carnes", "Desayuno y merienda",
-            "Bebidas", "Congelados", "Limpieza")
+            "Bebidas", "Congelados", "Limpieza", "Perfumería")
 
 
 @dataclass(frozen=True)
@@ -590,6 +590,121 @@ _SHELF_LIST = (
         coto=("catv00004753", "catv00004754"),
         dia=("limpieza/banos-pisos-y-superficies/lavandinas",),
         carrefour=("limpieza/lavandinas",),
+    ),
+
+    # ------------------------------------------------------------- Perfumería
+    # Higiene y cuidado personal de marca: el mismo Dove, Colgate o Rexona en las
+    # tres cadenas, que es donde el EAN coincide. Cada clave se midió contra el
+    # endpoint en vivo (sep-2026) y todas devolvieron productos de su góndola.
+    # Quedan afuera a propósito: perfumes/colonias y maquillaje (Día no tiene un
+    # nodo equivalente, así que no habría con qué comparar), pañales (cada cadena
+    # los archiva en una sección de bebé distinta) y medicamentos.
+    _shelf(
+        "shampoo", "Shampoo", "Perfumería",
+        # `catv00001589` es "Shampoo + Acondicionador" (1 producto): Día y
+        # Carrefour archivan los 2 en 1 bajo shampoo.
+        coto=("catv00001587", "catv00001589"),
+        dia=("perfumeria/cuidado-del-pelo/shampoo",),
+        carrefour=("perfumeria-y-farmacia/cuidado-del-cabello/shampoos",),
+    ),
+    _shelf(
+        "acondicionadores", "Acondicionadores", "Perfumería",
+        coto=("catv00001590",),
+        dia=("perfumeria/cuidado-del-pelo/acondicionadores",),
+        carrefour=("perfumeria-y-farmacia/cuidado-del-cabello/acondicionadores",),
+    ),
+    _shelf(
+        "coloracion", "Coloración", "Perfumería",
+        coto=("catv00003481",),
+        dia=("perfumeria/cuidado-del-pelo/coloracion",),
+        carrefour=("perfumeria-y-farmacia/cuidado-del-cabello/coloracion",),
+    ),
+    _shelf(
+        # Día separa por género y Carrefour por formato; Coto, desodorante de
+        # antitranspirante. Ninguno de los tres cortes es un estante distinto
+        # para quien compra, así que la góndola es la unión.
+        "desodorantes", "Desodorantes", "Perfumería",
+        coto=("catv00003497", "catv00003498"),
+        dia=("perfumeria/cuidado-personal/desodorantes-masculinos",
+             "perfumeria/cuidado-personal/desodorantes-femeninos"),
+        carrefour=("perfumeria-y-farmacia/antitranspirantes-y-desodorantes/en-aerosol",
+                   "perfumeria-y-farmacia/antitranspirantes-y-desodorantes/en-barra-y-roll-on"),
+    ),
+    _shelf(
+        # En barra y líquidos juntos porque Coto los mezcla en una sola hoja.
+        # Las hojas de Carrefour y no su nivel 2: éste trae además esponjas.
+        "jabones", "Jabones de tocador", "Perfumería",
+        coto=("catv00001576",),
+        dia=("perfumeria/jabones/jabones-en-barra", "perfumeria/jabones/jabones-liquidos",
+             "perfumeria/jabones/jabones-antisepticos"),
+        carrefour=("perfumeria-y-farmacia/jabones/jabones-liquidos",
+                   "perfumeria-y-farmacia/jabones/jabones-en-barra"),
+    ),
+    _shelf(
+        "pasta-dental", "Pasta dental", "Perfumería",
+        coto=("catv00003508",),
+        dia=("perfumeria/cuidado-bucal/pastas-de-dientes",),
+        carrefour=("perfumeria-y-farmacia/cuidado-dental/pasta-dental",),
+    ),
+    _shelf(
+        "cepillos-de-dientes", "Cepillos de dientes", "Perfumería",
+        coto=("catv00003507",),
+        dia=("perfumeria/cuidado-bucal/cepillos-de-dientes",),
+        carrefour=("perfumeria-y-farmacia/cuidado-dental/cepillos-de-dientes",),
+    ),
+    _shelf(
+        "enjuague-bucal", "Enjuague bucal", "Perfumería",
+        coto=("catv00003505",),
+        dia=("perfumeria/cuidado-bucal/enjuagues-bucal",),
+        carrefour=("perfumeria-y-farmacia/cuidado-dental/enjuagues-bucales",),
+    ),
+    _shelf(
+        "toallitas-femeninas", "Toallitas femeninas", "Perfumería",
+        coto=("catv00003496",),
+        dia=("perfumeria/proteccion-femenina/toallitas-femeninas",),
+        carrefour=("perfumeria-y-farmacia/proteccion-femenina/toallitas-femeninas",),
+    ),
+    _shelf(
+        "protectores-diarios", "Protectores diarios", "Perfumería",
+        coto=("catv00003494",),
+        dia=("perfumeria/proteccion-femenina/proteccion-diaria",),
+        carrefour=("perfumeria-y-farmacia/proteccion-femenina/protectores-diarios",),
+    ),
+    _shelf(
+        "tampones", "Tampones", "Perfumería",
+        coto=("catv00003495",),
+        dia=("perfumeria/proteccion-femenina/tampones",),
+        carrefour=("perfumeria-y-farmacia/proteccion-femenina/tampones",),
+    ),
+    _shelf(
+        # Máquinas, repuestos y espumas juntos: Coto no los separa. El nivel 2
+        # de Día sí se puede usar entero porque ninguna otra clave vive abajo.
+        "afeitado", "Afeitado", "Perfumería",
+        coto=("catv00001548",),
+        dia=("perfumeria/maquinas-de-afeitar",),
+        carrefour=("perfumeria-y-farmacia/cuidado-corporal/afeitado",),
+    ),
+    _shelf(
+        "cremas-corporales", "Cremas corporales", "Perfumería",
+        coto=("catv00001564",),
+        dia=("perfumeria/cuidado-personal/cremas-corporales",),
+        carrefour=("perfumeria-y-farmacia/cuidado-de-la-piel/cremas-corporales",),
+    ),
+    _shelf(
+        # Estacional como `helados`: a fin de invierno Día trae 8 y Carrefour
+        # 22. Si alguna vuelve a cero pinta el barrido de PARTIAL por categoría
+        # vacía, que es la señal funcionando. Post solar junto al protector
+        # porque Día los tiene en una sola hoja.
+        "proteccion-solar", "Protección solar", "Perfumería",
+        coto=("catv00003516", "catv00003515"),
+        dia=("perfumeria/cuidado-personal/protectores-solares-y-post-solares",),
+        carrefour=("perfumeria-y-farmacia/cuidado-de-la-piel/proteccion-solar",),
+    ),
+    _shelf(
+        "algodon-e-hisopos", "Algodón e hisopos", "Perfumería",
+        coto=("catv00003452", "catv00003447"),
+        dia=("perfumeria/farmacia/algodon-e-hisopos",),
+        carrefour=("perfumeria-y-farmacia/algodones-e-hisopos",),
     ),
 )
 
