@@ -65,7 +65,7 @@ export function HomePage() {
         <h1 className="mb-3 font-display text-3xl font-bold text-brand-violet-700 sm:text-4xl">
           Tu changuito, al menor precio
         </h1>
-        <p className="mx-auto mb-8 max-w-xl text-ink-muted">
+        <p className="mx-auto mb-8 max-w-3xl text-balance text-lg text-ink/80">
           Comparamos Coto, Día y Carrefour y armamos tu lista de compras al mejor precio.
         </p>
 
@@ -114,7 +114,7 @@ function HowItWorks() {
               <p className="font-display text-base font-bold text-ink">
                 <span className="text-brand-accent">{indice + 1}.</span> {titulo}
               </p>
-              <p className="text-sm text-ink-muted">{texto}</p>
+              <p className="text-sm text-ink/75">{texto}</p>
               {indice === PASOS.length - 1 && <SplitDiagram />}
             </div>
             {indice < PASOS.length - 1 && (
