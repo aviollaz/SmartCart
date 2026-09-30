@@ -279,6 +279,42 @@ SKU nuevo, el ítem pierde esa tienda sin que falle nada. Hay que correr
 vuelve tedioso, el paso siguiente es que el barrido nocturno cuente los SKUs de
 la tabla que no vio y lo reporte como PARTIAL, igual que una categoría vacía.
 
+### 23. Sumar Vea y Jumbo
+Pedido de AV (sep-2026), **después** de la demo: no mejora la primera impresión
+y es la tarea más cara del backlog. Relevado, sin medir todavía contra el
+endpoint:
+
+* **Easy queda afuera**: es la cadena de construcción y hogar de Cencosud, no un
+  supermercado. No comparte ninguna góndola de `src/shelves.py`, y un producto
+  que no se puede comparar no le da nada al optimizador.
+* **Vea y Jumbo son VTEX** (Cencosud), igual que Día y Carrefour, así que el
+  scraper se parece a `scraper_carrefour.py` y reusa `src/scrapers/vtex.py`
+  (`extract_search_payload`, `read_availability`, `storefront_url`,
+  `is_transient_graphql_error`). **Verificar** si aceptan el mismo `sha256Hash`
+  de `productSearchV3`; si no, hay que capturar el suyo.
+* **Son la misma empresa**: pueden compartir buena parte del catálogo y hasta
+  precios. Medir cuánto aporta la segunda (productos por EAN que no tiene la
+  primera, diferencias de precio) antes de sumar las dos. Empezar por una.
+
+Lo que cuesta, en el orden en que rompe si se olvida:
+* Una columna nueva en **las 75 filas** de `SHELVES`, medida clave por clave
+  contra el endpoint en vivo, con dump de taxonomía propio
+  (`src/scrapers/<tienda>_categories.json`) para `tests/test_shelves.py`, y las
+  dos reglas de la etapa 1b (ninguna clave ancestro de otra; clave en el dump ≠
+  clave con productos). Una góndola sin clave rompe la regla de "todas las
+  tiendas en todas las góndolas" que el test exige hoy.
+* `STORE_IDS`, `STORE_RUNNERS`, la matriz de `.github/workflows/scrape.yml`.
+* **Regla de dos archivos** (CLAUDE.md etapa 6): `DEFAULT_MIN_SPEND_LIMITS` en
+  `src/optimizer.py` y la tabla de `frontend/src/utils/deliveryCosts.js` en el
+  mismo commit; si no, `KeyError` en `/optimize` o la tienda queda en el banco
+  sin aviso. Mínimo de compra y costo de envío hay que relevarlos.
+* `STORES` en `frontend/src/utils/constants.js`, `VTEX_CHECKOUT_DOMAINS` para el
+  link de carrito, y un `DiscountScraper` para sus promos bancarias.
+* **Activa el ítem 7** (`exclude_stores` en `/search`): con más tiendas el
+  `store_count` sin cobertura deja de diluirse.
+* **Aprieta el ítem 11**: un barrido más en la matriz es más cómputo de Neon por
+  noche, justo el recurso que el plan gratuito limita.
+
 ---
 
 ## Optimizador
