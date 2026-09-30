@@ -71,6 +71,13 @@ Se descarta igual, por tres motivos en orden de peso:
    reales*, no con cinco amigos durante una semana. Mudarse ahora es pagar la
    complejidad antes de que exista el problema.
 
+**Se volvió a plantear en sep-2026, por el arranque en frío** ("se cae a los 5
+minutos y tarda un minuto en levantar"). Ese síntoma no es de Neon: la base se
+suspende a los 5 minutos pero despierta en 1-3 s; los ~30 s son de Cloud Run
+cargando el modelo (ver *Lo que hay que saber antes de mandar el link*). Mudar la
+base a la PC no lo arregla, y mudar la API para arreglarlo es exactamente lo
+descartado arriba. Se resolvió con un ping, sin mudar nada.
+
 **Qué daría vuelta la decisión**, para no rediscutirla desde cero: que la PC
 pase a quedar prendida por otro motivo, o que SmartCart junte usuarios y Neon
 empiece a apretar. En los dos casos la mudanza es barata **por diseño** —dos
@@ -104,7 +111,7 @@ correcto sería llevar también Postgres a esa máquina, no sólo la API.
    `main`):
 
    ```powershell
-   gcloud run deploy smartcart-api --source . --region us-east1 --memory 1Gi --cpu 1 --min-instances 0 --max-instances 3 --allow-unauthenticated --env-vars-file ops/vars.YAML --set-secrets DATABASE_URL=neon-url:latest
+   gcloud run deploy smartcart-api --source . --region us-east1 --memory 1Gi --cpu 1 --min-instances 0 --max-instances 3 --cpu-boost --allow-unauthenticated --env-vars-file ops/vars.YAML --set-secrets DATABASE_URL=neon-url:latest
    ```
 
    Escrito en una sola línea a propósito: en PowerShell (Windows), el `\` de
@@ -142,7 +149,12 @@ correcto sería llevar también Postgres a esa máquina, no sólo la API.
   corte, y hay que saberlo.
 * **`--min-instances 0`.** Es lo que lo mantiene gratis: sin tráfico no hay
   instancia y no se factura nada. Lo que se paga a cambio es el arranque en frío
-  (ver abajo).
+  (ver abajo). `--min-instances 1` lo eliminaría, pero una instancia siempre
+  prendida son ~2,6 M vCPU-segundos al mes contra 180.000 gratis: se paga.
+* **`--cpu-boost`.** Duplica la CPU (1 → 2 vCPU) durante el arranque y 10 s
+  después, que es cuando se importa torch y se carga el modelo. Se cobra el CPU
+  extra sólo en ese lapso: ~40 vCPU-segundos por arranque en frío, nada frente
+  al free tier. Cuánto acorta el arranque no lo publica Google — hay que medirlo.
 * **Sin `ANALYTICS_API_KEY`.** El analyzer corre en tu localhost y no es
   alcanzable desde Cloud Run; sin la clave no se emite nada y no rompe nada (ver
   etapa 9 de CLAUDE.md). `GET /` lo confirma: `analytics.enabled: false` con el
@@ -203,17 +215,25 @@ actualiza volviendo a correr el `gcloud run deploy` de arriba.
 ## Lo que hay que saber antes de mandar el link
 
 * **El arranque en frío es el caso normal, no la excepción.** Con
-  `--min-instances 0` la instancia se apaga sin tráfico, y la primera visita
-  paga el pull de la imagen más la carga del modelo. **Medilo** y anotá el
-  número:
+  `--min-instances 0` la instancia se apaga tras ~15 minutos sin tráfico, y la
+  primera visita paga el pull de la imagen más la carga del modelo. Medido
+  (30-sep-2026, antes de `--cpu-boost`): **29,7 s en frío, 0,25 s en caliente**.
 
-  ```bash
-  curl -s -o /dev/null -w "%{time_total}\n" https://TU-SERVICIO.run.app/
+  ```powershell
+  curl.exe -s -o NUL -w "%{time_total}`n" https://smartcart-api-996729163198.us-east1.run.app/
   ```
 
-  Si da más de ~10 s conviene achicar la imagen sacando torch del runtime (la
-  API sólo lo usa para codificar la query de `/search`). Mientras tanto, abrí vos
-  el link un rato antes de mandarlo.
+  **`.github/workflows/warm-api.yml` lo tapa en horario de uso**: le pega a
+  `GET /` cada 10 minutos entre las 8 y las 24, así Cloud Run no llega a apagar
+  la instancia. Es gratis porque `GET /` **no toca la base**: Neon se sigue
+  suspendiendo a los 5 minutos y no gasta CU-hours (el workflow explica por qué no
+  hay que apuntarlo a otro endpoint). No es garantía —el cron de Actions se
+  atrasa y de noche se deja enfriar a propósito—, así que antes de mandar el link
+  a alguien a una hora rara, abrilo vos primero.
+
+  Si el frío sigue molestando, la palanca de fondo es achicar la imagen sacando
+  torch del runtime (la API sólo lo usa para codificar la query de `/search`):
+  ver `docs/TODO.md`.
 * **Neon suspende a los 5 minutos**, así que la primera consulta después de un
   rato tarda unos segundos más. Es la contrapartida directa de `min_size=0`.
 * **El barrido nocturno corre igual** y puede cambiar precios en medio de una

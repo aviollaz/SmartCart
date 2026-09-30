@@ -36,6 +36,32 @@ criterio del repo es no guardar artefactos descartables.
 Para que la demo se vea bien hace falta una base poblada, o sea correr el
 barrido antes (`--store dia` alcanza para grabar, son ~16 min).
 
+### 0b. Arranque en frío de la demo: medir el ping y, si no alcanza, sacar torch
+La demo pública tardaba **29,7 s** en contestar la primera visita tras ~15 min
+sin tráfico, contra 0,25 s en caliente. Es Cloud Run (`--min-instances 0`)
+cargando imagen, torch y modelo; **no es Neon**, que despierta en 1-3 s — por eso
+mudar la base a una PC de casa no lo arregla (ver la sección de self-hosting de
+`ops/demo-publica.md`, que ya lo había descartado).
+
+**Lo que ya está** (sep-2026): `.github/workflows/warm-api.yml` le pega a `GET /`
+cada 10 min de 8 a 24 hs (no toca la base, así que no gasta CU-hours de Neon) y
+`--cpu-boost` en el deploy.
+
+**Lo que falta:**
+1. Redeployar con `--cpu-boost` y volver a medir en frío (el comando está en
+   `ops/demo-publica.md`).
+2. Después de unos días, contar en los logs de Cloud Run cuántas veces por día
+   aparece `Cargando modelo SentenceTransformer` (cada una es un arranque en
+   frío) y confirmar en el panel de Neon que el consumo no subió.
+3. **Sólo si sigue molestando** (la primera visita de la mañana, un cron
+   atrasado): reemplazar torch por ONNX Runtime para codificar la query de
+   `/search`. Imagen de 2,78 GB → ~600 MB, RSS ~400 → ~250 MB; también es lo que
+   destraba la VM de Oracle de 1 GB (`ops/README.md`). Toca el `Dockerfile`,
+   `requirements.txt` y el lifespan de `src/api.py`; `src/embeddings.py` (el
+   barrido) puede seguir con sentence-transformers siempre que los vectores
+   coincidan — **verificarlo** comparando embeddings de las dos vías antes de
+   mezclar.
+
 ### 1. Progreso hacia el mínimo de compra, en vivo
 Hoy el usuario descubre que el carrito es inviable **recién al optimizar**, que
 es la peor fricción del flujo y además es la KPI que mide el analyzer
