@@ -8,6 +8,14 @@ bancarios, costos de envío y el mínimo de compra de cada tienda.
 
 ## Demo
 
+**Probalo en vivo: <https://smart-cart-rouge.vercel.app>** — en la home, *Probar
+con un carrito de ejemplo* arma un carrito con el catálogo de hoy; después,
+*Optimizar*.
+
+> Si nadie la usó en un rato, la primera carga puede tardar ~30 segundos: el
+> servidor se apaga solo cuando no hay tráfico (es lo que lo mantiene gratis) y
+> al volver carga el modelo de búsqueda. Después contesta al instante.
+
 <!-- ------------------------------------------------------------------------
      PENDIENTE: grabar la demo. Ver docs/TODO.md, sección Producto.
 
@@ -28,7 +36,7 @@ bancarios, costos de envío y el mínimo de compra de cada tienda.
 ## Cómo funciona
 
 1. **Scraping** — cada cadena expone una API interna (Coto un BFF REST, Día y
-   Carrefour GraphQL de VTEX). Se barren **las mismas 49 góndolas en las tres**,
+   Carrefour GraphQL de VTEX). Se barren **las mismas 75 góndolas en las tres**,
    que es lo que hace comparables los catálogos: comparar precios sólo sirve si
    las tres cadenas recorrieron el mismo estante.
 2. **Unificación** — el EAN es la identidad del producto: `prod_<ean>`. Un
@@ -69,7 +77,7 @@ pip install -r requirements.txt
 python -m src.scripts.run_scrapers
 ```
 
-**Este paso es obligatorio y tarda unas 2-3 horas** con las tres tiendas: son 49
+**Este paso es obligatorio y tarda horas** (~1,5 h por tienda) con las tres tiendas: son 75
 góndolas por cadena y el tiempo se lo llevan las pausas deliberadas entre pedidos
 —para no parecer un bot—, no la red. En el barrido nocturno las tres tiendas
 corren en paralelo, pero en local van una atrás de otra.
@@ -125,12 +133,14 @@ rol sin permisos de escritura.
 |---|---|
 | Barrido nocturno | GitHub Actions, 03:00 AR (`.github/workflows/scrape.yml`) |
 | Base de datos | Neon (PostgreSQL administrado + pgvector) |
-| API y frontend | local |
+| API (demo pública) | Google Cloud Run, escala a cero |
+| Frontend (demo pública) | Vercel, redeploy con cada push a `main` |
 
 El detalle —por qué Actions y Neon, los límites del plan gratuito, y el
 despliegue en Oracle Cloud que está diseñado pero bloqueado por capacidad— está
 en [`ops/README.md`](ops/README.md), que es el archivo que dice cuál de los dos
-está vigente.
+está vigente. Cómo se publica la demo, y por qué en Cloud Run, está en
+[`ops/demo-publica.md`](ops/demo-publica.md).
 
 ## Tests
 
