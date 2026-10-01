@@ -43,9 +43,11 @@ cargando imagen, torch y modelo; **no es Neon**, que despierta en 1-3 s — por 
 mudar la base a una PC de casa no lo arregla (ver la sección de self-hosting de
 `ops/demo-publica.md`, que ya lo había descartado).
 
-**Lo que ya está** (sep-2026): `.github/workflows/warm-api.yml` le pega a `GET /`
-cada 10 min de 8 a 24 hs (no toca la base, así que no gasta CU-hours de Neon) y
-`--cpu-boost` en el deploy.
+**Lo que ya está** (oct-2026): un job de Cloud Scheduler (`smartcart-warm`) le
+pega a `GET /` cada 10 min de 8 a 24 hs (no toca la base, así que no gasta
+CU-hours de Neon) y `--cpu-boost` en el deploy. Reemplazó a un workflow de
+Actions cuyo cron impuntual dejaba pasar ~la mitad de los pings en frío (medido
+en `ops/demo-publica.md`).
 
 **Lo que falta:**
 1. Redeployar con `--cpu-boost` y volver a medir en frío (el comando está en

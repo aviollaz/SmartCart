@@ -223,13 +223,32 @@ actualiza volviendo a correr el `gcloud run deploy` de arriba.
   curl.exe -s -o NUL -w "%{time_total}`n" https://smartcart-api-996729163198.us-east1.run.app/
   ```
 
-  **`.github/workflows/warm-api.yml` lo tapa en horario de uso**: le pega a
-  `GET /` cada 10 minutos entre las 8 y las 24, así Cloud Run no llega a apagar
-  la instancia. Es gratis porque `GET /` **no toca la base**: Neon se sigue
-  suspendiendo a los 5 minutos y no gasta CU-hours (el workflow explica por qué no
-  hay que apuntarlo a otro endpoint). No es garantía —el cron de Actions se
-  atrasa y de noche se deja enfriar a propósito—, así que antes de mandar el link
-  a alguien a una hora rara, abrilo vos primero.
+  **Un job de Cloud Scheduler lo tapa en horario de uso**: le pega a `GET /`
+  cada 10 minutos entre las 8 y las 24 (hora de Argentina), así Cloud Run no
+  llega a apagar la instancia. Se crea una vez, a mano (una línea cada uno):
+
+  ```powershell
+  gcloud services enable cloudscheduler.googleapis.com
+  gcloud scheduler jobs create http smartcart-warm --location=us-east1 --schedule="*/10 8-23 * * *" --time-zone="America/Argentina/Buenos_Aires" --uri="https://smartcart-api-996729163198.us-east1.run.app/" --http-method=GET --attempt-deadline=120s
+  gcloud scheduler jobs run smartcart-warm --location=us-east1
+  ```
+
+  Es gratis por dos lados: Cloud Scheduler regala 3 jobs por cuenta de
+  facturación, y `GET /` **no toca la base**, así que Neon se sigue suspendiendo a
+  los 5 minutos y no gasta CU-hours. **Nunca apuntarlo a `/search`,
+  `/category/{slug}` ni `/demo-cart`**: despertaría la base cada 10 minutos, ~16 h
+  de cómputo por día, el mes entero de Neon en menos de una semana.
+
+  **Antes era un workflow de GitHub Actions (`warm-api.yml`) y no alcanzaba.** El
+  cron de Actions no es puntual: el 1-oct-2026 pidió `*/10` y entregó huecos de
+  15 a 35 minutos, y **16 de los 34 pings diurnos cayeron en un arranque en frío**
+  (se ven como corridas de ~50 s contra ~8 s). Todos después de un hueco de 15
+  minutos o más; ninguno con hueco de 14 o menos. O sea que el intervalo estaba
+  bien y lo que fallaba era la puntualidad, que Cloud Scheduler sí garantiza.
+
+  De noche se deja enfriar a propósito, así que antes de mandar el link a alguien
+  a una hora rara, abrilo vos primero. `--min-instances 1` eliminaría todo
+  arranque en frío, pero factura la instancia ociosa las 24 horas.
 
   Si el frío sigue molestando, la palanca de fondo es achicar la imagen sacando
   torch del runtime (la API sólo lo usa para codificar la query de `/search`):
