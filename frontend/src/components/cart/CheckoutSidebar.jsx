@@ -14,10 +14,10 @@ function paymentSummary(cards, memberships) {
   return parts.length ? parts.join(" · ") : "Ninguno elegido";
 }
 
-function storesSummary(excludedStores) {
+function storesSummary(excludedStores, maxStores) {
   const enabled = STORES.filter((store) => !excludedStores.includes(store.id));
-  if (enabled.length === STORES.length) return "Todos";
-  return enabled.map((store) => store.name).join(" y ");
+  const names = enabled.length === STORES.length ? "Todos" : enabled.map((store) => store.name).join(" y ");
+  return maxStores == null ? names : `${names} · máximo ${maxStores}`;
 }
 
 /**
@@ -29,7 +29,7 @@ function storesSummary(excludedStores) {
  * optimizar, y el backend lo rechaza igual (422).
  */
 function StoresField() {
-  const { excludedStores, setExcludedStores } = useProfile();
+  const { excludedStores, setExcludedStores, maxStores, setMaxStores } = useProfile();
   const enabledCount = STORES.length - excludedStores.length;
 
   const toggle = (storeId) => {
@@ -47,7 +47,7 @@ function StoresField() {
           <Store size={16} className="shrink-0 text-brand-accent" />
           <span>
             <span className="block font-semibold text-ink">Supermercados</span>
-            <span className="block text-xs text-ink-muted">{storesSummary(excludedStores)}</span>
+            <span className="block text-xs text-ink-muted">{storesSummary(excludedStores, maxStores)}</span>
           </span>
         </span>
         <ChevronDown size={16} className="shrink-0 text-ink-muted transition-transform group-open:rotate-180" />
@@ -71,6 +71,25 @@ function StoresField() {
           );
         })}
         <p className="text-xs text-ink-muted">Los que desmarques no se usan al optimizar ni aparecen en los precios.</p>
+        {/* Cada súper del reparto es un checkout aparte. Con una sola tienda
+            habilitada no hay nada que limitar. */}
+        {enabledCount > 1 && (
+          <label className="mt-1 flex items-center justify-between gap-2 text-sm text-ink">
+            Comprar en como máximo
+            <select
+              value={maxStores ?? ""}
+              onChange={(event) => setMaxStores(event.target.value ? Number(event.target.value) : null)}
+              className="rounded border border-line bg-surface px-2 py-1 text-sm"
+            >
+              <option value="">Sin límite</option>
+              {Array.from({ length: enabledCount - 1 }, (_, i) => i + 1).map((n) => (
+                <option key={n} value={n}>
+                  {n} supermercado{n === 1 ? "" : "s"}
+                </option>
+              ))}
+            </select>
+          </label>
+        )}
       </fieldset>
     </details>
   );

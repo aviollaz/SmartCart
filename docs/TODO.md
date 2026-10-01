@@ -96,31 +96,6 @@ y `StrategicSwapCard.jsx` + `handleApplyStrategicSwap` en `CartPage.jsx`, que
 aplica un lote y re-optimiza. `ProfileContext` guarda tarjetas, membresías y
 dirección: no hay dónde vivan las preferencias de reemplazo.
 
-### 3. Comparar el split contra comprar en una sola tienda
-**Hoy la respuesta de `/optimize` no puede contestar "¿valió la pena partir la
-compra?".** Lo que existe es `price_savings` (`_compute_price_savings`,
-`src/api.py:651`) dibujado por `SavingsPanel.jsx`: por cada línea del split, la
-tienda **más cara** que tiene ese producto menos lo que se paga. Es una
-comparación producto a producto, sin envío ni descuento bancario, y por eso no
-es comparable contra `total_spent_net` — el panel lo aclara en pantalla.
-
-O sea que el número que falta es otro: el costo total de poner todo el carrito
-en Coto, todo en Día, todo en Carrefour. Es lo que decide si la complicación de
-un split vale la pena, y puede perfectamente dar que **no**: partir la compra
-duplica envíos, y en carritos chicos eso se come el ahorro por producto. No
-asumir que la diferencia siempre es positiva.
-
-**Referencia de diseño: el "Hacker Fare" de Kayak**, no las cadenas locales. Dos
-pasajes de aerolíneas distintas porque sale más barato que uno solo es
-literalmente el mismo producto que el split de carrito, **incluida la misma
-objeción del usuario**: "¿vale la pena la complicación?". Cómo lo presentan
-—ahorro adelante, contrapartidas explícitas, comparación contra la opción
-simple— es una solución ya diseñada al problema.
-
-Otras referencias más útiles que los súper locales: Instacart (mismo problema de
-catálogo unificado multi-tienda, con blog de ingeniería público), Ocado, Picnic;
-y los comparadores tipo Idealo / PriceSpy para el ranking de ofertas.
-
 ---
 
 ## Búsqueda y relevancia
@@ -384,6 +359,11 @@ donde se lee cuando se toca el código.
   frontend, *Purchase history*. Incluye la regla de ventana de sesión (30 min,
   reemplaza en vez de anexar) y las cuatro alternativas descartadas.
 * **2** — Precio por unidad de medida → CLAUDE.md etapa 6 (`_build_unit_price`).
+* **3** — Comparar el split contra comprar en una sola tienda → CLAUDE.md etapa
+  6 (`fewer_stores_options` y `max_stores`). Se resolvió como "cuánto cuesta
+  comprar en menos súper", no como tres totales por cadena: la mejor opción de
+  una sola tienda es la que responde "¿valió la pena partir?", y el usuario
+  puede elegirla con un click.
   Base única kg/L, con los costos medidos. **Los multipacks siguen sin
   multiplicar el peso a propósito** — el `xN` es indecidible desde el nombre y
   errar hacia caro es la dirección que el proyecto acepta (etapa 7).

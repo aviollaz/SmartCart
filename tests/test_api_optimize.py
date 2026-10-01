@@ -288,3 +288,62 @@ def test_el_solver_ve_las_dos_exclusiones_y_la_respuesta_las_separa(monkeypatch)
     assert response.status_code == 400
     assert set(visto["excluded_stores"]) == {COTO, CARREFOUR}
     assert visto["user_excluded_stores"] == [CARREFOUR]
+
+
+# --------------------------------------------------------------------------
+# Tope de supermercados y opciones con menos tiendas
+# --------------------------------------------------------------------------
+
+@pytest.mark.parametrize("valor", [0, len(api.DEFAULT_MIN_SPEND_LIMITS) + 1])
+def test_max_stores_fuera_de_rango_es_422(valor):
+    with pytest.raises(ValueError, match="max_stores"):
+        api.OptimizationRequest(cart=[], max_stores=valor)
+
+
+def test_max_stores_llega_al_solver(monkeypatch):
+    from fastapi import BackgroundTasks
+
+    visto = {}
+
+    def fake_optimize_cart(**kwargs):
+        visto.update(kwargs)
+        return {"status": "infeasible", "message": "x", "excluded_stores": []}
+
+    monkeypatch.setattr(api, "optimize_cart", fake_optimize_cart)
+    req = api.OptimizationRequest(cart=[api.CartItem(unified_id="prod_a", quantity=1)],
+                                  max_stores=1)
+    api.optimize_shopping_cart(req, BackgroundTasks())
+    assert visto["max_stores"] == 1
+
+
+def test_fewer_stores_options_una_por_tope_factible(monkeypatch):
+    """
+    Split de 3 tiendas: se prueba con tope 2 y 1. El 1 es inviable y no se
+    lista; el 2 sí, con su sobrecosto contra el total óptimo.
+    """
+    llamadas = []
+
+    def fake_optimize_cart(**kwargs):
+        llamadas.append(kwargs["max_stores"])
+        if kwargs["max_stores"] == 1:
+            return {"status": "infeasible", "message": "x"}
+        return {"status": "success", "total_spent_net": 51000.0,
+                "split": {COTO: {}, DIA: {}}}
+
+    monkeypatch.setattr(api, "optimize_cart", fake_optimize_cart)
+    result = {"total_spent_net": 50000.0, "split": {COTO: {}, DIA: {}, CARREFOUR: {}}}
+    req = api.OptimizationRequest(cart=[])
+
+    options = api._compute_fewer_stores_options(result, req, [], {}, {}, [])
+
+    assert llamadas == [2, 1]
+    assert options == [{"max_stores": 2, "total_spent_net": 51000.0,
+                        "extra_cost": 1000.0, "stores": [COTO, DIA]}]
+
+
+def test_fewer_stores_options_vacio_con_una_sola_tienda(monkeypatch):
+    monkeypatch.setattr(api, "optimize_cart",
+                        lambda **k: pytest.fail("no hay menos tiendas que probar"))
+    result = {"total_spent_net": 50000.0, "split": {COTO: {}}}
+    assert api._compute_fewer_stores_options(result, api.OptimizationRequest(cart=[]),
+                                             [], {}, {}, []) == []
