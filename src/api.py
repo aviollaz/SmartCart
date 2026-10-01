@@ -458,6 +458,27 @@ def _fetch_offers_by_product(cur, product_ids: list,
     return offers_by_product
 
 
+def _fetch_product_rows(cur, product_ids: list) -> dict:
+    """
+    {unified_id: fila} de unified_products, con `store_count` (ofertas EN STOCK)
+    y `distance` 0.0, lista para _build_product_response(). Sin orden: los dos
+    llamadores (/deals y /products/by-ids) restituyen el suyo desde el dict.
+    """
+    cur.execute("""
+        SELECT u.id, u.ean, u.name, u.brand, u.shelf,
+               u.unit_type, u.total_volume_weight, u.is_gluten_free,
+               u.is_vegan, 0.0 AS distance,
+               count(DISTINCT sp.store_id) AS store_count
+        FROM unified_products u
+        LEFT JOIN store_products sp
+               ON sp.unified_product_id = u.id AND sp.in_stock
+        WHERE u.id = ANY(%s)
+        GROUP BY u.id, u.ean, u.name, u.brand, u.shelf,
+                 u.unit_type, u.total_volume_weight, u.is_gluten_free, u.is_vegan
+    """, (product_ids,))
+    return {row["id"]: row for row in cur.fetchall()}
+
+
 # Base única de comparación por unidad de medida: por kilo para 'g', por litro
 # para 'ml'. Las dos son x1000 porque el vocabulario canónico ya está normalizado
 # a la unidad chica (ver normalize_magnitude en src/size_parser.py).
@@ -1336,19 +1357,7 @@ def get_deals(
                 if not ranking:
                     return []
                 ids = [uid for uid, _ in ranking]
-                cur.execute("""
-                    SELECT u.id, u.ean, u.name, u.brand, u.shelf,
-                           u.unit_type, u.total_volume_weight, u.is_gluten_free,
-                           u.is_vegan, 0.0 AS distance,
-                           count(DISTINCT sp.store_id) AS store_count
-                    FROM unified_products u
-                    LEFT JOIN store_products sp
-                           ON sp.unified_product_id = u.id AND sp.in_stock
-                    WHERE u.id = ANY(%s)
-                    GROUP BY u.id, u.ean, u.name, u.brand, u.shelf,
-                             u.unit_type, u.total_volume_weight, u.is_gluten_free, u.is_vegan
-                """, (ids,))
-                rows_by_id = {row["id"]: row for row in cur.fetchall()}
+                rows_by_id = _fetch_product_rows(cur, ids)
                 offers_by_product = _fetch_offers_by_product(cur, ids, memberships)
 
         result = []
@@ -1505,19 +1514,7 @@ def get_products_by_ids(request: ProductsByIdsRequest):
         db = SmartCartDB()
         with pooled_connection(db.conn_string) as conn:
             with conn.cursor() as cur:
-                cur.execute("""
-                    SELECT u.id, u.ean, u.name, u.brand, u.shelf,
-                           u.unit_type, u.total_volume_weight, u.is_gluten_free,
-                           u.is_vegan, 0.0 AS distance,
-                           count(DISTINCT sp.store_id) AS store_count
-                    FROM unified_products u
-                    LEFT JOIN store_products sp
-                           ON sp.unified_product_id = u.id AND sp.in_stock
-                    WHERE u.id = ANY(%s)
-                    GROUP BY u.id, u.ean, u.name, u.brand, u.shelf,
-                             u.unit_type, u.total_volume_weight, u.is_gluten_free, u.is_vegan
-                """, (ordered_ids,))
-                rows_by_id = {row["id"]: row for row in cur.fetchall()}
+                rows_by_id = _fetch_product_rows(cur, ordered_ids)
 
                 if not rows_by_id:
                     return []
