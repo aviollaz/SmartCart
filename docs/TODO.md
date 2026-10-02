@@ -99,8 +99,8 @@ dirección: no hay dónde vivan las preferencias de reemplazo.
 ### 3. Comparar el split contra comprar en una sola tienda
 **Hoy la respuesta de `/optimize` no puede contestar "¿valió la pena partir la
 compra?".** Lo que existe es `price_savings` (`_compute_price_savings`,
-`src/api.py:651`) dibujado por `SavingsPanel.jsx`: por cada línea del split, la
-tienda **más cara** que tiene ese producto menos lo que se paga. Es una
+`src/api.py`) dibujado por `SavingsPanel.jsx`: por cada línea del split, el
+**promedio de las otras tiendas** que tienen ese producto menos lo que se paga. Es una
 comparación producto a producto, sin envío ni descuento bancario, y por eso no
 es comparable contra `total_spent_net` — el panel lo aclara en pantalla.
 

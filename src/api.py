@@ -682,52 +682,64 @@ def search_products(
 def _compute_price_savings(result: dict, flat_prices: dict, excluded_stores: list) -> dict:
     """
     Cuánto se ahorra por elegir bien la tienda de cada producto: por cada línea
-    del split, el precio MÁS CARO entre los supermercados que la tienen menos el
-    que efectivamente se paga.
+    del split, el PROMEDIO de lo que cuesta en los otros supermercados que la
+    tienen menos lo que efectivamente se paga. `pct` es ese ahorro sobre lo que
+    se hubiera pagado (la suma de los promedios, sobre todas las líneas).
+
+    Se eligió contra el promedio y no contra la tienda más cara (lo que medía
+    antes) después de comparar las dos en una branch: el más caro infla el
+    número con una compra que nadie haría.
+
+    Suma neto: si el solver pagó una línea más cara que el promedio del resto
+    (pasa para llegar al mínimo de compra de una tienda), esa línea resta.
 
     Es una comparación producto a producto y nada más: no entra el envío ni el
     descuento bancario, así que este número NO es comparable contra
     `total_spent_net` ni contra ninguna diferencia de totales. La copia del panel
     lo dice; acá queda escrito para que nadie lo reinterprete después.
 
-    Las tiendas excluidas no cuentan como "más caras": una que no entrega en la
-    dirección infla el ahorro con una compra que el usuario no podía hacer.
+    Las tiendas excluidas no cuentan: una que no entrega en la dirección mueve el
+    promedio con una compra que el usuario no podía hacer.
 
     `items` sólo trae las líneas que aportan diferencia. Un producto que existe en
-    una sola tienda da cero por definición, y listarlo sería puro relleno.
+    una sola tienda no tiene contra qué compararse, y listarlo sería relleno.
     """
     excluded = set(excluded_stores or [])
     items = []
-    total = 0.0
+    paid = 0.0
+    reference = 0.0
 
     for store_id, checkout in (result.get("split") or {}).items():
         for line in checkout["products"]:
             uid = line["unified_id"]
-            offers = {
-                s: row["total_cost"]
+            others = [
+                row["total_cost"]
                 for s, row in flat_prices.get(uid, {}).items()
-                if s not in excluded
-            }
-            if not offers:
+                if s not in excluded and s != store_id
+            ]
+            line_reference = sum(others) / len(others) if others else line["total_cost"]
+            paid += line["total_cost"]
+            reference += line_reference
+
+            savings = line_reference - line["total_cost"]
+            if round(savings, 2) == 0:
                 continue
 
-            worst_store, worst_cost = max(offers.items(), key=lambda kv: kv[1])
-            savings = worst_cost - line["total_cost"]
-            if savings <= 0:
-                continue
-
-            total += savings
             items.append({
                 "unified_id": uid,
                 "actual_store": store_id,
                 "actual_cost": round(line["total_cost"], 2),
-                "worst_store": worst_store,
-                "worst_cost": round(worst_cost, 2),
+                "reference_cost": round(line_reference, 2),
                 "savings": round(savings, 2),
             })
 
     items.sort(key=lambda i: i["savings"], reverse=True)
-    return {"total": round(total, 2), "items": items}
+    total = reference - paid
+    return {
+        "total": round(total, 2),
+        "pct": round(total / reference, 4) if reference else 0.0,
+        "items": items,
+    }
 
 
 # Tiendas que corren sobre VTEX y por lo tanto aceptan un carrito armado por URL

@@ -288,3 +288,31 @@ def test_el_solver_ve_las_dos_exclusiones_y_la_respuesta_las_separa(monkeypatch)
     assert response.status_code == 400
     assert set(visto["excluded_stores"]) == {COTO, CARREFOUR}
     assert visto["user_excluded_stores"] == [CARREFOUR]
+
+
+def test_price_savings_contra_el_promedio_del_resto():
+    """A: Coto es la más barata. B: sólo la vende Día (aporta 0). C: el solver
+    pagó Coto por encima del promedio del resto, así que resta."""
+    flat = {
+        "A": {COTO: {"total_cost": 100}, DIA: {"total_cost": 120}, CARREFOUR: {"total_cost": 140}},
+        "B": {DIA: {"total_cost": 50}},
+        "C": {COTO: {"total_cost": 80}, DIA: {"total_cost": 60}, CARREFOUR: {"total_cost": 90}},
+    }
+    result = {"split": {
+        COTO: {"products": [{"unified_id": "A", "total_cost": 100}, {"unified_id": "C", "total_cost": 80}]},
+        DIA: {"products": [{"unified_id": "B", "total_cost": 50}]},
+    }}
+
+    savings = api._compute_price_savings(result, flat, [])
+
+    # Referencia: 130 (A) + 50 (B) + 75 (C) = 255; pagado 230.
+    assert savings["total"] == 25
+    assert savings["pct"] == round(25 / 255, 4)
+    assert [(i["unified_id"], i["savings"]) for i in savings["items"]] == [("A", 30), ("C", -5)]
+
+
+def test_price_savings_ignora_tiendas_excluidas():
+    flat = {"A": {COTO: {"total_cost": 100}, DIA: {"total_cost": 120}, CARREFOUR: {"total_cost": 500}}}
+    result = {"split": {COTO: {"products": [{"unified_id": "A", "total_cost": 100}]}}}
+
+    assert api._compute_price_savings(result, flat, [CARREFOUR])["total"] == 20

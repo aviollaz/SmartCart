@@ -353,8 +353,8 @@ tienda, minimizando `subtotal + envío − descuento bancario`, sujeto a:
   de la semana (etapa 3.8).
 
 **Output:** el reparto por tienda (qué se compra dónde, a qué precio, con qué
-promo), el total neto, el ahorro contra la tienda más cara que vendía cada
-producto (`price_savings`, sólo informativo — no es comparable contra el
+promo), el total neto, el ahorro contra el promedio de las otras tiendas que
+vendían cada producto (`price_savings`, sólo informativo — no es comparable contra el
 total), sugerencias de reemplazo semántico, y — cuando aplica — el resultado
 de la heurística de cierre de tienda (etapa 3.7). Una combinación inviable
 (por ejemplo, un producto que sólo vende una tienda excluida) no da un 500:

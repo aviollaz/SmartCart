@@ -27,8 +27,8 @@ const FAQ = [
         a: "Porque cada súper suma su propio envío y tiene un mínimo de compra. Si lo que ahorrás repartiendo no alcanza a cubrir un segundo envío, o no llegás al mínimo de otra cadena, lo más barato es comprar todo junto.",
       },
       {
-        q: "¿Qué significa «Ahorrás $X usando el sitio»?",
-        a: "Es la diferencia, producto por producto, entre el súper más caro que lo tiene y el que te recomendamos. No incluye envíos ni descuentos bancarios, así que no es la resta de dos totales. En «Ver de dónde sale» está el detalle.",
+        q: "¿Qué significa «Ahorrás $X»?",
+        a: "Es la diferencia, producto por producto, entre lo que cuesta en promedio en los otros súper que lo tienen y el que te recomendamos. No incluye envíos ni descuentos bancarios, así que no es la resta de dos totales. En «Ver de dónde sale» está el detalle.",
       },
       {
         q: "¿Qué supermercados y zonas cubre?",
