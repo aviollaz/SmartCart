@@ -45,7 +45,7 @@ export function ProductCard({ product }) {
       </Link>
 
       <DietaryBadges product={product} className="mb-2" />
-      <PriceBlock product={product} pricing={pricing} />
+      <PriceBlock product={product} pricing={pricing} showPricingHint={false} />
 
       <Link
         to={detailUrl}
@@ -59,7 +59,12 @@ export function ProductCard({ product }) {
       {/* Patrón e-commerce estándar: hasta que el producto no está en el carrito
           hay un solo botón "Agregar"; el selector de unidades aparece recién
           después. Bajar a 0 elimina el ítem y la card vuelve sola al botón. */}
+      {/* El "Calculando…" va en esta fila y no en el PriceBlock: ahí sumaba una
+          línea, la card crecía y el stepper bajaba entre un clic y el siguiente. */}
       <div className="flex items-center justify-end gap-2">
+        {pricing.pricing && !pricing.byQuantity && (
+          <span className="mr-auto text-xs text-ink-muted">Calculando…</span>
+        )}
         {cartEntry ? (
           <QuantityStepper
             quantity={cartEntry.quantity}

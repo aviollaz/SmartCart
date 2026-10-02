@@ -11,7 +11,7 @@ const SIZES = {
  * card muestra de precio —el desglose por supermercado vive en la página del
  * producto— así que este bloque tiene que alcanzar solo.
  */
-export function PriceBlock({ product, pricing, size = "md" }) {
+export function PriceBlock({ product, pricing, size = "md", showPricingHint = true }) {
   const { price, listPrice, storeId, promoDescription, byQuantity, quantity } = pricing;
   const sizes = SIZES[size];
   const unitPriceLabel = formatUnitPrice(product);
@@ -39,7 +39,7 @@ export function PriceBlock({ product, pricing, size = "md" }) {
           {promoDescription ? ` · ${promoDescription}` : ""}
         </p>
       )}
-      {pricing.pricing && !byQuantity && (
+      {showPricingHint && pricing.pricing && !byQuantity && (
         <p className="text-xs text-ink-muted">Calculando precio por cantidad…</p>
       )}
       {unitPriceLabel && <p className="text-xs text-ink-muted">{unitPriceLabel}</p>}
