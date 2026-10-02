@@ -16,6 +16,7 @@ import threading
 import psycopg
 import pytest
 
+from src import database
 from src.database import SmartCartDB
 
 STORES = ("tienda_de_prueba_lock_a", "tienda_de_prueba_lock_b")
@@ -25,7 +26,11 @@ N_PRODUCTOS = 300
 
 
 @pytest.fixture
-def db():
+def db(monkeypatch):
+    # Las tiendas sintéticas no tienen transformador de promos (y un store_id
+    # desconocido es KeyError a propósito); los productos de prueba no traen promos.
+    for store_id in STORES:
+        monkeypatch.setitem(database.PROMO_TRANSFORMERS, store_id, lambda prod: (prod['base_price'], []))
     instancia = SmartCartDB()
     try:
         with psycopg.connect(instancia.conn_string):

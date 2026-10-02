@@ -2,6 +2,7 @@
 from ortools.sat.python import cp_model
 from src.bank_promos import load_bank_promos
 from src.flattener import flatten_cart_prices
+from src.stores import STORES
 
 # Cotas de los dominios enteros del modelo, en centavos.
 #
@@ -18,12 +19,12 @@ MAX_PCT = 100
 # ellos para pisar el envío de Coto con el valor real cuando el request no trae
 # la tabla por zona del frontend.
 #
-# Sumar una tienda acá NO es un cambio aislado: `stores` sale de las claves de
+# Salen del registro de src/stores.py. `stores` sale de las claves de
 # min_spend_limits y más abajo se indexa delivery_costs[j] sin default, así que
 # la tabla por zona del frontend (frontend/src/utils/deliveryCosts.js) tiene que
-# traer la clave nueva en el mismo commit o /optimize revienta con KeyError.
-DEFAULT_MIN_SPEND_LIMITS = {"coto_online": 15000, "dia_online": 12000, "carrefour_online": 20000}
-DEFAULT_DELIVERY_COSTS = {"coto_online": 3000, "dia_online": 3000, "carrefour_online": 3500}
+# traer todas las tiendas: tests/test_stores.py lo exige.
+DEFAULT_MIN_SPEND_LIMITS = {s.id: s.min_spend for s in STORES}
+DEFAULT_DELIVERY_COSTS = {s.id: s.delivery_cost for s in STORES}
 
 def optimize_cart(cart_items, user_memberships=None, user_cards=None, min_spend_limits=None, delivery_costs=None, excluded_stores=None, flat_prices=None, bank_promos=None, user_excluded_stores=None):
     """

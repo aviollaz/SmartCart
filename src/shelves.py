@@ -37,16 +37,11 @@ tiendas; con el slug canónico solapan las 20 por construcción.
 """
 from dataclasses import dataclass, field
 
-STORES = ("coto", "dia", "carrefour")
+from src.stores import STORE_IDS
 
-# El `store_id` con el que cada tienda se guarda en `store_products` y con el que
-# la nombran el optimizador y el frontend. Vive acá para que agregar una tienda
-# siga siendo una edición en un solo archivo del backend.
-STORE_IDS = {
-    "coto": "coto_online",
-    "dia": "dia_online",
-    "carrefour": "carrefour_online",
-}
+# Las tiendas salen del registro de src/stores.py; se reexportan acá porque
+# las columnas de SHELVES están indexadas por su `key`.
+STORES = tuple(STORE_IDS)
 
 # Los niveles superiores del mega-menú, en el orden en que se muestran. Son
 # etiquetas, no una jerarquía real de ninguna cadena: agrupan las góndolas para

@@ -305,13 +305,14 @@ Lo que cuesta, en el orden en que rompe si se olvida:
   dos reglas de la etapa 1b (ninguna clave ancestro de otra; clave en el dump ≠
   clave con productos). Una góndola sin clave rompe la regla de "todas las
   tiendas en todas las góndolas" que el test exige hoy.
-* `STORE_IDS`, `STORE_RUNNERS`, la matriz de `.github/workflows/scrape.yml`.
-* **Regla de dos archivos** (CLAUDE.md etapa 6): `DEFAULT_MIN_SPEND_LIMITS` en
-  `src/optimizer.py` y la tabla de `frontend/src/utils/deliveryCosts.js` en el
-  mismo commit; si no, `KeyError` en `/optimize` o la tienda queda en el banco
-  sin aviso. Mínimo de compra y costo de envío hay que relevarlos.
-* `STORES` en `frontend/src/utils/constants.js`, `VTEX_CHECKOUT_DOMAINS` para el
-  link de carrito, y un `DiscountScraper` para sus promos bancarias.
+* Una fila en `src/stores.py` (mínimo de compra, envío y dominio de checkout,
+  que hay que relevar) y otra en `STORES` de `frontend/src/utils/constants.js`,
+  más su columna en cada zona de `frontend/src/utils/deliveryCosts.js`.
+* Su código: scraper de catálogo en `STORE_RUNNERS` y `curar_frescos._scrapers()`,
+  transformador en `database.PROMO_TRANSFORMERS`, un `DiscountScraper` en
+  `promotions.SCRAPERS`, y la key en los dos defaults de
+  `.github/workflows/scrape.yml`. `tests/test_stores.py` falla si falta
+  cualquiera de estos o los de arriba.
 * **Activa el ítem 7** (`exclude_stores` en `/search`): con más tiendas el
   `store_count` sin cobertura deja de diluirse.
 * **Aprieta el ítem 11**: un barrido más en la matriz es más cómputo de Neon por

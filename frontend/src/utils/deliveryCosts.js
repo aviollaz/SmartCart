@@ -11,7 +11,8 @@ export const DELIVERY_COSTS_BY_ZONE = {
   "GBA Oeste": { coto_online: 3800.0, dia_online: 3500.0, carrefour_online: 3500.0 },
 };
 
-// Siempre devuelve el objeto completo, con las TRES tiendas. Es una invariante,
+// Siempre devuelve el objeto completo, con todas las tiendas de STORES
+// (constants.js; tests/test_stores.py lo exige por zona). Es una invariante,
 // no una casualidad: src/optimizer.py indexa delivery_costs[store] para cada
 // tienda de min_spend_limits (un faltante es KeyError, no un default), y
 // src/api.py deriva de sus claves las tiendas de los baselines.

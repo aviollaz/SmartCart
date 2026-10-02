@@ -23,6 +23,7 @@ from src.flattener import flatten_cart_prices, evaluate_best_promo, parse_promot
 from src.coto_logistics import check_coverage, resolve_coto_logistics
 from src.schema import ensure_schema
 from src.shelves import SECTIONS, SHELVES, sections as shelf_sections, shelf_label
+from src.stores import STORES
 from src.strategic_swaps import find_strategic_swaps
 from src.substitutions import build_semantic_suggestions, format_size
 
@@ -423,8 +424,9 @@ def _build_store_offer(sp: dict, user_memberships: Optional[List[str]] = None) -
     }
 
 
-# Mismo orden que resolveDisplayImage() en frontend/src/utils/formatters.js.
-IMAGE_STORE_PRIORITY = ("coto_online", "dia_online", "carrefour_online")
+# El orden del registro (src/stores.py); el frontend deriva el suyo del espejo
+# en constants.js (resolveDisplayImage() en formatters.js).
+IMAGE_STORE_PRIORITY = tuple(s.id for s in STORES)
 
 
 def _fetch_offers_by_product(cur, product_ids: list,
@@ -757,13 +759,10 @@ def _compute_price_savings(result: dict, flat_prices: dict, excluded_stores: lis
 # escritorio. El frontend muestra una lista con un link por producto
 # (StoreBreakdownCard.jsx), que el navegador nunca bloquea como popup.
 #
-# Agregar una tienda VTEX es agregar una fila acá, pero su scraper tiene que
-# guardar `store_item_id` (ver save_store_products): sin esa columna la tienda
-# no arma link, a propósito.
-VTEX_CHECKOUT_DOMAINS = {
-    "dia_online": "diaonline.supermercadosdia.com.ar",
-    "carrefour_online": "www.carrefour.com.ar",
-}
+# Una tienda VTEX arma link si tiene `checkout_domain` en src/stores.py, pero su
+# scraper tiene que guardar `store_item_id` (ver save_store_products): sin esa
+# columna la tienda no arma link, a propósito.
+VTEX_CHECKOUT_DOMAINS = {s.id: s.checkout_domain for s in STORES if s.checkout_domain}
 
 
 def generate_vtex_magic_link(store_domain: str, products: list, sales_channel: int = 1, seller_id: int = 1) -> str:

@@ -43,6 +43,7 @@ from dataclasses import dataclass, field, asdict
 
 from src.flattener import flatten_cart_prices
 from src.optimizer import optimize_cart
+from src.stores import STORES
 from src.substitutions import (
     comparable_candidates,
     fetch_product_rows,
@@ -275,11 +276,7 @@ def _simulate_closure(store, swaps, price_rows, cart_items, flat_prices, exclude
 
 
 def _build_message(store, swaps, savings):
-    store_label = {
-        "coto_online": "Coto",
-        "dia_online": "Día",
-        "carrefour_online": "Carrefour",
-    }.get(store, store)
+    store_label = next((s.name for s in STORES if s.id == store), store)
 
     n = len(swaps)
     productos = "producto" if n == 1 else "productos"

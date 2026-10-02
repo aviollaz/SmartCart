@@ -28,12 +28,12 @@ import json
 import os
 from functools import lru_cache
 
+from src.stores import STORES
+
 _BASE_DIR = os.path.dirname(__file__)
 
 _TAXONOMY_PATHS = {
-    "coto": os.path.join(_BASE_DIR, "scrapers", "coto_categories.json"),
-    "dia": os.path.join(_BASE_DIR, "scrapers", "dia_categories.json"),
-    "carrefour": os.path.join(_BASE_DIR, "scrapers", "carrefour_categories.json"),
+    s.key: os.path.join(_BASE_DIR, "scrapers", f"{s.key}_categories.json") for s in STORES
 }
 
 

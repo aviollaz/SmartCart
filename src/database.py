@@ -14,6 +14,20 @@ from src.schema import ensure_schema, resolve_conn_string
 
 logger = logging.getLogger(__name__)
 
+# El transformador de promos de cada tienda, `prod -> (base_price, promos)`. Se
+# indexa con [] a propósito: una tienda sin entrada da KeyError al guardar en
+# vez de guardar sus productos sin promos en silencio. tests/test_stores.py
+# exige que las claves sean las tiendas de src/stores.py.
+PROMO_TRANSFORMERS = {
+    # Coto sólo normaliza las promos: el precio de lista ya viene resuelto.
+    "coto_online": lambda prod: (prod['base_price'], PromoTransformer.coto(prod['raw_promos'])),
+    # Para Día, raw_promos contiene el 'commertialOffer' crudo de VTEX.
+    "dia_online": lambda prod: PromoTransformer.dia(prod['raw_promos'], prod['store_sku']),
+    # Carrefour también es VTEX: mismo 'commertialOffer' crudo, pero su hueco
+    # ListPrice/Price puede ser precio de socio (ver PromoTransformer.carrefour).
+    "carrefour_online": lambda prod: PromoTransformer.carrefour(prod['raw_promos'], prod['store_sku']),
+}
+
 
 class SmartCartDB:
     def __init__(self, conn_string: str | None = None):
@@ -123,25 +137,7 @@ class SmartCartDB:
         unified_id = identity['unified_id']
 
         # 2. TRANSFORMACIÓN: Normalizamos precio y promos según el origen
-        base_price = prod['base_price']
-        standardized_promos = []
-
-        if store_id == "coto_online":
-            standardized_promos = PromoTransformer.coto(prod['raw_promos'])
-        elif store_id == "dia_online":
-            # Para día, raw_promos contiene el 'commertialOffer' crudo de VTEX
-            base_price, standardized_promos = PromoTransformer.dia(
-                prod['raw_promos'],
-                prod['store_sku']
-            )
-        elif store_id == "carrefour_online":
-            # Carrefour también es VTEX: mismo 'commertialOffer' crudo,
-            # pero su hueco ListPrice/Price puede ser precio de socio
-            # (ver PromoTransformer.carrefour).
-            base_price, standardized_promos = PromoTransformer.carrefour(
-                prod['raw_promos'],
-                prod['store_sku']
-            )
+        base_price, standardized_promos = PROMO_TRANSFORMERS[store_id](prod)
 
         # 2.5 Góndola y categoría de origen: las dos se exigen, no
         # se leen con .get(). Un scraper que dejara de mandarlas no

@@ -25,14 +25,6 @@ const PASOS = [
   { Icon: Sparkles, titulo: "Te decimos dónde", texto: "conviene comprar cada cosa" },
 ];
 
-// Un color por cadena, sólo para el diagrama del reparto. No son los colores
-// de marca oficiales ni pretenden serlo.
-const STORE_DOT = {
-  coto_online: "bg-red-500",
-  dia_online: "bg-rose-600",
-  carrefour_online: "bg-blue-600",
-};
-
 export function HomePage() {
   const { items, mergeItems } = useCart();
   const navigate = useNavigate();
@@ -147,7 +139,7 @@ function SplitDiagram() {
       <div className="flex flex-col gap-1">
         {STORES.map((store) => (
           <span key={store.id} className="flex items-center gap-1.5 text-xs font-semibold text-ink">
-            <span className={`h-2 w-2 rounded-full ${STORE_DOT[store.id] || "bg-ink-muted"}`} />
+            <span className={`h-2 w-2 rounded-full ${store.color}`} />
             {store.name}
           </span>
         ))}

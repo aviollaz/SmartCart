@@ -76,7 +76,7 @@ Data flows in one direction through distinct stages:
 2. **Which shelves get scraped** (`src/shelves.py`) — one table, `SHELVES`, mapping canonical
    shelf slugs to each store's category keys, so a shelf is scraped identically across all three
    chains (required for EAN-based unification to produce comparisons, not just catalog). Also
-   holds `STORE_IDS`. `SECTIONS` groups shelves for the mega-menu (presentation only).
+   re-exports `STORE_IDS` from `src/stores.py`. `SECTIONS` groups shelves for the mega-menu (presentation only).
 3. **Normalization + persistence** (`src/database.py`, `SmartCartDB`) — `save_store_products()`
    upserts into `unified_products` (one row per EAN) and `store_products` (one row per store
    offer). Promo payloads are normalized via `src/promotion_parser.py`'s `PromoTransformer` into
@@ -101,8 +101,9 @@ Data flows in one direction through distinct stages:
    /optimize` — the core flow: `src/flattener.py`'s `flatten_cart_prices()` prices each line per
    store, then `src/optimizer.py`'s `optimize_cart()` runs a CP-SAT model minimizing subtotal +
    delivery − capped bank discount, with each store's minimum spend as a hard constraint.
-   Registering a new store is a two-file change: `DEFAULT_MIN_SPEND_LIMITS` in `optimizer.py`
-   and the frontend's per-zone `delivery_costs` table must both list it.
+   A store is declared once in `src/stores.py` (min spend, delivery, ids, checkout domain) and
+   once in `frontend/src/utils/constants.js`; `tests/test_stores.py` checks that the per-store
+   code registries, every zone of `deliveryCosts.js` and `scrape.yml` name exactly those stores.
 7. **Store-closure heuristic** (`src/strategic_swaps.py`) — post-solve: for each active store,
    finds products only it carries ("anchors"), looks for same-shelf substitutes, and re-runs the
    solver with that store excluded to see if closing it saves money. Result is `strategic_swaps`

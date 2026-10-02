@@ -125,10 +125,10 @@ export function resolveBestOffer(product) {
  * GET /search no calcula un image_url a nivel de producto (mismo gap que
  * min_price, ver resolveDisplayPrice), aunque sí trae image_url por oferta en
  * available_at_stores. Como paliativo, si no vino resuelto se busca la
- * primera imagen disponible priorizando Coto, después Día y por último
- * Carrefour (mismo criterio que ya usa el backend en GET /category).
+ * primera imagen disponible en el orden de STORES (mismo criterio que ya usa
+ * el backend en GET /category).
  */
-const IMAGE_STORE_PRIORITY = ["coto_online", "dia_online", "carrefour_online"];
+const IMAGE_STORE_PRIORITY = STORES.map((s) => s.id);
 
 export function resolveDisplayImage(product) {
   if (product.image_url) return product.image_url;

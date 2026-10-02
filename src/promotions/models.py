@@ -9,15 +9,16 @@ el paquete de scraping arrastre validación de request al proceso de ingesta.
 from dataclasses import dataclass, replace
 from datetime import date
 
+from src.stores import STORES
+
 # Orden canónico de la semana. Coincide con date.weekday() (lunes = 0), así que
 # CANONICAL_DAYS[hoy.weekday()] es el día de hoy sin tabla intermedia.
 CANONICAL_DAYS = ("lunes", "martes", "miercoles", "jueves", "viernes", "sabado", "domingo")
 _DAY_ORDER = {day: index for index, day in enumerate(CANONICAL_DAYS)}
 
-# Los mismos ids de tienda que usa el optimizador. Son las claves de
-# DEFAULT_MIN_SPEND_LIMITS en src/optimizer.py: si no coinciden, la promo se
-# scrapea bien y después no se aplica nunca.
-KNOWN_STORES = ("coto_online", "dia_online", "carrefour_online")
+# Los mismos ids de tienda que usa el optimizador, del registro de src/stores.py:
+# si no coincidieran, la promo se scrapearía bien y no se aplicaría nunca.
+KNOWN_STORES = tuple(s.id for s in STORES)
 
 # Períodos en los que puede estar expresado un tope de reintegro.
 CAP_PERIODS = ("transaccion", "semanal", "mensual")
