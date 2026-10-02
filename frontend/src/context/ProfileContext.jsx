@@ -1,6 +1,7 @@
 import { createContext, useContext, useEffect, useMemo } from "react";
 import { useLocalStorage } from "../hooks/useLocalStorage";
 import { getDeliveryCostsForZone } from "../utils/deliveryCosts";
+import { STORES } from "../utils/constants";
 
 const ProfileContext = createContext(null);
 
@@ -66,6 +67,12 @@ const DEFAULT_PROFILE = {
   // ofertas de la grilla, igual que una tienda sin cobertura. Mismo criterio de
   // migración que el resto: ausente en un perfil viejo = [] = todas habilitadas.
   excludedStores: [],
+  // Tope de supermercados en el split (1, 2…) o null = sin límite. Cada
+  // tienda de más es un checkout más que el usuario completa a mano, así que
+  // puede preferir pagar algo más y comprar en menos lugares; lo elige desde
+  // FewerStoresCard o desde el carrito. Viaja a POST /optimize como
+  // `max_stores`. Ausente en un perfil viejo = undefined = sin límite.
+  maxStores: null,
 };
 
 function stampCoverage(coverageByStore) {
@@ -125,6 +132,10 @@ export function ProfileProvider({ children }) {
     setProfile((prev) => ({ ...prev, excludedStores }));
   }
 
+  function setMaxStores(maxStores) {
+    setProfile((prev) => ({ ...prev, maxStores }));
+  }
+
   function setStoreCoverage(storeId, coverage) {
     setProfile((prev) => ({
       ...prev,
@@ -178,9 +189,20 @@ export function ProfileProvider({ children }) {
     return union.length > 0 ? union : NO_UNAVAILABLE_STORES;
   }, [unavailableStores, excludedStores]);
 
+  // El tope sólo significa algo si deja afuera alguna tienda habilitada: con
+  // dos habilitadas, "como máximo 3" es sin límite. Se normaliza acá y no al
+  // guardarlo para que deshabilitar y volver a habilitar una tienda no borre
+  // la preferencia en el camino.
+  const enabledCount = STORES.length - excludedStores.length;
+  const maxStores =
+    Number.isInteger(profile.maxStores) && profile.maxStores >= 1 && profile.maxStores < enabledCount
+      ? profile.maxStores
+      : null;
+
   const value = useMemo(
     () => ({
       ...profile,
+      maxStores,
       deliveryCosts,
       coordinates,
       unavailableStores,
@@ -188,6 +210,7 @@ export function ProfileProvider({ children }) {
       hiddenStores,
       setCards,
       setExcludedStores,
+      setMaxStores,
       setMemberships,
       completeMembershipStep,
       setLocation,
@@ -195,7 +218,7 @@ export function ProfileProvider({ children }) {
       skipLocation,
     }),
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [profile, deliveryCosts, coordinates, unavailableStores, excludedStores, hiddenStores]
+    [profile, maxStores, deliveryCosts, coordinates, unavailableStores, excludedStores, hiddenStores]
   );
 
   return <ProfileContext.Provider value={value}>{children}</ProfileContext.Provider>;

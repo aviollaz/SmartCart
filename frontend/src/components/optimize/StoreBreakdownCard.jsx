@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { Check, ExternalLink } from "lucide-react";
+import { Check, CheckCircle2, ExternalLink } from "lucide-react";
 import { formatPrice, storeName } from "../../utils/formatters";
 import { PromoTransparency } from "./PromoTransparency";
 
@@ -16,18 +16,28 @@ function readBankDiscount(bankDiscount) {
  * —cuántos productos, cuánto, y el botón— y el desglose (subtotal, envío,
  * descuento bancario, lista y promos) va plegado en "Ver detalle": lo lee
  * quien desconfía del total, no todo el mundo.
+ *
+ * Con más de una tienda es un paso de la compra (`step`): "Ya compré acá" la
+ * pliega y la atenúa, para que lo que falta sea lo único a la vista.
  */
-export function StoreBreakdownCard({ storeId, checkout, cartItems }) {
+export function StoreBreakdownCard({ storeId, checkout, cartItems, step = null, done = false, onToggleDone }) {
   const bankDiscount = readBankDiscount(checkout.bank_discount);
   const productLinks = checkout.products.filter((item) => item.product_url);
   const units = checkout.products.reduce((sum, item) => sum + (item.quantity || 0), 0);
   const productName = (item) => cartItems[item.unified_id]?.name || item.unified_id;
 
   return (
-    <div className="flex flex-col rounded-lg border border-line bg-surface p-4">
+    <div className={`flex flex-col rounded-lg border bg-surface p-4 ${done ? "border-state-success opacity-70" : "border-line"}`}>
       <div className="flex items-baseline justify-between gap-3">
         <div>
-          <p className="font-display text-base font-bold text-brand-violet-700">{storeName(storeId)}</p>
+          <p className="flex items-center gap-1.5 font-display text-base font-bold text-brand-violet-700">
+            {done ? (
+              <CheckCircle2 size={16} className="shrink-0 text-state-success" aria-label="Comprado" />
+            ) : (
+              step != null && <span className="text-ink-muted">{step}.</span>
+            )}
+            {storeName(storeId)}
+          </p>
           <p className="text-xs text-ink-muted">
             {checkout.products.length} producto{checkout.products.length === 1 ? "" : "s"}
             {units !== checkout.products.length && ` · ${units} unidades`}
@@ -36,7 +46,17 @@ export function StoreBreakdownCard({ storeId, checkout, cartItems }) {
         <p className="text-xl font-bold text-ink">{formatPrice(checkout.store_total)}</p>
       </div>
 
-      {checkout.checkout_url ? (
+      {step != null && (
+        <button
+          type="button"
+          onClick={onToggleDone}
+          className="mt-2 self-start text-xs text-ink-muted underline hover:text-brand-violet-700"
+        >
+          {done ? "Desmarcar" : "Ya compré acá"}
+        </button>
+      )}
+
+      {!done && (checkout.checkout_url ? (
         <a
           href={checkout.checkout_url}
           target="_blank"
@@ -50,8 +70,9 @@ export function StoreBreakdownCard({ storeId, checkout, cartItems }) {
         productLinks.length > 0 && (
           <ProductChecklist storeId={storeId} items={productLinks} productName={productName} />
         )
-      )}
+      ))}
 
+      {!done && (
       <details className="mt-3 text-xs text-ink-muted">
         <summary className="cursor-pointer select-none">Ver detalle</summary>
         <dl className="mt-2 space-y-1 text-sm text-ink">
@@ -98,6 +119,7 @@ export function StoreBreakdownCard({ storeId, checkout, cartItems }) {
             contestar "no tiene inventario para tu dirección". */}
         <p className="mt-2">El súper confirma el stock final para tu dirección al cerrar la compra.</p>
       </details>
+      )}
     </div>
   );
 }

@@ -227,7 +227,7 @@ def _resolve_swaps(closing_store, anchors, anchor_rows, candidates, prices_by_qt
 
 
 def _simulate_closure(store, swaps, price_rows, cart_items, flat_prices, excluded_stores,
-                      user_memberships, user_cards, delivery_costs):
+                      user_memberships, user_cards, delivery_costs, max_stores=None):
     """
     Corre el solver de verdad sobre el carrito con los reemplazos aplicados y la
     tienda excluida. Devuelve el resultado de `optimize_cart` o None si cerrarla
@@ -262,6 +262,10 @@ def _simulate_closure(store, swaps, price_rows, cart_items, flat_prices, exclude
         delivery_costs=delivery_costs,
         excluded_stores=list(excluded_stores) + [store],
         flat_prices=simulated_prices,
+        # El límite de tiendas que eligió el usuario vale también acá: cerrar
+        # una tienda puede encender otra que estaba apagada, y un what-if que
+        # lo ignore promete un split que el usuario pidió no ver.
+        max_stores=max_stores,
     )
 
     if result.get("status") != "success":
@@ -291,7 +295,7 @@ def _build_message(store, swaps, savings):
 
 
 def find_strategic_swaps(*, result, cart_items, flat_prices, user_memberships, user_cards,
-                         delivery_costs, excluded_stores, cur):
+                         delivery_costs, excluded_stores, cur, max_stores=None):
     """
     Evalúa cerrar cada tienda activa del split y devuelve las sugerencias que
     ahorran plata, ordenadas por ahorro descendente.
@@ -308,6 +312,7 @@ def find_strategic_swaps(*, result, cart_items, flat_prices, user_memberships, u
             result=result, cart_items=cart_items, flat_prices=flat_prices,
             user_memberships=user_memberships, user_cards=user_cards,
             delivery_costs=delivery_costs, excluded_stores=excluded_stores, cur=cur,
+            max_stores=max_stores,
         )
     except Exception as e:
         logger.error(f"Error en la heurística de cierre de tienda: {e}")
@@ -315,7 +320,7 @@ def find_strategic_swaps(*, result, cart_items, flat_prices, user_memberships, u
 
 
 def _find_strategic_swaps(*, result, cart_items, flat_prices, user_memberships, user_cards,
-                          delivery_costs, excluded_stores, cur):
+                          delivery_costs, excluded_stores, cur, max_stores=None):
     split = result.get("split") or {}
     original_total = result.get("total_spent_net")
 
@@ -436,7 +441,7 @@ def _find_strategic_swaps(*, result, cart_items, flat_prices, user_memberships, 
         for _fingerprint, swaps, price_rows in plans:
             simulated = _simulate_closure(
                 store, swaps, price_rows, cart_items, flat_prices, excluded_stores,
-                user_memberships, user_cards, delivery_costs,
+                user_memberships, user_cards, delivery_costs, max_stores=max_stores,
             )
             if simulated is None:
                 continue

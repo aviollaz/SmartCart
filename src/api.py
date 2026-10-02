@@ -201,6 +201,20 @@ class OptimizationRequest(BaseModel):
     # separados porque la causa cambia lo que hay que decirle — "Coto no llega a
     # tu dirección" es falso para una tienda que el usuario sacó a mano.
     user_excluded_stores: List[str] = []
+    # Tope de supermercados en el split. Cada tienda de más es un checkout más
+    # que el usuario completa a mano, así que puede preferir pagar algo más y
+    # comprar en menos lugares; `fewer_stores_options` de la respuesta le dice
+    # cuánto cuesta. None es sin límite.
+    max_stores: Optional[int] = None
+
+    @field_validator("max_stores")
+    @classmethod
+    def _tope_de_tiendas_en_rango(cls, value: Optional[int]) -> Optional[int]:
+        if value is not None and not 1 <= value <= len(DEFAULT_MIN_SPEND_LIMITS):
+            raise ValueError(
+                f"max_stores tiene que estar entre 1 y {len(DEFAULT_MIN_SPEND_LIMITS)}."
+            )
+        return value
 
     @field_validator("user_excluded_stores")
     @classmethod
@@ -957,6 +971,53 @@ def _attach_vtex_checkout_links(cur, split: dict) -> None:
             )
 
 
+def _compute_fewer_stores_options(result: dict, request, cart_data: list, flat_prices: dict,
+                                  delivery_costs: dict, excluded_stores: list) -> list:
+    """
+    Cuánto cuesta comprar en menos supermercados que el split óptimo: una
+    opción por cada tope k menor a la cantidad de tiendas del split, sólo las
+    factibles.
+
+    Existe porque el objetivo del solver es plata y nada más, pero cada tienda
+    del split es un checkout que el usuario completa a mano (franja, pago). Ese
+    costo lo pone el usuario, así que no se inventa un peso en el objetivo: se
+    le muestra el precio exacto de ahorrarse checkouts y decide él.
+
+    Re-corre `optimize_cart` en vez de estimar, por la misma regla que
+    strategic_swaps: un total calculado distinto del que ya se mostró es un bug
+    silencioso garantizado. `flat_prices` es la matriz del carrito, ya filtrada
+    a sus UIDs, así que no hay consultas nuevas.
+    """
+    split = result.get("split") or {}
+    total = result.get("total_spent_net")
+    if total is None or len(split) < 2:
+        return []
+
+    options = []
+    for k in range(len(split) - 1, 0, -1):
+        alt = optimize_cart(
+            cart_items=cart_data,
+            user_memberships=request.user_memberships,
+            user_cards=request.user_cards,
+            delivery_costs=delivery_costs,
+            excluded_stores=excluded_stores,
+            flat_prices=flat_prices,
+            max_stores=k,
+        )
+        if alt.get("status") != "success":
+            # Si con k no alcanza el mínimo, con menos tampoco suele alcanzar,
+            # pero no es una garantía (otra tienda sola podría llegar), así que
+            # se sigue probando: son a lo sumo dos solves.
+            continue
+        options.append({
+            "max_stores": k,
+            "total_spent_net": alt["total_spent_net"],
+            "extra_cost": round(alt["total_spent_net"] - total, 2),
+            "stores": list(alt["split"].keys()),
+        })
+    return options
+
+
 def _enrich_successful_result(result: dict, request, cart_data: list,
                               delivery_costs: dict, excluded_stores: list) -> None:
     """
@@ -975,6 +1036,12 @@ def _enrich_successful_result(result: dict, request, cart_data: list,
     result["price_savings"] = _optional_feature(
         "el ahorro contra el peor precio", None,
         _compute_price_savings, result, flat_prices, excluded_stores,
+    )
+
+    result["fewer_stores_options"] = _optional_feature(
+        "las opciones con menos supermercados", [],
+        _compute_fewer_stores_options,
+        result, request, cart_data, flat_prices, delivery_costs, excluded_stores,
     )
 
     # Una sola conexión para las cuatro features que tocan la base.
@@ -1002,6 +1069,7 @@ def _enrich_successful_result(result: dict, request, cart_data: list,
                 delivery_costs=delivery_costs,
                 excluded_stores=excluded_stores,
                 cur=cur,
+                max_stores=request.max_stores,
             )
 
             _optional_feature("los links por producto", None,
@@ -1019,6 +1087,7 @@ def _ensure_optional_keys(result: dict) -> None:
     result.setdefault("suggestions", [])
     result.setdefault("strategic_swaps", [])
     result.setdefault("price_savings", None)
+    result.setdefault("fewer_stores_options", [])
 
 
 @app.post("/optimize")
@@ -1075,6 +1144,7 @@ def optimize_shopping_cart(request: OptimizationRequest, background_tasks: Backg
             delivery_costs=delivery_costs,
             excluded_stores=excluded_stores,
             user_excluded_stores=user_excluded,
+            max_stores=request.max_stores,
         )
         # `excluded_stores` conserva su semántica de siempre —sólo cobertura—
         # porque la leen LogisticsNotice ("Coto no llega a tu dirección") y el

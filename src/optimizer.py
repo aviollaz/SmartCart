@@ -25,7 +25,7 @@ MAX_PCT = 100
 DEFAULT_MIN_SPEND_LIMITS = {"coto_online": 15000, "dia_online": 12000, "carrefour_online": 20000}
 DEFAULT_DELIVERY_COSTS = {"coto_online": 3000, "dia_online": 3000, "carrefour_online": 3500}
 
-def optimize_cart(cart_items, user_memberships=None, user_cards=None, min_spend_limits=None, delivery_costs=None, excluded_stores=None, flat_prices=None, bank_promos=None, user_excluded_stores=None):
+def optimize_cart(cart_items, user_memberships=None, user_cards=None, min_spend_limits=None, delivery_costs=None, excluded_stores=None, flat_prices=None, bank_promos=None, user_excluded_stores=None, max_stores=None):
     """
     `flat_prices` es un escape hatch para quien ya tiene la matriz de precios y
     no quiere pagarla de nuevo: flatten_cart_prices() abre una conexión nueva por
@@ -36,6 +36,12 @@ def optimize_cart(cart_items, user_memberships=None, user_cards=None, min_spend_
     `products` sale de sus claves (abajo), así que un UID de más se convierte en
     un producto fantasma con su propia restricción `== 1` y puede volver
     infactible un carrito que no lo es.
+
+    `max_stores` limita cuántas tiendas puede abrir el split. Existe porque
+    cada tienda de más es un checkout más que el usuario hace a mano (elegir
+    franja, confirmar el pago), y ese costo no está en el objetivo: el usuario
+    lo decide mirando `fewer_stores_options` en la respuesta de /optimize.
+    `None` es sin límite, el comportamiento de siempre.
     """
     if user_memberships is None: user_memberships = []
     if user_cards is None: user_cards = []
@@ -125,6 +131,9 @@ def optimize_cart(cart_items, user_memberships=None, user_cards=None, min_spend_
         costs = [x[i, j] * int(round(flat_prices[i][j]["total_cost"] * 100)) for i in products if (i, j) in x]
         if costs: model.Add(sum(costs) >= y[j] * int(min_spend_limits[j] * 100))
 
+    if max_stores is not None:
+        model.Add(sum(y.values()) <= max_stores)
+
     subtotal_vars = {}
     discount_vars = {}
     store_final_costs_cents = {}
@@ -199,8 +208,19 @@ def optimize_cart(cart_items, user_memberships=None, user_cards=None, min_spend_
             "excluded_stores": excluded_stores
         }
 
+    # Con un límite de tiendas la causa más probable deja de ser "te falta
+    # carrito": el mismo carrito puede ser factible sin límite. Decirlo evita
+    # mandar al usuario a agregar productos cuando lo que resuelve es aflojar
+    # el límite.
+    message = "No se encontró una asignación que cumpla los mínimos requeridos."
+    if max_stores is not None:
+        message = (
+            f"Comprando en como máximo {max_stores} "
+            f"{'supermercado' if max_stores == 1 else 'supermercados'} no se llega "
+            f"al mínimo de compra con este carrito. Probá sin límite de supermercados."
+        )
     return {
         "status": "infeasible",
-        "message": "No se encontró una asignación que cumpla los mínimos requeridos.",
+        "message": message,
         "excluded_stores": excluded_stores
     }

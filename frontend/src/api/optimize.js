@@ -15,6 +15,7 @@ export async function optimizeCart({
   anonUserId,
   zone,
   excludedStores,
+  maxStores,
 }) {
   try {
     const data = await apiFetch("/optimize", {
@@ -46,6 +47,8 @@ export async function optimizeCart({
         // cobertura, que la calcula el backend con lat/lng: la causa cambia lo
         // que el optimizador le explica al usuario.
         user_excluded_stores: excludedStores ?? [],
+        // Tope de supermercados del split; null = sin límite.
+        max_stores: maxStores ?? null,
       }),
     });
     return { ok: true, data };
