@@ -30,11 +30,11 @@ export function SavingsPanel({ result, cartItems }) {
           línea fija: una sola frase alcanza para lo que se lee de arriba. */}
       {total > 0 && (
         <div className="rounded-lg border border-line bg-surface p-4">
-          <p className="flex items-center gap-1.5 text-sm text-ink">
+          <p className="flex items-center gap-1.5 text-xs text-ink-muted">
             <PiggyBank size={16} className="shrink-0 text-state-success" />
-            Ahorrás <span className="font-bold text-state-success">{formatPrice(total)}</span> usando
-            el sitio
+            Ahorrás usando el sitio
           </p>
+          <p className="text-3xl font-bold text-state-success">{formatPrice(total)}</p>
 
           {items.length > 0 && (
             <details className="mt-2 text-xs text-ink-muted">
