@@ -20,9 +20,22 @@ export function SavingsPanel({ result, cartItems }) {
   return (
     <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
       <div className="rounded-lg border border-line bg-surface p-4">
-        <p className="text-3xl font-bold text-brand-violet-700">
+        <p className="text-2xl font-bold text-brand-violet-700">
           Total {formatPrice(result.total_spent_net)}
         </p>
+        {/* Sólo cuando otro día del rango sale más barato que hoy (el backend
+            manda today_total_spent_net en null si no). El "T00:00" evita que
+            la fecha ISO se interprete en UTC y se corra un día. */}
+        {result.today_total_spent_net != null && (
+          <p className="mt-1 text-sm font-semibold text-ink">
+            Comprando el{" "}
+            {new Date(`${result.purchase_date}T00:00`).toLocaleDateString("es-AR", {
+              weekday: "long",
+              day: "numeric",
+            })}{" "}
+            · {formatPrice(result.today_total_spent_net - result.total_spent_net)} menos que hoy
+          </p>
+        )}
       </div>
 
       {/* Con ahorro cero o negativo la tarjeta no se dibuja: cero pasa cuando
@@ -33,7 +46,7 @@ export function SavingsPanel({ result, cartItems }) {
           línea fija: una sola frase alcanza para lo que se lee de arriba. */}
       {total > 0 && (
         <div className="rounded-lg border border-line bg-surface p-4">
-          <p className="flex flex-wrap items-center gap-2 text-3xl font-bold text-state-success">
+          <p className="flex flex-wrap items-center gap-2 text-2xl font-bold text-state-success">
             <PiggyBank size={28} className="shrink-0" />
             Ahorrás {formatPrice(total)}
           </p>

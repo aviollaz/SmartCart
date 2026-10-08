@@ -41,6 +41,8 @@ export function CartPage({ onOpenLocation }) {
   const [optimizeStatus, setOptimizeStatus] = useState("idle"); // idle | loading | success | infeasible | error
   const [optimizeResult, setOptimizeResult] = useState(null);
   const [infeasibleDetail, setInfeasibleDetail] = useState(null);
+  // Hasta cuándo puede esperar para comprar. Es de esta compra, no del perfil.
+  const [purchaseDays, setPurchaseDays] = useState(1);
 
   // Se levanta al aceptar una sugerencia para que el efecto de abajo distinga
   // "el carrito cambió por un swap, hay que recalcular" de "el usuario tocó una
@@ -70,6 +72,7 @@ export function CartPage({ onOpenLocation }) {
         anonUserId: anon_user_id,
         zone: location?.zone,
         excludedStores,
+        purchaseDays,
       });
 
       if (response.ok) {
@@ -116,7 +119,7 @@ export function CartPage({ onOpenLocation }) {
       setOptimizeStatus("error");
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [items, memberships, cards, deliveryCosts, coordinates, anon_user_id, location, excludedStores, recordPurchase]);
+  }, [items, memberships, cards, deliveryCosts, coordinates, anon_user_id, location, excludedStores, purchaseDays, recordPurchase]);
 
   useEffect(() => {
     if (reoptimizeRef.current) {
@@ -227,6 +230,8 @@ export function CartPage({ onOpenLocation }) {
             onOpenLocation={onOpenLocation}
             subtotalEstimado={entries.length ? subtotalEstimado : null}
             onOptimize={runOptimize}
+            purchaseDays={purchaseDays}
+            onPurchaseDaysChange={setPurchaseDays}
             disabled={entries.length === 0}
             loading={optimizeStatus === "loading"}
           />

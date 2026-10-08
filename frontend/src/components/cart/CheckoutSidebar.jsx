@@ -1,4 +1,4 @@
-import { ChevronDown, CreditCard, Store } from "lucide-react";
+import { CalendarDays, ChevronDown, CreditCard, Store } from "lucide-react";
 import { useProfile } from "../../context/ProfileContext";
 import { CARD_OPTIONS, MEMBERSHIP_OPTIONS } from "../../utils/paymentOptions";
 import { STORES } from "../../utils/constants";
@@ -76,6 +76,40 @@ function StoresField() {
   );
 }
 
+// Más de 7 no aporta: los descuentos bancarios son por día de la semana.
+const PURCHASE_DAYS_OPTIONS = [
+  { value: 1, label: "Hoy" },
+  { value: 2, label: "Hasta mañana" },
+  { value: 3, label: "En los próximos 3 días" },
+  { value: 7, label: "Esta semana" },
+];
+
+/**
+ * Hasta cuándo puede esperar el usuario para comprar. Con más de un día, el
+ * backend optimiza cada uno con sus descuentos bancarios y elige el más barato.
+ */
+function PurchaseDaysField({ value, onChange }) {
+  return (
+    <label className="flex items-center justify-between gap-2 rounded-md border border-line px-3 py-2 text-sm">
+      <span className="flex items-center gap-2 font-semibold text-ink">
+        <CalendarDays size={16} className="shrink-0 text-brand-accent" />
+        Compro
+      </span>
+      <select
+        value={value}
+        onChange={(e) => onChange(Number(e.target.value))}
+        className="bg-transparent text-right text-ink"
+      >
+        {PURCHASE_DAYS_OPTIONS.map((option) => (
+          <option key={option.value} value={option.value}>
+            {option.label}
+          </option>
+        ))}
+      </select>
+    </label>
+  );
+}
+
 /**
  * La columna derecha del carrito: todo lo que hace falta para optimizar, en el
  * orden en que se usa, y el botón siempre a la vista (en desktop es sticky).
@@ -86,7 +120,15 @@ function StoresField() {
  * el botón fuera de la pantalla. Las membresías ya se preguntaron en el
  * onboarding (cambian los precios de la grilla); acá se pueden corregir.
  */
-export function CheckoutSidebar({ onOpenLocation, subtotalEstimado, onOptimize, disabled, loading }) {
+export function CheckoutSidebar({
+  onOpenLocation,
+  subtotalEstimado,
+  onOptimize,
+  purchaseDays,
+  onPurchaseDaysChange,
+  disabled,
+  loading,
+}) {
   const { cards, memberships, setCards, setMemberships } = useProfile();
 
   return (
@@ -116,6 +158,7 @@ export function CheckoutSidebar({ onOpenLocation, subtotalEstimado, onOptimize, 
       </details>
 
       <StoresField />
+      <PurchaseDaysField value={purchaseDays} onChange={onPurchaseDaysChange} />
 
       <EstimatedSubtotal subtotalEstimado={subtotalEstimado} />
       <OptimizeButton onClick={onOptimize} disabled={disabled} loading={loading} />

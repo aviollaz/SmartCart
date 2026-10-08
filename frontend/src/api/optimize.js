@@ -15,6 +15,7 @@ export async function optimizeCart({
   anonUserId,
   zone,
   excludedStores,
+  purchaseDays,
 }) {
   try {
     const data = await apiFetch("/optimize", {
@@ -46,6 +47,9 @@ export async function optimizeCart({
         // cobertura, que la calcula el backend con lat/lng: la causa cambia lo
         // que el optimizador le explica al usuario.
         user_excluded_stores: excludedStores ?? [],
+        // Días que el usuario puede esperar (contando hoy). El backend optimiza
+        // cada uno con sus descuentos bancarios y devuelve el más barato.
+        purchase_days: purchaseDays ?? 1,
       }),
     });
     return { ok: true, data };

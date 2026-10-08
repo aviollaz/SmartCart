@@ -2,6 +2,7 @@ import os
 import time
 import logging
 from contextlib import asynccontextmanager
+from datetime import date, datetime, timedelta, timezone
 from typing import List, Optional, Dict, Any
 from fastapi import FastAPI, Query, HTTPException, BackgroundTasks
 from fastapi.middleware.cors import CORSMiddleware
@@ -9,6 +10,7 @@ from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field, field_validator
 import psycopg
 from sentence_transformers import SentenceTransformer
+from src.bank_promos import load_bank_promos
 from src.analytics import (
     analytics_status,
     build_cart_optimized_event,
@@ -202,6 +204,11 @@ class OptimizationRequest(BaseModel):
     # separados porque la causa cambia lo que hay que decirle — "Coto no llega a
     # tu dirección" es falso para una tienda que el usuario sacó a mano.
     user_excluded_stores: List[str] = []
+    # Cuántos días, contando hoy, puede esperar el usuario para comprar. Lo único
+    # que cambia entre días son los descuentos bancarios y de membresía (son por
+    # día de la semana); precios y promos de producto son la foto de hoy. Tope 7
+    # porque de ahí en más los días de la semana se repiten.
+    purchase_days: int = Field(1, ge=1, le=7)
 
     @field_validator("user_excluded_stores")
     @classmethod
@@ -969,7 +976,8 @@ def _attach_vtex_checkout_links(cur, split: dict) -> None:
 
 
 def _enrich_successful_result(result: dict, request, cart_data: list,
-                              delivery_costs: dict, excluded_stores: list) -> None:
+                              delivery_costs: dict, excluded_stores: list,
+                              bank_promos: dict | None = None) -> None:
     """
     Cuelga del resultado óptimo todo lo que es explicación y no cálculo: cuánto
     se ahorró por elegir bien la tienda, qué alternativas hay, si conviene
@@ -1012,6 +1020,9 @@ def _enrich_successful_result(result: dict, request, cart_data: list,
                 user_cards=request.user_cards,
                 delivery_costs=delivery_costs,
                 excluded_stores=excluded_stores,
+                # Los del día elegido: sin esto, cerrar una tienda se simularía
+                # con los descuentos de hoy contra un total de otro día.
+                bank_promos=bank_promos,
                 cur=cur,
             )
 
@@ -1030,6 +1041,59 @@ def _ensure_optional_keys(result: dict) -> None:
     result.setdefault("suggestions", [])
     result.setdefault("strategic_swaps", [])
     result.setdefault("price_savings", None)
+
+
+# Argentina no tiene horario de verano, así que alcanza un offset fijo (y no hace
+# falta tzdata en Windows). Importa porque Cloud Run corre en UTC: de 21 a 24 hs
+# `date.today()` ya es mañana y se cotizarían los descuentos de otro día.
+_AR_TZ = timezone(timedelta(hours=-3))
+
+
+def _today_ar() -> date:
+    return datetime.now(_AR_TZ).date()
+
+
+def _optimize_best_day(request, cart_data: list, delivery_costs: dict,
+                       excluded_stores: list, user_excluded: list) -> tuple[dict, dict]:
+    """
+    Corre el optimizador para cada día del rango que eligió el usuario y se
+    queda con el más barato. Devuelve (resultado, descuentos de ese día).
+
+    Entre días sólo cambian los descuentos bancarios (`load_bank_promos` filtra
+    por día de la semana), así que la matriz de precios se arma una sola vez. Si
+    hoy es inviable lo es todos los días —el mínimo de compra se mide sobre el
+    subtotal, antes del descuento— y se devuelve sin recorrer el resto. Un empate
+    queda en el día más cercano: no tiene sentido hacer esperar por $0.
+    """
+    today = _today_ar()
+    flat_prices = flatten_cart_prices(cart_data, request.user_memberships)
+
+    best = best_promos = today_total = None
+    for offset in range(request.purchase_days):
+        day = today + timedelta(days=offset)
+        promos = load_bank_promos(day)
+        result = optimize_cart(
+            cart_items=cart_data,
+            user_memberships=request.user_memberships,
+            user_cards=request.user_cards,
+            delivery_costs=delivery_costs,
+            excluded_stores=excluded_stores,
+            flat_prices=flat_prices,
+            bank_promos=promos,
+            user_excluded_stores=user_excluded,
+        )
+        if result.get("status") != "success":
+            if offset == 0:
+                return result, promos
+            continue
+        if offset == 0:
+            today_total = result["total_spent_net"]
+        if best is None or result["total_spent_net"] < best["total_spent_net"]:
+            best, best_promos = result, promos
+            best["purchase_date"] = day.isoformat()
+
+    best["today_total_spent_net"] = today_total if best["purchase_date"] != today.isoformat() else None
+    return best, best_promos
 
 
 @app.post("/optimize")
@@ -1079,13 +1143,8 @@ def optimize_shopping_cart(request: OptimizationRequest, background_tasks: Backg
         user_excluded = list(request.user_excluded_stores)
         excluded_stores = list(dict.fromkeys(coverage_excluded + user_excluded))
 
-        result = optimize_cart(
-            cart_items=cart_data,
-            user_memberships=request.user_memberships,
-            user_cards=request.user_cards,
-            delivery_costs=delivery_costs,
-            excluded_stores=excluded_stores,
-            user_excluded_stores=user_excluded,
+        result, bank_promos = _optimize_best_day(
+            request, cart_data, delivery_costs, excluded_stores, user_excluded,
         )
         # `excluded_stores` conserva su semántica de siempre —sólo cobertura—
         # porque la leen LogisticsNotice ("Coto no llega a tu dirección") y el
@@ -1104,7 +1163,7 @@ def optimize_shopping_cart(request: OptimizationRequest, background_tasks: Backg
             _optional_feature(
                 "el enriquecimiento del resultado", None,
                 _enrich_successful_result,
-                result, request, cart_data, delivery_costs, excluded_stores,
+                result, request, cart_data, delivery_costs, excluded_stores, bank_promos,
             )
             _ensure_optional_keys(result)
 
