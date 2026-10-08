@@ -252,7 +252,7 @@ actualiza volviendo a correr el `gcloud run deploy` de arriba.
 
   Si el frío sigue molestando, la palanca de fondo es achicar la imagen sacando
   torch del runtime (la API sólo lo usa para codificar la query de `/search`):
-  ver `docs/TODO.md`.
+  ver issue #20.
 * **Neon suspende a los 5 minutos**, así que la primera consulta después de un
   rato tarda unos segundos más. Es la contrapartida directa de `min_size=0`.
 * **El barrido nocturno corre igual** y puede cambiar precios en medio de una

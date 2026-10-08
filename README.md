@@ -17,7 +17,7 @@ con un carrito de ejemplo* arma un carrito con el catálogo de hoy; después,
 > al volver carga el modelo de búsqueda. Después contesta al instante.
 
 <!-- ------------------------------------------------------------------------
-     PENDIENTE: grabar la demo. Ver docs/TODO.md, sección Producto.
+     PENDIENTE: grabar la demo. Ver issue #19.
 
      Cómo publicarla SIN commitear el binario: arrastrar el archivo a un
      comentario de un issue de este repo (o a un Release). GitHub lo sube a su
@@ -158,7 +158,7 @@ La mayoría del resto es Python puro y corre sin nada levantado.
 
 * [`docs/smartcart_spec.md`](docs/smartcart_spec.md) — especificación técnica y
   modelo de datos.
-* [`docs/TODO.md`](docs/TODO.md) — pendientes y riesgos conocidos, con el
+* [Issues](https://github.com/aviollaz/SmartCart/issues) — pendientes y riesgos conocidos, con el
   razonamiento de cada uno.
 * [`CLAUDE.md`](CLAUDE.md) — arquitectura etapa por etapa: qué decide cada
   módulo y por qué. Es el más detallado de los tres.

@@ -6,7 +6,7 @@ Uso:
     python -m src.scripts.medir_busqueda --modo hibrido
     python -m src.scripts.medir_busqueda --modelo paraphrase-multilingual-MiniLM-L12-v2
 
-Existe por el ítem 4 de `docs/TODO.md`, que dice "medir antes de migrar" y hasta
+Existe por el issue #18, que dice "medir antes de migrar" y hasta
 ahora no tenía con qué. Mide lo único que le importa al usuario —si los
 resultados son del tipo de producto que pidió— y no la distancia coseno, que es
 la trampa de este ítem: un modelo puede bajar todas las distancias y equivocarse

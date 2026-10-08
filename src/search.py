@@ -29,7 +29,7 @@ import re
 
 # Qué modo usa GET /search. Queda en "denso" hasta que `medir_busqueda.py
 # --modo hibrido` demuestre que el híbrido no pierde contra el actual (ver
-# docs/TODO.md, búsqueda híbrida): mismo criterio que el ítem del modelo
+# issue #24): mismo criterio que el ítem del modelo
 # multilingüe, que se midió y se descartó.
 DEFAULT_SEARCH_MODE = "denso"
 SEARCH_MODES = ("denso", "hibrido")

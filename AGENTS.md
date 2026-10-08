@@ -13,7 +13,7 @@ user build a cart via semantic search, and runs a constraint solver (Google OR-T
 cheapest way to split that cart across stores — accounting for promotions, bank/membership
 discounts, delivery costs, and each store's minimum-purchase threshold.
 
-Full technical spec: `docs/smartcart_spec.md`. Pending work and known risks: `docs/TODO.md`.
+Full technical spec: `docs/smartcart_spec.md`. Pending work and known risks: GitHub issues.
 Publishing the public demo (Cloud Run + Vercel): `ops/demo-publica.md`. Where the nightly sweep
 runs today and why: `ops/README.md`.
 

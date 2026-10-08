@@ -125,7 +125,7 @@ nunca se pisen.
 Los 51 MB son medición sobre el catálogo de **20 góndolas**: `unified_products`
 pesaba 38 MB (13 de ellos el índice HNSW) y `store_products` 5 MB, sobre 6.401 y
 8.846 filas. El techo de storage está en ~64.000 productos — pero **baja a
-~47.000 si se hace el ítem 4 del TODO** (modelo multilingüe de 768 dimensiones),
+~47.000 si se hace el issue #18** (modelo multilingüe de 768 dimensiones),
 porque el 43% de la base son embeddings.
 
 **Ojo: esos números quedaron viejos con el segundo tramo de góndolas.** El
@@ -142,7 +142,7 @@ vuelve a decidirlo cuando SmartCart tenga usuarios.
 Con 49 góndolas el barrido mismo pasa a ser un consumidor no despreciable, y es
 la razón de que las tres tiendas corran en paralelo (ver arriba): lo que se cobra
 es el wall-clock. **Medir en el panel de Neon después de la primera semana** —
-es el ítem 11 de `docs/TODO.md`, y no se puede leer desde adentro de la base.
+es el issue #29, y no se puede leer desde adentro de la base.
 
 ## Verificación
 

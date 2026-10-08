@@ -17,8 +17,7 @@ logger = logging.getLogger(__name__)
 # Única fuente del nombre del modelo. Antes vivía repetido como literal en
 # src/api.py (el que codifica la QUERY) y acá (el que codifica el catálogo) —
 # nada obligaba a que fueran el mismo, y si se separan silenciosamente las
-# distancias que devuelve /search dejan de significar nada (ver docs/TODO.md,
-# ítem 4: es el error exacto que una migración de modelo puede cometer).
+# distancias que devuelve /search dejan de significar nada (ver issue #18: es el error exacto que una migración de modelo puede cometer).
 DEFAULT_EMBEDDING_MODEL = "all-MiniLM-L6-v2"
 
 

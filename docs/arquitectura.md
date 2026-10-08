@@ -8,7 +8,7 @@
 > `docs/smartcart_spec.md` es distinto: es la propuesta técnica original
 > (arquitectura pensada, roadmap por semanas, un frontend en Streamlit que ya
 > no existe) y se conserva como documento histórico, no como spec al día.
-> `docs/TODO.md` es el backlog razonado — este documento no lo repite.
+> El backlog razonado vive en los [issues de GitHub](https://github.com/aviollaz/SmartCart/issues) — este documento no lo repite.
 
 ---
 
@@ -306,7 +306,7 @@ El SQL vive en `src/search.py`, que también usa `medir_busqueda.py`, y tiene
 un segundo modo **híbrido**: suma una mitad léxica (tsvector sobre
 `unified_products.name_tsv`) y fusiona las dos listas por Reciprocal Rank
 Fusion. Está apagado (`DEFAULT_SEARCH_MODE = "denso"`) hasta que la medición
-demuestre que no pierde contra el denso (`docs/TODO.md`, ítem 5).
+demuestre que no pierde contra el denso (issue #24).
 
 **Optimización (`POST /optimize`):** ver 3.6.1 más abajo — es el corazón del
 proyecto y tiene su propia etapa (`flattener.py` + `optimizer.py`).
@@ -523,4 +523,4 @@ No hay autenticación, no hay backup de datos de usuario (carrito e historial
 viven sólo en `localStorage` del navegador), y Coto no expone un costo de
 envío real por dirección para un cliente sin sesión (se usa el tarifario
 publicado como estimación). El backlog completo, con el razonamiento detrás
-de cada ítem pendiente, está en [`docs/TODO.md`](TODO.md).
+de cada ítem pendiente, está en los [issues de GitHub](https://github.com/aviollaz/SmartCart/issues).

@@ -234,7 +234,7 @@ jobs:
 
       # El modelo de sentence-transformers (~90 MB) se baja de HuggingFace la
       # primera vez que se usa. Sin cache eso se repite todas las noches. La clave
-      # incluye el nombre del modelo para que cambiarlo (ítem 4 del TODO: modelo
+      # incluye el nombre del modelo para que cambiarlo (issue #18: modelo
       # multilingüe) invalide el cache solo, en vez de servir el viejo en silencio.
       # Sólo hace falta acá: los jobs de tienda corren con --skip-embeddings.
       - name: Cachear el modelo de embeddings
