@@ -102,6 +102,17 @@ def test_inviable_hoy_no_recorre_los_demas_dias(monkeypatch):
     assert calls == [LUNES]
 
 
+def test_el_tope_de_supermercados_rige_en_las_dos_corridas(monkeypatch):
+    vistos = []
+    real = api.optimize_cart
+    monkeypatch.setattr(api, "optimize_cart",
+                        lambda **k: vistos.append(k["max_stores"]) or real(**k))
+    request = OptimizationRequest(cart=CART, user_cards=["galicia", "macro"],
+                                  purchase_days=7, max_stores=2)
+    _optimize_purchase_window(request, CART, DELIVERY, [], [])
+    assert vistos == [2, 2]
+
+
 @pytest.mark.parametrize("days", [0, 8])
 def test_rango_fuera_de_limites_es_422(days):
     with pytest.raises(ValidationError):

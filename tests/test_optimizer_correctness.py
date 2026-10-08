@@ -79,14 +79,16 @@ def _cart(*uids, quantity=1):
     return [{"unified_id": uid, "quantity": quantity} for uid in uids]
 
 
-def _brute_force_optimum(matrix, min_spend, delivery, user_cards):
+def _brute_force_optimum(matrix, min_spend, delivery, user_cards, max_stores=None):
     """
     Calcula el mínimo real enumerando todas las asignaciones posibles.
 
     Replica la aritmética entera en centavos del solver (incluida la división
     truncada del descuento bancario) para poder comparar de forma exacta.
     Devuelve (costo_óptimo_en_centavos, cantidad_de_tiendas_activas) o
-    (None, None) si ninguna asignación es factible.
+    (None, None) si ninguna asignación es factible. `max_stores` descarta las
+    asignaciones que abren más tiendas que el tope, igual que la restricción
+    del solver.
     """
     uids = list(matrix)
     options = [[s for s in matrix[uid]] for uid in uids]
@@ -101,6 +103,8 @@ def _brute_force_optimum(matrix, min_spend, delivery, user_cards):
         active = {s for s in subtotals if subtotals[s] > 0}
         if any(subtotals[s] < int(min_spend[s] * 100) for s in active):
             continue  # no llega al mínimo de compra
+        if max_stores is not None and len(active) > max_stores:
+            continue
 
         total = 0
         for store in min_spend:
@@ -589,8 +593,9 @@ ESCENARIOS = [
 ]
 
 
+@pytest.mark.parametrize("max_stores", [None, 1])
 @pytest.mark.parametrize("matrix,cards", ESCENARIOS)
-def test_coincide_con_el_optimo_por_fuerza_bruta(fake_prices, matrix, cards):
+def test_coincide_con_el_optimo_por_fuerza_bruta(fake_prices, matrix, cards, max_stores):
     """
     Enumera todas las asignaciones posibles y verifica que el solver haya
     encontrado exactamente el mínimo, no solo una solución razonable.
@@ -604,9 +609,10 @@ def test_coincide_con_el_optimo_por_fuerza_bruta(fake_prices, matrix, cards):
         user_cards=cards,
         min_spend_limits=min_spend,
         delivery_costs=delivery,
+        max_stores=max_stores,
     )
 
-    expected, expected_stores = _brute_force_optimum(matrix, min_spend, delivery, cards)
+    expected, expected_stores = _brute_force_optimum(matrix, min_spend, delivery, cards, max_stores)
 
     if expected is None:
         assert result["status"] == "infeasible"
@@ -617,3 +623,49 @@ def test_coincide_con_el_optimo_por_fuerza_bruta(fake_prices, matrix, cards):
         f"el solver devolvió {result['total_spent_net']} pero el óptimo real es {expected / 100}"
     )
     assert len(result["split"]) == expected_stores
+
+
+# --------------------------------------------------------------------------
+# Tope de supermercados (`max_stores`)
+# --------------------------------------------------------------------------
+
+def test_tope_de_una_tienda_compra_todo_en_la_mas_barata_para_el_carrito(fake_prices):
+    """
+    Sin tope conviene partir (el ahorro por producto supera el segundo envío);
+    con tope 1 el carrito entero va a una sola tienda y se paga la diferencia.
+    """
+    fake_prices({
+        "prod_a": {COTO: 10000, DIA: 30000},
+        "prod_b": {COTO: 30000, DIA: 12000},
+    })
+    kwargs = dict(min_spend_limits={COTO: 5000, DIA: 5000},
+                  delivery_costs={COTO: 3000, DIA: 3000})
+
+    libre = optimize_cart(_cart("prod_a", "prod_b"), **kwargs)
+    assert len(libre["split"]) == 2
+    assert libre["total_spent_net"] == pytest.approx(28000.0)
+
+    topeado = optimize_cart(_cart("prod_a", "prod_b"), max_stores=1, **kwargs)
+    assert topeado["status"] == "success"
+    # Coto: 10.000 + 30.000 + 3.000 = 43.000 contra Día: 30.000 + 12.000 + 3.000 = 45.000
+    assert list(topeado["split"]) == [COTO]
+    assert topeado["total_spent_net"] == pytest.approx(43000.0)
+
+
+def test_tope_inviable_lo_dice_en_vez_de_pedir_mas_productos(fake_prices):
+    """
+    Un producto exclusivo de cada tienda obliga a abrir las dos: con tope 1 no
+    hay solución, y el mensaje tiene que apuntar al tope, no al mínimo.
+    """
+    fake_prices({
+        "prod_a": {COTO: 10000},
+        "prod_b": {DIA: 10000},
+    })
+    result = optimize_cart(
+        _cart("prod_a", "prod_b"),
+        min_spend_limits={COTO: 5000, DIA: 5000},
+        delivery_costs={COTO: 3000, DIA: 3000},
+        max_stores=1,
+    )
+    assert result["status"] == "infeasible"
+    assert "como máximo 1 supermercado" in result["message"]

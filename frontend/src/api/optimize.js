@@ -16,6 +16,7 @@ export async function optimizeCart({
   zone,
   excludedStores,
   purchaseDays,
+  maxStores,
 }) {
   try {
     const data = await apiFetch("/optimize", {
@@ -50,6 +51,8 @@ export async function optimizeCart({
         // Días que el usuario puede esperar (contando hoy). El backend optimiza
         // cada uno con sus descuentos bancarios y devuelve el más barato.
         purchase_days: purchaseDays ?? 1,
+        // Tope de supermercados del split; null = sin límite.
+        max_stores: maxStores ?? null,
       }),
     });
     return { ok: true, data };

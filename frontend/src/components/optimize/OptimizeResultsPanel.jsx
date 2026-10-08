@@ -1,6 +1,7 @@
 import { ChevronDown, Lightbulb } from "lucide-react";
 import { useCart } from "../../context/CartContext";
 import { formatPrice } from "../../utils/formatters";
+import { FewerStoresCard } from "./FewerStoresCard";
 import { LogisticsNotice } from "./LogisticsNotice";
 import { SavingsPanel } from "./SavingsPanel";
 import { SuggestionsList } from "./SuggestionsList";
@@ -13,7 +14,7 @@ import { StrategicSwapCard } from "./StrategicSwapCard";
  * reemplazos más baratos van plegados al final: sirven (aceptar uno vuelve a
  * optimizar), pero abiertos ocupaban media pantalla antes del botón de compra.
  */
-export function OptimizeResultsPanel({ result, onAcceptSuggestion, onApplyStrategicSwap }) {
+export function OptimizeResultsPanel({ result, maxStores, onAcceptSuggestion, onApplyStrategicSwap, onChooseMaxStores }) {
   const { items } = useCart();
   const splitEntries = Object.entries(result.split || {});
 
@@ -28,6 +29,7 @@ export function OptimizeResultsPanel({ result, onAcceptSuggestion, onApplyStrate
     <div className="flex flex-col gap-4">
       <SavingsPanel result={result} cartItems={items} />
       <StrategicSwapCard suggestion={bestStrategicSwap} onApply={onApplyStrategicSwap} />
+      <FewerStoresCard options={result.fewer_stores_options} maxStores={maxStores} onChoose={onChooseMaxStores} />
       <LogisticsNotice result={result} />
 
       <div>

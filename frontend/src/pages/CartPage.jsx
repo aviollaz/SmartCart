@@ -26,6 +26,8 @@ export function CartPage({ onOpenLocation }) {
     location,
     anon_user_id,
     excludedStores,
+    maxStores,
+    setMaxStores,
     setStoreCoverage,
   } = useProfile();
   // Sólo el lado de escritura: `entries` de acá abajo ya nombra a los ítems del
@@ -73,6 +75,7 @@ export function CartPage({ onOpenLocation }) {
         zone: location?.zone,
         excludedStores,
         purchaseDays,
+        maxStores,
       });
 
       if (response.ok) {
@@ -119,7 +122,7 @@ export function CartPage({ onOpenLocation }) {
       setOptimizeStatus("error");
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [items, memberships, cards, deliveryCosts, coordinates, anon_user_id, location, excludedStores, purchaseDays, recordPurchase]);
+  }, [items, memberships, cards, deliveryCosts, coordinates, anon_user_id, location, excludedStores, purchaseDays, maxStores, recordPurchase]);
 
   useEffect(() => {
     if (reoptimizeRef.current) {
@@ -168,6 +171,26 @@ export function CartPage({ onOpenLocation }) {
     },
     [items, replaceItems]
   );
+
+  // Elegir "comprar en menos súper" desde el resultado cambia el perfil, no el
+  // carrito, así que el efecto de `items` no se entera: se marca acá y el
+  // efecto de abajo re-optimiza cuando `runOptimize` ya trae el tope nuevo.
+  // Cambiarlo desde el sidebar no re-optimiza solo, igual que deshabilitar una
+  // tienda: ahí el usuario está configurando y aprieta "Optimizar" después.
+  const maxStoresChosenRef = useRef(false);
+  const handleChooseMaxStores = useCallback(
+    (value) => {
+      maxStoresChosenRef.current = true;
+      setMaxStores(value);
+    },
+    [setMaxStores]
+  );
+  useEffect(() => {
+    if (!maxStoresChosenRef.current) return;
+    maxStoresChosenRef.current = false;
+    runOptimize();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [maxStores]);
 
   const handleUndo = useCallback(() => {
     if (!undoSnapshot) return;
@@ -261,8 +284,10 @@ export function CartPage({ onOpenLocation }) {
           {optimizeStatus === "success" && optimizeResult && (
             <OptimizeResultsPanel
               result={optimizeResult}
+              maxStores={maxStores}
               onAcceptSuggestion={handleAcceptSuggestion}
               onApplyStrategicSwap={handleApplyStrategicSwap}
+              onChooseMaxStores={handleChooseMaxStores}
             />
           )}
         </div>
