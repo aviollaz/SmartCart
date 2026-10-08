@@ -188,7 +188,10 @@ def optimize_cart(cart_items, user_memberships=None, user_cards=None, min_spend_
                     "bank_discount": {
                         "card": applied_bank_discounts_info[j]["card"],
                         "amount": round(disc, 2),
-                        "description": applied_bank_discounts_info[j].get("description")
+                        "description": applied_bank_discounts_info[j].get("description"),
+                        # Qué día rige, cuando src/api.py le pasa las promos de
+                        # varios días juntas (rango de compra); si no, None.
+                        "date": applied_bank_discounts_info[j].get("date"),
                     } if j in applied_bank_discounts_info else None,
                     "store_total": round(total, 2)
                 }

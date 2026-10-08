@@ -31,6 +31,21 @@ export function StoreBreakdownCard({ storeId, checkout, cartItems }) {
           <p className="text-xs text-ink-muted">
             {checkout.products.length} producto{checkout.products.length === 1 ? "" : "s"}
             {units !== checkout.products.length && ` · ${units} unidades`}
+            {/* Sólo si conviene comprar esta tienda otro día del rango (por su
+                descuento bancario). "T00:00" para que la fecha ISO no se lea
+                en UTC y se corra un día. */}
+            {checkout.purchase_date && (
+              <>
+                {" · "}
+                <span className="font-semibold text-ink">
+                  comprar el{" "}
+                  {new Date(`${checkout.purchase_date}T00:00`).toLocaleDateString("es-AR", {
+                    weekday: "long",
+                    day: "numeric",
+                  })}
+                </span>
+              </>
+            )}
           </p>
         </div>
         <p className="text-xl font-bold text-ink">{formatPrice(checkout.store_total)}</p>

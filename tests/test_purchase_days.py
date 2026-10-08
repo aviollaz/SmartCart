@@ -1,5 +1,5 @@
 """
-Elegir el día más barato dentro del rango de compra (issue #17).
+Rango de compra: cada tienda en su mejor día (issue #17).
 
 Puro Python: la matriz de precios y los descuentos bancarios se fabrican, y
 `optimize_cart` corre de verdad. Lo único que cambia entre días son los
@@ -11,68 +11,93 @@ import pytest
 from pydantic import ValidationError
 
 import src.api as api
-from src.api import OptimizationRequest, _optimize_best_day
+from src.api import OptimizationRequest, _optimize_purchase_window
 
-COTO = "coto_online"
+COTO, DIA = "coto_online", "dia_online"
 LUNES = date(2026, 10, 5)
-DELIVERY = {COTO: 3000, "dia_online": 3000, "carrefour_online": 3500}
-GALICIA_JUEVES = {COTO: [{"card": "galicia", "discount_pct": 20, "cap": 5000,
-                          "description": "20% con Galicia", "is_membership": False}]}
+DELIVERY = {COTO: 3000, DIA: 3000, "carrefour_online": 3500}
+CART = [{"unified_id": "prod_a", "quantity": 1}, {"unified_id": "prod_b", "quantity": 1}]
+
+
+def _promo(card, pct, cap):
+    return {"card": card, "discount_pct": pct, "cap": cap,
+            "description": f"{pct}% con {card}", "is_membership": False}
+
+
+# Galicia en Coto los jueves, Macro en Día los martes.
+PROMOS_POR_DIA = {3: {COTO: [_promo("galicia", 20, 5000)]},
+                  1: {DIA: [_promo("macro", 10, 5000)]}}
+
+
+def _cell(cost):
+    return {"total_cost": cost, "effective_unit_price": cost,
+            "applied_promo_id": None, "promo_description": ""}
 
 
 @pytest.fixture(autouse=True)
 def _mundo_fijo(monkeypatch):
-    # Un producto de $20.000 que sólo vende Coto: supera su mínimo de compra y
-    # deja una sola asignación posible, así el total depende sólo del descuento.
-    flat = {"prod_a": {COTO: {"total_cost": 20000, "effective_unit_price": 20000,
-                              "applied_promo_id": None, "promo_description": ""}}}
+    # Cada producto lo vende una sola tienda y supera su mínimo: el split es
+    # fijo (Coto + Día) y el total depende sólo de los descuentos.
+    flat = {"prod_a": {COTO: _cell(25000)}, "prod_b": {DIA: _cell(25000)}}
     monkeypatch.setattr(api, "flatten_cart_prices", lambda *a, **k: flat)
     monkeypatch.setattr(api, "_today_ar", lambda: LUNES)
     monkeypatch.setattr(api, "load_bank_promos",
-                        lambda day: GALICIA_JUEVES if day.weekday() == 3 else {})
+                        lambda day: PROMOS_POR_DIA.get(day.weekday(), {}))
 
 
-def _run(purchase_days, cards=("galicia",)):
-    request = OptimizationRequest(cart=[{"unified_id": "prod_a", "quantity": 1}],
-                                  user_cards=list(cards), purchase_days=purchase_days)
-    return _optimize_best_day(request, [{"unified_id": "prod_a", "quantity": 1}],
-                              DELIVERY, [], [])
+def _run(purchase_days, cards=("galicia", "macro"), excluded=()):
+    request = OptimizationRequest(cart=CART, user_cards=list(cards), purchase_days=purchase_days)
+    result, _ = _optimize_purchase_window(request, CART, DELIVERY, list(excluded), list(excluded))
+    return result
+
+
+SIN_DESCUENTO = 25000 * 2 + 3000 * 2
 
 
 def test_un_solo_dia_es_hoy():
-    result, _ = _run(1)
-    assert result["purchase_date"] == "2026-10-05"
+    result = _run(1)
+    assert result["total_spent_net"] == pytest.approx(SIN_DESCUENTO)
     assert result["today_total_spent_net"] is None
-    assert result["total_spent_net"] == pytest.approx(23000)
+    assert all(not c.get("purchase_date") for c in result["split"].values())
 
 
-def test_elige_el_dia_con_descuento_dentro_del_rango():
-    result, promos = _run(7)
-    assert result["purchase_date"] == "2026-10-08"  # jueves
-    assert result["total_spent_net"] == pytest.approx(19000)  # 20.000 + 3.000 − 4.000
-    assert result["today_total_spent_net"] == pytest.approx(23000)
-    assert promos is GALICIA_JUEVES
+def test_cada_tienda_en_su_dia():
+    result = _run(7)
+    assert result["split"][COTO]["purchase_date"] == "2026-10-08"  # jueves
+    assert result["split"][DIA]["purchase_date"] == "2026-10-06"   # martes
+    assert result["total_spent_net"] == pytest.approx(SIN_DESCUENTO - 5000 - 2500)
+    assert result["today_total_spent_net"] == pytest.approx(SIN_DESCUENTO)
 
 
-def test_rango_que_no_llega_al_dia_con_descuento_queda_hoy():
-    result, _ = _run(3)  # lunes a miércoles
-    assert result["purchase_date"] == "2026-10-05"
+def test_rango_corto_solo_alcanza_a_una_tienda():
+    result = _run(2)  # lunes y martes
+    assert result["split"][DIA]["purchase_date"] == "2026-10-06"
+    assert result["split"][COTO]["purchase_date"] is None
+    assert result["total_spent_net"] == pytest.approx(SIN_DESCUENTO - 2500)
+
+
+def test_sin_tarjetas_queda_todo_hoy():
+    result = _run(7, cards=())
     assert result["today_total_spent_net"] is None
+    assert all(not c.get("purchase_date") for c in result["split"].values())
 
 
-def test_sin_la_tarjeta_todos_los_dias_empatan_y_gana_hoy():
-    result, _ = _run(7, cards=())
-    assert result["purchase_date"] == "2026-10-05"
+def test_nunca_peor_que_comprar_todo_hoy(monkeypatch):
+    # Hoy 20% sin tope; el martes 30% con tope de $500. optimize_cart se queda
+    # con el de mayor %, que rinde menos: tiene que ganar comprar hoy.
+    monkeypatch.setattr(api, "load_bank_promos", lambda day: {
+        0: {COTO: [_promo("galicia", 20, 100_000_000)]},
+        1: {COTO: [_promo("galicia", 30, 500)]},
+    }.get(day.weekday(), {}))
+    result = _run(7)
+    assert result["total_spent_net"] == pytest.approx(SIN_DESCUENTO - 5000)
     assert result["today_total_spent_net"] is None
 
 
 def test_inviable_hoy_no_recorre_los_demas_dias(monkeypatch):
     calls = []
     monkeypatch.setattr(api, "load_bank_promos", lambda day: calls.append(day) or {})
-    request = OptimizationRequest(cart=[{"unified_id": "prod_a", "quantity": 1}], purchase_days=7)
-    # Coto excluida: el producto se queda sin tienda.
-    result, _ = _optimize_best_day(request, [{"unified_id": "prod_a", "quantity": 1}],
-                                   DELIVERY, [COTO], [COTO])
+    result = _run(7, excluded=[COTO])  # prod_a se queda sin tienda
     assert result["status"] == "infeasible"
     assert calls == [LUNES]
 

@@ -23,17 +23,12 @@ export function SavingsPanel({ result, cartItems }) {
         <p className="text-2xl font-bold text-brand-violet-700">
           Total {formatPrice(result.total_spent_net)}
         </p>
-        {/* Sólo cuando otro día del rango sale más barato que hoy (el backend
-            manda today_total_spent_net en null si no). El "T00:00" evita que
-            la fecha ISO se interprete en UTC y se corra un día. */}
+        {/* Sólo cuando comprar alguna tienda otro día del rango sale más
+            barato (el backend manda today_total_spent_net en null si no). Qué
+            día va cada una lo dice su tarjeta en StoreBreakdownCard. */}
         {result.today_total_spent_net != null && (
           <p className="mt-1 text-sm font-semibold text-ink">
-            Comprando el{" "}
-            {new Date(`${result.purchase_date}T00:00`).toLocaleDateString("es-AR", {
-              weekday: "long",
-              day: "numeric",
-            })}{" "}
-            · {formatPrice(result.today_total_spent_net - result.total_spent_net)} menos que hoy
+            {formatPrice(result.today_total_spent_net - result.total_spent_net)} menos que comprando todo hoy
           </p>
         )}
       </div>

@@ -1053,26 +1053,28 @@ def _today_ar() -> date:
     return datetime.now(_AR_TZ).date()
 
 
-def _optimize_best_day(request, cart_data: list, delivery_costs: dict,
-                       excluded_stores: list, user_excluded: list) -> tuple[dict, dict]:
+def _optimize_purchase_window(request, cart_data: list, delivery_costs: dict,
+                              excluded_stores: list, user_excluded: list) -> tuple[dict, dict]:
     """
-    Corre el optimizador para cada día del rango que eligió el usuario y se
-    queda con el más barato. Devuelve (resultado, descuentos de ese día).
+    Optimiza el carrito dejando que cada tienda se compre en su mejor día del
+    rango. Devuelve (resultado, descuentos con que se resolvió).
 
-    Entre días sólo cambian los descuentos bancarios (`load_bank_promos` filtra
-    por día de la semana), así que la matriz de precios se arma una sola vez. Si
-    hoy es inviable lo es todos los días —el mínimo de compra se mide sobre el
-    subtotal, antes del descuento— y se devuelve sin recorrer el resto. Un empate
-    queda en el día más cercano: no tiene sentido hacer esperar por $0.
+    Cada tienda es un pedido aparte —su envío, su mínimo— y entre días sólo
+    cambia su descuento bancario, así que no hace falta comprar todo junto: se
+    juntan las promos de todos los días del rango y el solver le da a cada
+    tienda la mejor. La fecha viaja en la promo y vuelve en `bank_discount`.
+
+    Se compara contra comprar todo hoy y gana sólo si es más barato, porque
+    `optimize_cart` toma la PRIMERA promo que matchea la tarjeta (mayor %), no
+    la que más rinde: un 30% con tope chico de otro día puede ahorrar menos que
+    el 20% sin tope de hoy. Si hoy es inviable lo es todos los días —el mínimo
+    se mide sobre el subtotal, antes del descuento— y se devuelve sin más.
     """
     today = _today_ar()
     flat_prices = flatten_cart_prices(cart_data, request.user_memberships)
 
-    best = best_promos = today_total = None
-    for offset in range(request.purchase_days):
-        day = today + timedelta(days=offset)
-        promos = load_bank_promos(day)
-        result = optimize_cart(
+    def run(promos):
+        return optimize_cart(
             cart_items=cart_data,
             user_memberships=request.user_memberships,
             user_cards=request.user_cards,
@@ -1082,18 +1084,32 @@ def _optimize_best_day(request, cart_data: list, delivery_costs: dict,
             bank_promos=promos,
             user_excluded_stores=user_excluded,
         )
-        if result.get("status") != "success":
-            if offset == 0:
-                return result, promos
-            continue
-        if offset == 0:
-            today_total = result["total_spent_net"]
-        if best is None or result["total_spent_net"] < best["total_spent_net"]:
-            best, best_promos = result, promos
-            best["purchase_date"] = day.isoformat()
 
-    best["today_total_spent_net"] = today_total if best["purchase_date"] != today.isoformat() else None
-    return best, best_promos
+    today_promos = load_bank_promos(today)
+    today_result = run(today_promos)
+    today_result["today_total_spent_net"] = None
+    if today_result.get("status") != "success" or request.purchase_days == 1:
+        return today_result, today_promos
+
+    merged: dict[str, list[dict]] = {}
+    for offset in range(request.purchase_days):
+        day = today + timedelta(days=offset)
+        for store, promos in load_bank_promos(day).items():
+            merged.setdefault(store, []).extend({**p, "date": day.isoformat()} for p in promos)
+    # Mismo orden que load_bank_promos. El sort es estable con reverse=True y
+    # los días entraron en orden, así que un empate queda en el día más cercano.
+    for promos in merged.values():
+        promos.sort(key=lambda p: (p["discount_pct"], p["cap"]), reverse=True)
+
+    result = run(merged)
+    if result.get("status") != "success" or result["total_spent_net"] >= today_result["total_spent_net"]:
+        return today_result, today_promos
+
+    for checkout in result["split"].values():
+        date_ = (checkout.get("bank_discount") or {}).get("date")
+        checkout["purchase_date"] = date_ if date_ != today.isoformat() else None
+    result["today_total_spent_net"] = today_result["total_spent_net"]
+    return result, merged
 
 
 @app.post("/optimize")
@@ -1143,7 +1159,7 @@ def optimize_shopping_cart(request: OptimizationRequest, background_tasks: Backg
         user_excluded = list(request.user_excluded_stores)
         excluded_stores = list(dict.fromkeys(coverage_excluded + user_excluded))
 
-        result, bank_promos = _optimize_best_day(
+        result, bank_promos = _optimize_purchase_window(
             request, cart_data, delivery_costs, excluded_stores, user_excluded,
         )
         # `excluded_stores` conserva su semántica de siempre —sólo cobertura—
