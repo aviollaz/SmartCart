@@ -5,11 +5,13 @@ import { SearchBar } from "./SearchBar";
 import { MegaMenu } from "../megamenu/MegaMenu";
 import { useCart } from "../../context/CartContext";
 import { useProfile } from "../../context/ProfileContext";
-import { formatShortAddress } from "../../utils/formatters";
+import { useCartProductsContext } from "../../context/CartProductsContext";
+import { formatPrice, formatShortAddress } from "../../utils/formatters";
 
 export function Header({ onOpenCart, onOpenLocation, onOpenMemberships }) {
   const [isMegaMenuOpen, setMegaMenuOpen] = useState(false);
   const { itemCount } = useCart();
+  const { subtotalEstimado } = useCartProductsContext();
   const { location, memberships } = useProfile();
 
   // Reemplaza al viejo "Envío a {zona}", que linkeaba al carrito: la zona es un
@@ -84,7 +86,11 @@ export function Header({ onOpenCart, onOpenLocation, onOpenMemberships }) {
             className="relative ml-auto flex shrink-0 items-center gap-2 rounded-full border border-brand-violet-700 px-3 py-2 text-sm font-medium text-brand-violet-700 hover:bg-brand-violet-100 sm:px-4 md:ml-0"
           >
             <ShoppingCart size={18} aria-hidden="true" />
-            <span className="hidden sm:inline">Carrito</span>
+            {/* El mismo subtotal estimado del carrito (CartProductsContext),
+                visible mientras se eligen productos sin abrir el drawer. */}
+            <span className="hidden sm:inline">
+              {subtotalEstimado !== null ? `~${formatPrice(subtotalEstimado)}` : "Carrito"}
+            </span>
             {itemCount > 0 && (
               <span className="absolute -right-2 -top-2 flex h-5 min-w-5 items-center justify-center rounded-full bg-brand-accent px-1 text-xs font-semibold text-white">
                 {itemCount}

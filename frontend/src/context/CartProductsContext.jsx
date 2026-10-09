@@ -22,11 +22,14 @@ export function CartProductsProvider({ children }) {
   const { items } = useCart();
   const cartProducts = useCartProducts(items);
 
-  // Piso del carrito, no el total. Suma el precio más barato de cada producto
-  // por separado —posiblemente de tres tiendas distintas—, sin envíos, sin
-  // descuentos bancarios y sin las promos por cantidad, que /optimize sí
-  // aplica. Es `null` mientras no haya precio para TODAS las líneas: un
-  // subtotal calculado sobre la mitad del carrito es peor que no mostrarlo.
+  // Piso del carrito, no el total: la suma de los precios que muestran las
+  // cards y las líneas (el más barato de cada producto). /optimize suma el
+  // envío y puede mover un producto a una tienda más cara para llegar a un
+  // mínimo de compra, así que el total final sale igual o algo mayor. No es
+  // un techo (el precio de la tienda más cara) a propósito: un total que no
+  // coincide con los precios que tiene al lado parece un error.
+  // Es `null` mientras no haya precio para TODAS las líneas: un subtotal
+  // calculado sobre la mitad del carrito es peor que no mostrarlo.
   const subtotalEstimado = useMemo(() => {
     const entries = Object.entries(items);
     if (entries.length === 0) return null;
