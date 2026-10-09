@@ -17,6 +17,7 @@ from src.substitutions import (
     MAX_ALTERNATIVES_PER_PRODUCT,
     build_semantic_suggestions,
     comparable_candidates,
+    equivalent_quantity,
     format_size,
     is_comparable,
     same_pack_format,
@@ -210,9 +211,9 @@ def test_la_query_de_vecinos_filtra_por_stock_y_tienda():
 # build_semantic_suggestions
 # --------------------------------------------------------------------------
 
-def test_sugerencia_basica_con_prorrateo():
-    """900 ml a $900 contra 1000 ml a $500 -> el prorrateado sale $450."""
-    ancla = _row("prod_a", "Aceite Girasol Marca A 900 Ml", 900.0, "ml")
+def test_sugerencia_basica_ahorro_real():
+    """1 x 950 ml a $900 contra 1 x 1 L a $500: el ahorro es la diferencia real."""
+    ancla = _row("prod_a", "Aceite Girasol Marca A 950 Ml", 950.0, "ml")
     barato = _row("prod_b", "Aceite Girasol Marca B 1 Lt", 1000.0, "ml")
 
     cur = FakeCursor({"prod_a": ancla}, {"prod_a": [barato]})
@@ -224,15 +225,60 @@ def test_sugerencia_basica_con_prorrateo():
 
     [grupo] = grupos
     assert grupo["original_uid"] == "prod_a"
+    assert grupo["original_quantity"] == 1
+    assert grupo["original_size"] == "950 ml"
     [alt] = grupo["alternatives"]
     assert alt["suggested_uid"] == "prod_b"
-    assert alt["savings"] == pytest.approx(900.0 - 450.0)
-    # La frase describe CÓMO se calculó el ahorro (prorrateado al tamaño del
-    # ancla), no al producto sugerido: pegada detrás del nombre del reemplazo se
-    # leía al revés, como si el de 500 ml midiera 900.
-    assert alt["metric_info"] == (
-        "Ahorro calculado a igual cantidad (900 ml, el tamaño del original)"
+    assert alt["suggested_quantity"] == 1
+    assert alt["suggested_size"] == "1 L"
+    assert alt["savings"] == pytest.approx(400.0)
+
+
+def test_cambia_la_cantidad_para_llevar_lo_mismo():
+    """3 x 1 L -> 2 x 1,5 L: misma cantidad total, cotizado a 2 unidades."""
+    ancla = _row("prod_a", "Gaseosa Cola 1 Lt", 1000.0, "ml")
+    grande = _row("prod_b", "Gaseosa Cola 1.5 Lt", 1500.0, "ml")
+
+    cur = FakeCursor({"prod_a": ancla}, {"prod_a": [grande]})
+    [grupo] = build_semantic_suggestions(
+        cur, _cart(("prod_a", 3)),
+        target_stores=STORES,
+        flatten=_flatten_from({"prod_a": 2000.0, "prod_b": 2000.0}),
     )
+
+    [alt] = grupo["alternatives"]
+    assert alt["suggested_quantity"] == 2
+    assert alt["savings"] == pytest.approx(3 * 2000.0 - 2 * 2000.0)
+
+
+@pytest.mark.parametrize("peso_cand", [1500.0, 700.0])
+def test_sin_cantidad_equivalente_no_sugiere(peso_cand):
+    """
+    1 x 1 L contra 1,5 L (o 700 ml): más barato por litro, pero no hay una
+    cantidad entera que lleve lo mismo, así que el ticket cambiaría.
+    """
+    ancla = _row("prod_a", "Gaseosa Cola 1 Lt", 1000.0, "ml")
+    otro = _row("prod_b", "Gaseosa Cola Otra", peso_cand, "ml")
+
+    cur = FakeCursor({"prod_a": ancla}, {"prod_a": [otro]})
+    grupos = build_semantic_suggestions(
+        cur, _cart(("prod_a", 1)),
+        target_stores=STORES,
+        flatten=_flatten_from({"prod_a": 5000.0, "prod_b": 100.0}),
+    )
+
+    assert grupos == []
+
+
+@pytest.mark.parametrize("orig, qty, cand, esperado", [
+    ((1000.0, "ml"), 3, (1500.0, "ml"), 2),
+    ((1000.0, "ml"), 3, (500.0, "ml"), 6),
+    ((1000.0, "ml"), 1, (1500.0, "ml"), None),
+    ((1000.0, "ml"), 1, (950.0, "ml"), 1),     # 5%: dentro de la tolerancia
+    ((1.0, "un"), 4, (1.0, "un"), 4),          # sin tamaño: misma cantidad
+])
+def test_cantidad_equivalente(orig, qty, cand, esperado):
+    assert equivalent_quantity(orig, qty, cand) == esperado
 
 
 def test_pack_incompatible_no_llega_a_sugerencia():
@@ -306,11 +352,12 @@ def test_los_grupos_salen_ordenados_por_su_mejor_ahorro():
     assert [g["original_uid"] for g in grupos] == ["prod_caro", "prod_barato"]
 
 
-def test_candidatos_se_cotizan_a_la_cantidad_del_ancla():
+def test_candidatos_se_cotizan_a_su_cantidad_equivalente():
     """
     Las promos condicionales (3x2, 2da al 50%) recién se activan por encima de su
     umbral, así que un candidato cotizado a q=1 cuando el usuario lleva 3 se
-    valora con un precio que no es el que va a pagar.
+    valora con un precio que no es el que va a pagar. Mismo tamaño: misma
+    cantidad.
     """
     ancla = _row("prod_a", "Aceite Marca A 1 Lt", 1000.0, "ml")
     vecino = _row("prod_b", "Aceite Marca B 1 Lt", 1000.0, "ml")

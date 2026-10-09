@@ -38,8 +38,7 @@ logger = logging.getLogger(__name__)
 
 # Banda de tamaño aceptable para un reemplazo, relativa al original. Sin esto la
 # comparación "ahorra" achicando el producto: 500 ml siempre sale menos que 1 L y
-# no es el mismo mandado. También es lo que acota el prorrateo por peso de
-# `build_semantic_suggestions` a una extrapolación de a lo sumo 2x.
+# no es el mismo mandado.
 MIN_WEIGHT_RATIO = 0.5
 MAX_WEIGHT_RATIO = 2.0
 
@@ -57,7 +56,13 @@ CANDIDATES_PER_ANCHOR = 5
 # original. Por debajo de esto la diferencia se la come el ruido de tamaños y
 # promos, y una lista larga de ahorros triviales le resta credibilidad a los que
 # valen la pena.
-MIN_PROPORTIONAL_SAVINGS_PCT = 0.20
+MIN_SAVINGS_PCT = 0.20
+
+# Cuánto puede alejarse la cantidad total del reemplazo (unidades × tamaño) de
+# la que pidió el usuario. 3 x 1 L se puede cambiar por 2 x 1,5 L o 6 x 500 ml,
+# pero 1 x 1 L no por 1 x 1,5 L: eso es llevar más, y el ticket sube aunque el
+# litro salga más barato.
+QUANTITY_TOLERANCE = 0.10
 
 # Tope de alternativas por producto del carrito.
 MAX_ALTERNATIVES_PER_PRODUCT = 3
@@ -78,11 +83,9 @@ def is_comparable(orig: tuple[float, str], cand: tuple[float, str]) -> bool:
     """
     ¿Son dos presentaciones del mismo tipo de producto, en tamaños intercambiables?
 
-    Gatea por comparabilidad, no por precio. Quien llame decide después qué hacer
-    con el precio: `strategic_swaps` cotiza el real porque simula un carrito que
-    el usuario va a pagar, y `build_semantic_suggestions` prorratea porque su
-    número es explícitamente "a igual cantidad". La banda de acá es lo que hace
-    que ese prorrateo signifique algo.
+    Gatea por comparabilidad, no por precio: quien llame cotiza después el
+    precio real (`build_semantic_suggestions` además ajusta la cantidad, ver
+    `equivalent_quantity`).
     """
     orig_weight, orig_unit = orig
     cand_weight, cand_unit = cand
@@ -104,6 +107,30 @@ def is_comparable(orig: tuple[float, str], cand: tuple[float, str]) -> bool:
         return False
 
     return MIN_WEIGHT_RATIO <= (cand_weight / orig_weight) <= MAX_WEIGHT_RATIO
+
+
+def equivalent_quantity(orig: tuple[float, str], orig_quantity: int,
+                        cand: tuple[float, str]) -> int | None:
+    """
+    Cuántas unidades del candidato igualan lo que pidió el usuario, o None si
+    ninguna cantidad entera queda dentro de `QUANTITY_TOLERANCE`.
+
+    3 x 1 L -> 2 de 1,5 L o 6 de 500 ml. 1 x 1 L contra 1,5 L da None: una
+    unidad es un 50% más y dos el triple, así que no hay reemplazo honesto.
+    Sin tamaño parseado ('un') no hay nada que convertir: misma cantidad.
+    """
+    orig_weight, orig_unit = orig
+    cand_weight, cand_unit = cand
+    if orig_unit == UNKNOWN_UNIT or cand_unit == UNKNOWN_UNIT:
+        return orig_quantity
+    if orig_weight <= 0 or cand_weight <= 0:
+        return None
+
+    target = orig_weight * orig_quantity
+    n = max(1, round(target / cand_weight))
+    if abs(n * cand_weight - target) / target > QUANTITY_TOLERANCE:
+        return None
+    return n
 
 
 def same_pack_format(original_name: str, candidate_name: str) -> bool:
@@ -256,22 +283,23 @@ def comparable_candidates(cur, anchor_row, target_stores, *, exclude_uids=(),
 def build_semantic_suggestions(cur, cart_items, *, target_stores, user_memberships=None,
                                flatten=flatten_cart_prices) -> list:
     """
-    Alternativas más baratas "a igual cantidad" para los productos del carrito.
+    Alternativas más baratas para los productos del carrito, llevando la misma
+    cantidad.
 
-    A diferencia de `strategic_swaps`, acá el precio SÍ se prorratea por peso: el
-    número que se muestra es explícitamente una comparación por unidad de medida
-    ("a igual cantidad de 900 ML"), no el costo de un carrito que el usuario vaya
-    a pagar. Eso es honesto sólo porque el candidato ya pasó por
-    `comparable_candidates()`: mismo formato de pack y tamaño dentro de la banda
-    0,5x–2x, así que la extrapolación está acotada y el peso significa lo mismo
-    en los dos lados. Sin esas dos guardas el prorrateo es el bug que este módulo
-    existe para cerrar (ver el docstring de arriba).
+    Cada candidato se cotiza a la cantidad de unidades que iguala lo que pidió el
+    usuario (`equivalent_quantity`): 3 x 1 L se compara contra 2 x 1,5 L, y el
+    ahorro es la diferencia real entre las dos líneas, no un precio prorrateado
+    por kilo. El prorrateo sugería reemplazos que subían el total — un 1,5 L más
+    barato por litro cuesta más que el 1 L que el usuario quería — y un candidato
+    sin cantidad equivalente (1 x 1 L contra 1,5 L) ahora directamente no se
+    sugiere.
 
     `flatten` se inyecta para poder testear sin base; `target_stores` acota los
     candidatos a las tiendas que efectivamente pueden entregar.
 
-    :return: lista de grupos {original_uid, original_product, alternatives[]},
-             ordenada por el mejor ahorro de cada grupo, descendente.
+    :return: lista de grupos {original_uid, original_product, original_quantity,
+             original_size, alternatives[]}, ordenada por el mejor ahorro de
+             cada grupo, descendente.
     """
     if not cart_items:
         return []
@@ -289,60 +317,58 @@ def build_semantic_suggestions(cur, cart_items, *, target_stores, user_membershi
     for uid, row in anchor_rows.items():
         if not row.get("name_embedding"):
             continue
-        viables = comparable_candidates(cur, row, target_stores, exclude_uids=cart_uids)
+        anchor_size = weight_of(row)
+        viables = []
+        for cand in comparable_candidates(cur, row, target_stores, exclude_uids=cart_uids):
+            n = equivalent_quantity(anchor_size, quantities[uid], (cand["weight"], cand["unit"]))
+            if n is not None:
+                viables.append({**cand, "quantity": n})
         if viables:
             candidates_by_uid[uid] = viables
 
     if not candidates_by_uid:
         return []
 
-    # Una sola llamada al aplanador para el carrito entero más todos los
-    # candidatos. Cada candidato se cotiza a la cantidad del producto que
-    # reemplaza, porque las promos condicionales (3x2, 2da al 50%) recién se
-    # activan por encima de su umbral.
-    to_flatten = list(cart_items)
-    for uid, viables in candidates_by_uid.items():
+    # Cada candidato se cotiza a SU cantidad equivalente, porque las promos
+    # condicionales (3x2, 2da al 50%) recién se activan por encima de su umbral.
+    # El aplanador devuelve un dict por uid, así que un mismo candidato a dos
+    # cantidades distintas no puede ir en la misma llamada: una por cantidad.
+    by_quantity = {}
+    for viables in candidates_by_uid.values():
         for cand in viables:
-            to_flatten.append({"unified_id": cand["uid"], "quantity": quantities[uid]})
+            by_quantity.setdefault(cand["quantity"], {})[cand["uid"]] = cand["quantity"]
 
-    flat_prices = flatten(to_flatten, user_memberships or [])
+    cart_prices = flatten(list(cart_items), user_memberships or [])
+    prices_by_quantity = {
+        q: flatten([{"unified_id": u, "quantity": q} for u in uids], user_memberships or [])
+        for q, uids in by_quantity.items()
+    }
 
     groups = {}
     for uid, viables in candidates_by_uid.items():
-        if uid not in flat_prices:
+        if uid not in cart_prices:
             continue
 
-        anchor_weight, anchor_unit = weight_of(anchor_rows[uid])
-        anchor_cost = min(offer["total_cost"] for offer in flat_prices[uid].values())
-        # El `savings` de abajo es PRORRATEADO: cuesta el ancla a su peso menos
-        # el candidato escalado a ESE peso, no la diferencia real del carrito.
-        # La frase tiene que decirlo, y tiene que poder leerse sola: pegada
-        # después del nombre del reemplazo, "a igual cantidad de 300 g" se leía
-        # como una afirmación sobre un producto de 200 g, o sea al revés.
-        metric_info = (
-            f"Ahorro calculado a igual cantidad "
-            f"({format_size(anchor_weight, anchor_unit)}, el tamaño del original)"
-        )
+        anchor_cost = min(offer["total_cost"] for offer in cart_prices[uid].values())
 
         alternatives = []
         for cand in viables:
-            offers = flat_prices.get(cand["uid"])
-            if not offers or cand["weight"] <= 0:
+            offers = prices_by_quantity[cand["quantity"]].get(cand["uid"])
+            if not offers:
                 continue
 
             cand_cost = min(offer["total_cost"] for offer in offers.values())
-            proportional_cost = (cand_cost / cand["weight"]) * anchor_weight
-            savings = anchor_cost - proportional_cost
+            savings = anchor_cost - cand_cost
 
-            if savings <= anchor_cost * MIN_PROPORTIONAL_SAVINGS_PCT:
+            if savings <= anchor_cost * MIN_SAVINGS_PCT:
                 continue
 
             alternatives.append({
                 "suggested_uid": cand["uid"],
                 "suggested_product": cand["name"],
+                "suggested_quantity": cand["quantity"],
+                "suggested_size": format_size(cand["weight"], cand["unit"]),
                 "savings": round(savings, 2),
-                "effective_unit_price": min(o["effective_unit_price"] for o in offers.values()),
-                "metric_info": metric_info,
             })
 
         if not alternatives:
@@ -352,6 +378,8 @@ def build_semantic_suggestions(cur, cart_items, *, target_stores, user_membershi
         groups[uid] = {
             "original_uid": uid,
             "original_product": anchor_rows[uid]["name"],
+            "original_quantity": quantities[uid],
+            "original_size": format_size(*weight_of(anchor_rows[uid])),
             "alternatives": alternatives[:MAX_ALTERNATIVES_PER_PRODUCT],
         }
 

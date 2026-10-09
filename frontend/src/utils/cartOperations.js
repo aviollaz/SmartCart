@@ -8,7 +8,10 @@
 
 /**
  * Aplica un lote de reemplazos: cada `{ from, to, name }` mueve la cantidad de
- * `from` a `to`. Los `from` que no están en el carrito se ignoran.
+ * `from` a `to`. Los `from` que no están en el carrito se ignoran. Un
+ * `quantity` opcional pisa la cantidad movida: las sugerencias de reemplazo
+ * cambian de presentación (3 x 1 L -> 2 x 1,5 L), así que no conservan la del
+ * original.
  *
  * Las dos pasadas son necesarias, no estilo: en una sola, el `from` de un swap
  * posterior puede borrar el `to` que insertó uno anterior (una cadena A→B, B→C
@@ -27,11 +30,11 @@ export function applySwaps(items, swaps) {
   const next = { ...items };
   const pending = [];
 
-  for (const { from, to, name } of swaps) {
+  for (const { from, to, name, quantity } of swaps) {
     const existing = next[from];
     if (!existing) continue;
     delete next[from];
-    pending.push({ to, name, quantity: existing.quantity });
+    pending.push({ to, name, quantity: quantity ?? existing.quantity });
   }
   if (pending.length === 0) return items;
 

@@ -66,8 +66,8 @@ export function CartProvider({ children }) {
 
   /**
    * Swap in-place en lote para las recomendaciones del optimizador: cada
-   * `{ from, to, name }` conserva la cantidad, porque la sugerencia se calculó
-   * justamente para esa cantidad.
+   * `{ from, to, name, quantity? }` conserva la cantidad salvo que traiga una
+   * propia (ver applySwaps en utils/cartOperations.js).
    *
    * Es un lote y no N llamadas sueltas porque el cierre de tienda
    * (src/strategic_swaps.py) es todo o nada: su ahorro proyectado sale de
@@ -82,13 +82,6 @@ export function CartProvider({ children }) {
   const replaceItems = useCallback(
     (swaps) => setItems((prev) => applySwaps(prev, swaps)),
     [setItems]
-  );
-
-  const replaceItem = useCallback(
-    (oldUnifiedId, newUnifiedId, newName) => {
-      replaceItems([{ from: oldUnifiedId, to: newUnifiedId, name: newName }]);
-    },
-    [replaceItems]
   );
 
   // Restaura un carrito entero tal cual estaba. Es lo que usa el "deshacer" de
@@ -121,7 +114,6 @@ export function CartProvider({ children }) {
       incrementItem,
       decrementItem,
       removeItem,
-      replaceItem,
       replaceItems,
       restoreItems,
       mergeItems,
@@ -134,7 +126,6 @@ export function CartProvider({ children }) {
       incrementItem,
       decrementItem,
       removeItem,
-      replaceItem,
       replaceItems,
       restoreItems,
       mergeItems,

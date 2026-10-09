@@ -16,7 +16,7 @@ import { PurchaseHistorySection } from "../components/history/PurchaseHistorySec
 
 export function CartPage({ onOpenLocation }) {
   const resultsRef = useRef(null);
-  const { items, incrementItem, decrementItem, removeItem, replaceItem, replaceItems, restoreItems } =
+  const { items, incrementItem, decrementItem, removeItem, replaceItems, restoreItems } =
     useCart();
   const {
     cards,
@@ -143,9 +143,16 @@ export function CartPage({ onOpenLocation }) {
     (originalUid, alternative) => {
       setUndoSnapshot({ items, message: `Cambiamos ${alternative.suggested_product} en tu carrito.` });
       reoptimizeRef.current = true;
-      replaceItem(originalUid, alternative.suggested_uid, alternative.suggested_product);
+      replaceItems([
+        {
+          from: originalUid,
+          to: alternative.suggested_uid,
+          name: alternative.suggested_product,
+          quantity: alternative.suggested_quantity,
+        },
+      ]);
     },
-    [items, replaceItem]
+    [items, replaceItems]
   );
 
   // Cierre de tienda: los reemplazos van todos juntos porque el ahorro

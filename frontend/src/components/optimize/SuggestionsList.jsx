@@ -1,64 +1,61 @@
-import { useState } from "react";
 import { formatPrice } from "../../utils/formatters";
 
+// Cada alternativa a la vista, con su botón: el <select> anterior escondía las
+// opciones y su ahorro detrás de un click, y la letra chica de abajo describía
+// sólo la elegida. El backend ya las manda ordenadas por ahorro, así que la
+// primera es la más barata.
 function SuggestionRow({ group, onAccept }) {
   const alternatives = group.alternatives || [];
-  const [selectedUid, setSelectedUid] = useState(alternatives[0]?.suggested_uid);
-
   if (alternatives.length === 0) return null;
 
-  const selected = alternatives.find((alt) => alt.suggested_uid === selectedUid) || alternatives[0];
-
   return (
-    <li className="flex flex-col gap-2 border-t border-line pt-3 first:border-t-0 first:pt-0">
-      <p className="text-sm text-ink">
-        En lugar de <em>{group.original_product}</em>:
-      </p>
-
-      <div className="flex flex-wrap items-center gap-2">
-        <select
-          value={selected.suggested_uid}
-          onChange={(event) => setSelectedUid(event.target.value)}
-          aria-label={`Alternativas para ${group.original_product}`}
-          className="min-w-0 flex-1 rounded-md border border-line bg-surface px-2 py-1.5 text-sm text-ink"
-        >
-          {alternatives.map((alt) => (
-            <option key={alt.suggested_uid} value={alt.suggested_uid}>
-              {alt.suggested_product} — ahorrás {formatPrice(alt.savings)}
-            </option>
-          ))}
-        </select>
-
-        <button
-          type="button"
-          onClick={() => onAccept(group.original_uid, selected)}
-          className="shrink-0 rounded-md bg-brand-accent px-3 py-1.5 text-sm font-semibold text-white hover:bg-brand-accent-dark"
-        >
-          Aceptar sugerencia
-        </button>
-      </div>
-
-      {/* `metric_info` vivía adentro del <option>, justo detrás del nombre del
-          reemplazo, y ahí se leía como una descripción de ESE producto: un
-          reemplazo de 200 g anunciado "a igual cantidad de 300 g". Es una
-          aclaración sobre cómo se calculó el ahorro, así que va con el resto de
-          la letra chica. */}
+    <li className="flex flex-col gap-2">
       <p className="text-xs text-ink-muted">
-        {selected.metric_info}
-        {typeof selected.effective_unit_price === "number" &&
-          ` · ${formatPrice(selected.effective_unit_price)} por unidad en la tienda más barata`}
+        En lugar de <em className="text-ink">{group.original_product}</em> ({group.original_quantity} ×{" "}
+        {group.original_size})
       </p>
+
+      <ul className="flex flex-col gap-2">
+        {alternatives.map((alt, index) => (
+          <li
+            key={alt.suggested_uid}
+            className="flex flex-wrap items-center gap-x-3 gap-y-2 rounded-md border border-state-success/30 bg-state-success/10 px-3 py-2"
+          >
+            <div className="min-w-0 flex-1">
+              <p className="text-sm font-medium text-ink">{alt.suggested_product}</p>
+              <p className="mt-0.5 flex flex-wrap items-center gap-2 text-xs text-ink-muted">
+                <span>
+                  {alt.suggested_quantity} × {alt.suggested_size}
+                </span>
+                <span className="font-semibold text-state-success">Ahorrás {formatPrice(alt.savings)}</span>
+                {index === 0 && (
+                  <span className="rounded-full bg-state-success px-2 py-0.5 text-[11px] font-semibold text-white">
+                    Más barato
+                  </span>
+                )}
+              </p>
+            </div>
+            <button
+              type="button"
+              onClick={() => onAccept(group.original_uid, alt)}
+              className="shrink-0 rounded-md bg-brand-accent px-3 py-1.5 text-sm font-semibold text-white hover:bg-brand-accent-dark"
+            >
+              Cambiar
+            </button>
+          </li>
+        ))}
+      </ul>
     </li>
   );
 }
 
-// Vive adentro del desplegable del panel de resultados, que ya pone la caja y
-// el título: acá va sólo la lista.
+// Vive adentro del desplegable "Más opciones", que ya pone la caja y el
+// título: acá va sólo la lista.
 export function SuggestionsList({ suggestions, onAccept }) {
   if (!suggestions || suggestions.length === 0) return null;
 
   return (
-    <ul className="space-y-3">
+    <ul className="space-y-4">
       {suggestions.map((group) => (
         <SuggestionRow key={group.original_uid} group={group} onAccept={onAccept} />
       ))}
