@@ -1,15 +1,13 @@
-import { AlertTriangle, Truck } from "lucide-react";
+import { AlertTriangle } from "lucide-react";
 
 /**
- * Explica de dónde salió el envío usado en la optimización, sólo cuando hay
- * algo accionable que decir.
+ * Avisa que Coto quedó fuera porque no entrega en la dirección.
  *
  * Sin esto, que Coto no aparezca en el split es indistinguible de que Coto haya
  * salido cara, y el usuario no tiene forma de saber que el motivo es que no le
- * entregan. El caso "fallback" también se muestra: un costo estimado presentado
- * como si fuera el real es peor que un costo estimado declarado como tal. El
- * caso "todo normal" no se muestra: el desglose por tienda ya deja ver qué
- * tiendas participan, y confirmar eso de nuevo acá es ruido.
+ * entregan. El envío estimado (`source: "fallback"`) ya no es un cartel: se
+ * marca "(estimado)" al lado del envío en la tarjeta de Coto, que es donde está
+ * el número que describe.
  */
 export function LogisticsNotice({ result }) {
   const coto = result.logistics?.coto;
@@ -31,23 +29,5 @@ export function LogisticsNotice({ result }) {
     );
   }
 
-  // Sólo si Coto quedó en el reparto: un envío estimado de una tienda donde
-  // no se compra nada no cambia ningún número que el usuario esté viendo.
-  if (coto.source === "fallback" && result.split?.coto_online) {
-    return (
-      <div className="flex items-start gap-2 rounded-lg border border-line bg-surface p-4">
-        <Truck size={18} className="mt-0.5 shrink-0 text-ink-muted" />
-        <p className="text-sm text-ink-muted">
-          El envío de Coto es una <strong>estimación por zona</strong>: no pudimos consultar la
-          tarifa real en este momento.
-        </p>
-      </div>
-    );
-  }
-
-  // Coto entrega y el envío es el tarifado real: no hay nada accionable que
-  // decir que el desglose por tienda no muestre ya, así que no se dibuja
-  // nada. Antes esta rama confirmaba "todo normal" con su propia tarjeta,
-  // pero eso es ruido al lado de las dos únicas ramas que sí importan.
   return null;
 }

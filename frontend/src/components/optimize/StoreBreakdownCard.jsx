@@ -17,7 +17,7 @@ function readBankDiscount(bankDiscount) {
  * descuento bancario, lista y promos) va plegado en "Ver detalle": lo lee
  * quien desconfía del total, no todo el mundo.
  */
-export function StoreBreakdownCard({ storeId, checkout, cartItems }) {
+export function StoreBreakdownCard({ storeId, checkout, cartItems, shippingEstimated }) {
   const bankDiscount = readBankDiscount(checkout.bank_discount);
   const productLinks = checkout.products.filter((item) => item.product_url);
   const units = checkout.products.reduce((sum, item) => sum + (item.quantity || 0), 0);
@@ -75,7 +75,10 @@ export function StoreBreakdownCard({ storeId, checkout, cartItems }) {
             <dd>{formatPrice(checkout.subtotal_products)}</dd>
           </div>
           <div className="flex justify-between">
-            <dt className="text-ink-muted">Envío</dt>
+            {/* Estimado: no se pudo consultar la tarifa real de Coto y se usó la
+                de la zona. Un costo estimado presentado como real es peor que
+                uno declarado como tal. */}
+            <dt className="text-ink-muted">Envío{shippingEstimated && " (estimado)"}</dt>
             <dd>{formatPrice(checkout.delivery_cost)}</dd>
           </div>
           {bankDiscount && (

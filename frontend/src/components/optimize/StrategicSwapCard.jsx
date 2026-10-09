@@ -46,30 +46,34 @@ export function StrategicSwapCard({ suggestion, onApply }) {
 
   const { swaps, closed_store: closedStore, relocated_count: relocated } = suggestion;
 
-  // Una línea y un botón: el mensaje largo del backend, el "antes → después" de
-  // los totales y la lista de cambios abierta ocupaban media pantalla arriba
-  // del total. La lista sigue a un clic, porque aceptar cambios de producto sin
-  // poder verlos no es una opción.
+  // Una fila de "Más opciones": qué se hace, cuánto cambia el total (con signo,
+  // igual que la fila de menos súper, para que "sacá Coto" y "comprá solo en
+  // Coto" no se lean como contradictorias) y el botón. La lista de cambios
+  // sigue a un clic, porque aceptar cambios de producto sin poder verlos no es
+  // una opción.
   return (
-    <div className="rounded-lg border border-brand-violet-500 bg-surface p-4">
+    <div>
       <div className="flex flex-wrap items-center justify-between gap-3">
         <p className="flex items-center gap-2 text-sm text-ink">
           <Store size={16} className="shrink-0 text-brand-violet-700" />
           <span>
-            Sacá <strong>{storeName(closedStore)}</strong> del pedido y ahorrá{" "}
-            <strong className="text-state-success">{formatPrice(suggestion.projected_savings)}</strong>
+            Sacá <strong>{storeName(closedStore)}</strong> cambiando {swaps.length} producto
+            {swaps.length === 1 ? "" : "s"}
           </span>
         </p>
-        <button
-          type="button"
-          onClick={() => onApply(suggestion)}
-          className="shrink-0 rounded-md bg-brand-accent px-4 py-1.5 text-sm font-semibold text-white hover:bg-brand-accent-dark"
-        >
-          Aplicar
-        </button>
+        <span className="flex shrink-0 items-center gap-3">
+          <strong className="text-sm text-state-success">−{formatPrice(suggestion.projected_savings)}</strong>
+          <button
+            type="button"
+            onClick={() => onApply(suggestion)}
+            className="rounded-md bg-brand-accent px-4 py-1.5 text-sm font-semibold text-white hover:bg-brand-accent-dark"
+          >
+            Aplicar
+          </button>
+        </span>
       </div>
 
-      <details className="mt-2">
+      <details className="mt-1">
         <summary className="cursor-pointer select-none text-xs font-semibold text-brand-violet-700">
           Ver {swaps.length === 1 ? "el cambio" : `los ${swaps.length} cambios`}
         </summary>
