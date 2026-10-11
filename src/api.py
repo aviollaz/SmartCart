@@ -23,6 +23,7 @@ from src.embeddings import DEFAULT_EMBEDDING_MODEL
 from src.optimizer import optimize_cart, DEFAULT_DELIVERY_COSTS, DEFAULT_MIN_SPEND_LIMITS
 from src.flattener import flatten_cart_prices, evaluate_best_promo, parse_promotions_json
 from src.coto_logistics import check_coverage, resolve_coto_logistics
+from src.dia_logistics import check_coverage as check_dia_coverage, resolve_dia_logistics
 from src.schema import ensure_schema
 from src.shelves import SECTIONS, SHELVES, sections as shelf_sections, shelf_label
 from src.stores import STORES
@@ -872,33 +873,36 @@ def _optional_feature(nombre: str, default, fn, *args, **kwargs):
         return default
 
 
-def _resolve_coto_stage(request):
+def _resolve_logistics_stage(request):
     """
-    Etapa de logística: cobertura y envío real de Coto.
+    Etapa de logística: cobertura y envío real de Coto y Día.
 
     Va antes del solver porque cambia dos de sus entradas: qué tiendas
-    participan y cuánto cuesta el envío de Coto. Nunca lanza (fail-open, ver
-    src/coto_logistics.py), así que un problema con el sitio de Coto no puede
-    tumbar la optimización entera.
+    participan y cuánto cuesta su envío. Nunca lanza (fail-open, ver
+    src/coto_logistics.py y src/dia_logistics.py), así que un problema con el
+    sitio de una tienda no puede tumbar la optimización entera.
 
-    :return: (delivery_costs, excluded_stores, coto_logistics)
+    :return: (delivery_costs, excluded_stores, logistics), con `logistics`
+             indexado por clave de tienda ({"coto": ..., "dia": ...}).
     """
     delivery_costs = dict(request.delivery_costs) if request.delivery_costs else dict(DEFAULT_DELIVERY_COSTS)
     excluded_stores = []
+    logistics = {}
 
-    coto_logistics = resolve_coto_logistics(
-        request.lat,
-        request.lng,
-        fallback_delivery_cost=delivery_costs.get("coto_online"),
-    )
+    for key, store_id, resolve in (
+        ("coto", "coto_online", resolve_coto_logistics),
+        ("dia", "dia_online", resolve_dia_logistics),
+    ):
+        info = resolve(request.lat, request.lng, fallback_delivery_cost=delivery_costs.get(store_id))
+        logistics[key] = info
 
-    if not coto_logistics["covered"]:
-        excluded_stores.append("coto_online")
-        logger.info(f"Coto excluido por falta de cobertura en ({request.lat}, {request.lng}).")
-    elif coto_logistics["delivery_cost"] is not None:
-        delivery_costs["coto_online"] = float(coto_logistics["delivery_cost"])
+        if not info["covered"]:
+            excluded_stores.append(store_id)
+            logger.info(f"{store_id} excluido por falta de cobertura en ({request.lat}, {request.lng}).")
+        elif info["delivery_cost"] is not None:
+            delivery_costs[store_id] = float(info["delivery_cost"])
 
-    return delivery_costs, excluded_stores, coto_logistics
+    return delivery_costs, excluded_stores, logistics
 
 
 def _attach_product_urls(cur, split: dict, flat_prices: dict) -> None:
@@ -1224,7 +1228,7 @@ def optimize_shopping_cart(request: OptimizationRequest, background_tasks: Backg
     try:
         cart_data = [item.model_dump() for item in request.cart]
 
-        delivery_costs, coverage_excluded, coto_logistics = _resolve_coto_stage(request)
+        delivery_costs, coverage_excluded, logistics = _resolve_logistics_stage(request)
 
         # El solver, el ahorro y el cierre de tienda ven las dos exclusiones
         # juntas: para ellos una tienda que no llega y una que el usuario sacó son
@@ -1242,7 +1246,7 @@ def optimize_shopping_cart(request: OptimizationRequest, background_tasks: Backg
         # elección del usuario haría mentir a los dos.
         result["excluded_stores"] = coverage_excluded
         result["user_excluded_stores"] = user_excluded
-        result["logistics"] = {"coto": coto_logistics}
+        result["logistics"] = logistics
 
         if result.get("status") == "success":
             # El enriquecimiento entero va detrás de un try porque comparte los
@@ -1297,6 +1301,18 @@ def get_coto_coverage(
     política es fail-open, sólo un veredicto afirmativo excluye la tienda.
     """
     return check_coverage(lat, lng)
+
+@app.get("/logistics/dia/coverage")
+def get_dia_coverage(
+    lat: float = Query(..., description="Latitud del domicilio de entrega"),
+    lng: float = Query(..., description="Longitud del domicilio de entrega")
+):
+    """
+    Indica si Día envía a domicilio en una coordenada dada. Mismo contrato que
+    /logistics/coto/coverage (`ok=False` = "no se pudo determinar"), más el
+    `delivery_cost` vivo.
+    """
+    return check_dia_coverage(lat, lng)
 
 @app.get("/categories", response_model=List[SectionResponse])
 def get_categories():

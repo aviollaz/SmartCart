@@ -90,7 +90,7 @@ def test_ensure_optional_keys_no_pisa_lo_que_ya_esta():
 
 
 # --------------------------------------------------------------------------
-# _resolve_coto_stage
+# _resolve_logistics_stage
 # --------------------------------------------------------------------------
 
 class _Req:
@@ -148,7 +148,43 @@ def test_no_muta_el_dict_del_request(monkeypatch):
 
 
 def _resolve(req):
-    return api._resolve_coto_stage(req)
+    costs, excluded, logistics = api._resolve_logistics_stage(req)
+    return costs, excluded, logistics["coto"]
+
+
+@pytest.fixture(autouse=True)
+def _dia_sin_novedad(monkeypatch):
+    """Día no consulta la red en estos tests: responde como su fallback."""
+    monkeypatch.setattr(api, "resolve_dia_logistics",
+                        lambda lat, lng, fallback_delivery_cost: {
+                            "covered": True, "delivery_cost": fallback_delivery_cost, "source": "fallback"})
+
+
+def test_dia_sin_cobertura_se_excluye_y_coto_live_pisa_el_costo(monkeypatch):
+    monkeypatch.setattr(api, "resolve_coto_logistics",
+                        lambda lat, lng, fallback_delivery_cost: {"covered": True, "delivery_cost": 3399})
+    monkeypatch.setattr(api, "resolve_dia_logistics",
+                        lambda lat, lng, fallback_delivery_cost: {"covered": False, "delivery_cost": None})
+
+    costs, excluded, logistics = api._resolve_logistics_stage(
+        _Req({COTO: 3000, DIA: 3000, CARREFOUR: 3500}, -31.4, -64.2))
+
+    assert excluded == [DIA]
+    assert costs[COTO] == 3399.0
+    assert costs[DIA] == 3000
+    assert set(logistics) == {"coto", "dia"}
+
+
+def test_dia_cubierto_pisa_su_costo(monkeypatch):
+    monkeypatch.setattr(api, "resolve_coto_logistics",
+                        lambda lat, lng, fallback_delivery_cost: {"covered": True, "delivery_cost": None})
+    monkeypatch.setattr(api, "resolve_dia_logistics",
+                        lambda lat, lng, fallback_delivery_cost: {"covered": True, "delivery_cost": 4999.0})
+
+    costs, excluded, _ = api._resolve_logistics_stage(_Req({COTO: 3000, DIA: 3000, CARREFOUR: 3500}, -34.6, -58.4))
+
+    assert excluded == []
+    assert costs[DIA] == 4999.0
 
 
 # --------------------------------------------------------------------------
