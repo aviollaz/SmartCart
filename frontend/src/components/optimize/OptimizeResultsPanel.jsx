@@ -17,7 +17,9 @@ import { StrategicSwapCard } from "./StrategicSwapCard";
 export function OptimizeResultsPanel({ result, maxStores, onAcceptSuggestion, onApplyStrategicSwap, onChooseMaxStores }) {
   const { items } = useCart();
   const splitEntries = Object.entries(result.split || {});
-  const shippingEstimated = result.logistics?.coto?.source === "fallback";
+  // Envío "(estimado)": la tienda tiene consulta en vivo y esta vez cayó a la
+  // tabla por zona. Carrefour no tiene consulta, así que no se marca.
+  const logisticsKey = { coto_online: "coto", dia_online: "dia" };
 
   return (
     <div className="flex flex-col gap-4">
@@ -39,7 +41,7 @@ export function OptimizeResultsPanel({ result, maxStores, onAcceptSuggestion, on
               storeId={storeId}
               checkout={checkout}
               cartItems={items}
-              shippingEstimated={shippingEstimated && storeId === "coto_online"}
+              shippingEstimated={result.logistics?.[logisticsKey[storeId]]?.source === "fallback"}
             />
           ))}
         </div>

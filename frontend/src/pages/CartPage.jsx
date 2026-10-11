@@ -104,12 +104,11 @@ export function CartPage({ onOpenLocation }) {
         // que su veredicto es más fresco que el guardado en el onboarding. Solo
         // se persiste un "no entrega" afirmativo: la respuesta sin coordenadas
         // trae covered:true por fail-open, y guardarlo pisaría un "no" real.
-        const covered = response.data.logistics?.coto?.covered;
-        if (covered === false) {
-          setStoreCoverage("coto_online", {
-            covered: false,
-            message: response.data.logistics.coto.message,
-          });
+        for (const [key, storeId] of [["coto", "coto_online"], ["dia", "dia_online"]]) {
+          const logistics = response.data.logistics?.[key];
+          if (logistics?.covered === false) {
+            setStoreCoverage(storeId, { covered: false, message: logistics.message });
+          }
         }
       } else {
         setInfeasibleDetail(response.detail);

@@ -1,7 +1,8 @@
 import { useEffect, useState } from "react";
 import { MapPin, Search, X } from "lucide-react";
 import { geocodeAddress, reverseGeocode } from "../../api/geocoding";
-import { checkCotoCoverage } from "../../api/logistics";
+import { checkCoverage } from "../../api/logistics";
+import { STORES } from "../../utils/constants";
 import { useProfile } from "../../context/ProfileContext";
 import { LocationMap } from "./LocationMap";
 
@@ -95,7 +96,7 @@ export function LocationModal({ onClose }) {
     );
   }
 
-  function persist(point, coverage) {
+  function persist(point, coverageByStore) {
     setLocation(
       {
         displayName: point.displayName || formatCoords(point),
@@ -110,7 +111,7 @@ export function LocationModal({ onClose }) {
         // Puede quedar en null: fuera del AMBA, o si el reverse geocoding falló.
         zone: point.zone ?? null,
       },
-      coverage ? { coto_online: coverage } : {}
+      coverageByStore
     );
     // En el onboarding no hay nada que cerrar: el modal desaparece solo cuando
     // App.jsx ve que ya hay location.
@@ -125,24 +126,33 @@ export function LocationModal({ onClose }) {
     // vez de que el usuario se entere recién al optimizar. Un ok:false es "no
     // pudimos preguntar", no "no hay cobertura": no bloquea la confirmación ni
     // se guarda como veredicto.
-    const coverage = await checkCotoCoverage(pendingPoint);
+    const [coto, dia] = await Promise.all([
+      checkCoverage("coto", pendingPoint),
+      checkCoverage("dia", pendingPoint),
+    ]);
+    const coverageByStore = Object.fromEntries(
+      [["coto_online", coto], ["dia_online", dia]].filter(([, coverage]) => coverage.ok)
+    );
+    const uncovered = Object.entries(coverageByStore)
+      .filter(([, coverage]) => coverage.covered === false)
+      .map(([storeId, coverage]) => ({
+        name: STORES.find((s) => s.id === storeId).name,
+        message: coverage.mensaje,
+      }));
 
-    if (coverage.ok && coverage.covered === false) {
-      setCoverageWarning({
-        coverage,
-        message: coverage.mensaje || "Coto no realiza entregas en esta dirección.",
-      });
+    if (uncovered.length > 0) {
+      setCoverageWarning({ coverageByStore, uncovered });
       setStatus("idle");
       return;
     }
 
-    persist(pendingPoint, coverage.ok ? coverage : null);
+    persist(pendingPoint, coverageByStore);
   }
 
   // El veredicto negativo se guarda junto con la dirección: es lo que después
   // saca los productos de esa tienda del catálogo.
-  function acceptWithoutCoto() {
-    persist(pendingPoint, coverageWarning.coverage);
+  function acceptWithoutUncovered() {
+    persist(pendingPoint, coverageWarning.coverageByStore);
   }
 
   return (
@@ -243,14 +253,20 @@ export function LocationModal({ onClose }) {
 
         {coverageWarning && (
           <div className="mt-3 rounded-md border border-state-warning/40 bg-state-warning/10 p-3">
-            <p className="text-sm font-semibold text-ink">Coto no entrega en esta dirección</p>
-            <p className="mt-1 text-xs text-ink-muted">{coverageWarning.message}</p>
+            {coverageWarning.uncovered.map(({ name, message }) => (
+              <div key={name} className="mb-2">
+                <p className="text-sm font-semibold text-ink">{name} no entrega en esta dirección</p>
+                <p className="mt-1 text-xs text-ink-muted">
+                  {message || `${name} no realiza entregas en esta dirección.`}
+                </p>
+              </div>
+            ))}
             <button
               type="button"
-              onClick={acceptWithoutCoto}
-              className="mt-2 text-sm font-semibold text-brand-accent underline"
+              onClick={acceptWithoutUncovered}
+              className="text-sm font-semibold text-brand-accent underline"
             >
-              Usar igual esta dirección (sin Coto)
+              Usar igual esta dirección (sin {coverageWarning.uncovered.map((u) => u.name).join(" ni ")})
             </button>
           </div>
         )}
