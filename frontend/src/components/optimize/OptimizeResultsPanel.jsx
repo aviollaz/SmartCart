@@ -18,8 +18,8 @@ export function OptimizeResultsPanel({ result, maxStores, onAcceptSuggestion, on
   const { items } = useCart();
   const splitEntries = Object.entries(result.split || {});
   // Envío "(estimado)": la tienda tiene consulta en vivo y esta vez cayó a la
-  // tabla por zona. Carrefour no tiene consulta, así que no se marca.
-  const logisticsKey = { coto_online: "coto", dia_online: "dia" };
+  // tabla por zona.
+  const logisticsKey = { coto_online: "coto", dia_online: "dia", carrefour_online: "carrefour" };
 
   return (
     <div className="flex flex-col gap-4">
