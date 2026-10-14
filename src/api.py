@@ -24,6 +24,7 @@ from src.optimizer import optimize_cart, DEFAULT_DELIVERY_COSTS, DEFAULT_MIN_SPE
 from src.flattener import flatten_cart_prices, evaluate_best_promo, parse_promotions_json
 from src.coto_logistics import check_coverage, resolve_coto_logistics
 from src.dia_logistics import check_coverage as check_dia_coverage, resolve_dia_logistics
+from src.carrefour_logistics import check_coverage as check_carrefour_coverage, resolve_carrefour_logistics
 from src.schema import ensure_schema
 from src.shelves import SECTIONS, SHELVES, sections as shelf_sections, shelf_label
 from src.stores import STORES
@@ -875,15 +876,15 @@ def _optional_feature(nombre: str, default, fn, *args, **kwargs):
 
 def _resolve_logistics_stage(request):
     """
-    Etapa de logística: cobertura y envío real de Coto y Día.
+    Etapa de logística: cobertura y envío real de Coto, Día y Carrefour.
 
     Va antes del solver porque cambia dos de sus entradas: qué tiendas
     participan y cuánto cuesta su envío. Nunca lanza (fail-open, ver
-    src/coto_logistics.py y src/dia_logistics.py), así que un problema con el
+    src/coto_logistics.py, src/dia_logistics.py y src/carrefour_logistics.py), así que un problema con el
     sitio de una tienda no puede tumbar la optimización entera.
 
     :return: (delivery_costs, excluded_stores, logistics), con `logistics`
-             indexado por clave de tienda ({"coto": ..., "dia": ...}).
+             indexado por clave de tienda ({"coto": ..., "dia": ..., "carrefour": ...}).
     """
     delivery_costs = dict(request.delivery_costs) if request.delivery_costs else dict(DEFAULT_DELIVERY_COSTS)
     excluded_stores = []
@@ -892,6 +893,7 @@ def _resolve_logistics_stage(request):
     for key, store_id, resolve in (
         ("coto", "coto_online", resolve_coto_logistics),
         ("dia", "dia_online", resolve_dia_logistics),
+        ("carrefour", "carrefour_online", resolve_carrefour_logistics),
     ):
         info = resolve(request.lat, request.lng, fallback_delivery_cost=delivery_costs.get(store_id))
         logistics[key] = info
@@ -1313,6 +1315,17 @@ def get_dia_coverage(
     `delivery_cost` vivo.
     """
     return check_dia_coverage(lat, lng)
+
+@app.get("/logistics/carrefour/coverage")
+def get_carrefour_coverage(
+    lat: float = Query(..., description="Latitud del domicilio de entrega"),
+    lng: float = Query(..., description="Longitud del domicilio de entrega")
+):
+    """
+    Indica si Carrefour envía a domicilio en una coordenada dada. Mismo contrato
+    que /logistics/dia/coverage.
+    """
+    return check_carrefour_coverage(lat, lng)
 
 @app.get("/categories", response_model=List[SectionResponse])
 def get_categories():
