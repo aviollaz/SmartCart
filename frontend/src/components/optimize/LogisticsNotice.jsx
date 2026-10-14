@@ -3,6 +3,7 @@ import { AlertTriangle } from "lucide-react";
 const LOGISTICS_STORES = [
   { key: "coto", id: "coto_online", name: "Coto" },
   { key: "dia", id: "dia_online", name: "Día" },
+  { key: "carrefour", id: "carrefour_online", name: "Carrefour" },
 ];
 
 /**
