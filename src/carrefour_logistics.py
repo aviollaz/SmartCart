@@ -26,9 +26,10 @@ checkout de VTEX; no hace falta cookie ni login:
 Sin ningún SLA `NNNN_DOM` (Ushuaia, campo bonaerense) es el "no llegamos".
 """
 import re
-import time
 
 import httpx
+
+from src.vtex_logistics import VtexLogistics, request_json
 
 SIMULATION_URL = "https://www.carrefour.com.ar/api/checkout/pub/orderForms/simulation"
 
@@ -36,9 +37,6 @@ DUMMY_SKU = "102261"
 DELIVERY_CHANNEL = "delivery"
 SUPERMERCADO_COURIER = re.compile(r"^(\d{4})_DOM$")
 HOGAR_Y_ELECTRO = "0899"
-
-TIMEOUT_SECONDS = 6.0
-CACHE_TTL_SECONDS = 30 * 60
 
 _HEADERS = {
     "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:157.0) Gecko/20100101 Firefox/157.0",
@@ -48,30 +46,6 @@ _HEADERS = {
     "Origin": "https://www.carrefour.com.ar",
 }
 
-_INDETERMINADO = {"ok": False, "covered": None, "sucursal": None, "mensaje": None, "delivery_cost": None}
-
-# {clave: (timestamp, valor)}. Sólo se guardan respuestas exitosas.
-_cache: dict = {}
-
-
-def reset_cache() -> None:
-    """Vacía el caché en memoria. Existe para los tests."""
-    _cache.clear()
-
-
-def _request_json(client: httpx.Client, method: str, url: str, **kwargs):
-    """Request que devuelve el JSON o None, sin propagar nunca una excepción."""
-    try:
-        response = client.request(method, url, **kwargs)
-        if response.status_code != 200:
-            return None
-        if "json" not in (response.headers.get("content-type") or "").lower():
-            return None
-        return response.json()
-    except Exception:
-        return None
-
-
 def _delivery_options(client: httpx.Client, lat: float, lng: float) -> list | None:
     """[(precio en centavos, sucursal)] de los envíos de supermercado, o None si falló."""
     body = {
@@ -80,7 +54,7 @@ def _delivery_options(client: httpx.Client, lat: float, lng: float) -> list | No
         "country": "ARG",
         "postalCode": None,
     }
-    data = _request_json(client, "POST", SIMULATION_URL, params={"sc": 1}, json=body)
+    data = request_json(client, "POST", SIMULATION_URL, params={"sc": 1}, json=body)
     if not isinstance(data, dict) or not isinstance(data.get("logisticsInfo"), list):
         return None
 
@@ -105,81 +79,7 @@ def _delivery_options(client: httpx.Client, lat: float, lng: float) -> list | No
     return options
 
 
-def check_coverage(lat: float, lng: float, client: httpx.Client | None = None) -> dict:
-    """
-    Pregunta a Carrefour si entrega en (lat, lng).
-
-    Devuelve {"ok", "covered", "sucursal", "mensaje", "delivery_cost"}. `ok=False`
-    significa "no se pudo determinar" y NO debe leerse como falta de cobertura.
-    """
-    key = ("coverage", round(float(lat), 4), round(float(lng), 4))
-    entry = _cache.get(key)
-    if entry is not None and time.monotonic() - entry[0] <= CACHE_TTL_SECONDS:
-        return entry[1]
-
-    owned = client is None
-    if owned:
-        client = httpx.Client(headers=_HEADERS, timeout=TIMEOUT_SECONDS, follow_redirects=True)
-    try:
-        options = _delivery_options(client, lat, lng)
-    finally:
-        if owned:
-            client.close()
-
-    if options is None:
-        return _INDETERMINADO
-
-    if not options:
-        result = {
-            "ok": True,
-            "covered": False,
-            "sucursal": None,
-            "mensaje": "Carrefour no realiza envíos a domicilio en esta dirección.",
-            "delivery_cost": None,
-        }
-    else:
-        price, sucursal = min(options)
-        result = {"ok": True, "covered": True, "sucursal": sucursal, "mensaje": None, "delivery_cost": price / 100}
-
-    _cache[key] = (time.monotonic(), result)
-    return result
-
-
-def resolve_carrefour_logistics(
-    lat: float | None,
-    lng: float | None,
-    fallback_delivery_cost: float | None = None,
-    client: httpx.Client | None = None,
-) -> dict:
-    """
-    Resuelve cobertura y costo de envío de Carrefour para una coordenada. Nunca lanza.
-
-    Devuelve {"covered", "sucursal", "delivery_cost", "source", "message"}, igual
-    que resolve_dia_logistics. Fail-open: sólo un "no" afirmativo excluye a Carrefour.
-    """
-    fallback = {
-        "covered": True,
-        "sucursal": None,
-        "delivery_cost": fallback_delivery_cost,
-        "source": "fallback",
-        "message": None,
-    }
-
-    if lat is None or lng is None:
-        return fallback
-
-    try:
-        coverage = check_coverage(lat, lng, client=client)
-    except Exception:
-        return fallback
-
-    if not coverage["ok"]:
-        return fallback
-
-    return {
-        "covered": coverage["covered"],
-        "sucursal": coverage["sucursal"],
-        "delivery_cost": coverage["delivery_cost"],
-        "source": "live",
-        "message": coverage["mensaje"],
-    }
+_lookup = VtexLogistics("Carrefour", _HEADERS, _delivery_options)
+check_coverage = _lookup.check_coverage
+resolve_carrefour_logistics = _lookup.resolve
+reset_cache = _lookup.reset_cache

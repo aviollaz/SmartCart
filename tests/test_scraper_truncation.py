@@ -101,7 +101,7 @@ def test_dia_una_pagina_caida_a_mitad_levanta_y_no_devuelve_lo_parcial(monkeypat
     # completa, así que el pruning borraba el resto de la góndola.
     scraper = DiaScraper()
     _falsear_paginas(monkeypatch, scraper, [
-        _pagina_vtex([1, 2]),
+        _pagina_vtex([1, 2], records=100),
         CategoryScrapeError("[DÍA] HTTP 500 en la sección 16-31."),
     ])
 
@@ -114,7 +114,7 @@ def test_dia_detecta_la_persisted_query_rotada(monkeypatch):
     # `.get()` encadenados, así que un 200 con `errors` rendía 0 productos y se
     # interpretaba como "categoría agotada".
     scraper = DiaScraper()
-    _falsear_paginas(monkeypatch, scraper, [_pagina_vtex([1, 2]), ERRORES_GRAPHQL])
+    _falsear_paginas(monkeypatch, scraper, [_pagina_vtex([1, 2], records=100), ERRORES_GRAPHQL])
 
     with pytest.raises(CategoryScrapeError, match="PersistedQueryNotFound"):
         scraper.scrape_entire_category("almacen/snacks")
@@ -123,9 +123,9 @@ def test_dia_detecta_la_persisted_query_rotada(monkeypatch):
 def test_dia_la_pagina_vacia_es_el_unico_final_valido(monkeypatch):
     scraper = DiaScraper()
     _falsear_paginas(monkeypatch, scraper, [
-        _pagina_vtex([1, 2]),
-        _pagina_vtex([3]),
-        _pagina_vtex([]),
+        _pagina_vtex([1, 2], records=100),
+        _pagina_vtex([3], records=100),
+        _pagina_vtex([], records=100),
     ])
 
     productos = scraper.scrape_entire_category("almacen/snacks")
@@ -137,7 +137,7 @@ def test_dia_una_pagina_que_repite_no_es_un_final(monkeypatch):
     # Si el endpoint deja de respetar el `from`, no sabemos qué falta: es un
     # fallo, no el fin de la categoría.
     scraper = DiaScraper()
-    _falsear_paginas(monkeypatch, scraper, [_pagina_vtex([1, 2]), _pagina_vtex([1, 2])])
+    _falsear_paginas(monkeypatch, scraper, [_pagina_vtex([1, 2], records=100), _pagina_vtex([1, 2], records=100)])
 
     with pytest.raises(CategoryScrapeError, match="paginación"):
         scraper.scrape_entire_category("almacen/snacks")
@@ -147,7 +147,7 @@ def test_dia_recupera_de_un_timeout_transitorio(monkeypatch):
     # A nivel `scrape_category_slice`, no `scrape_entire_category`: es ahí
     # donde vive el `client.post` que http_retry.py envuelve.
     scraper = DiaScraper()
-    restantes = [httpx.ConnectTimeout("timeout"), _FakeResponseVtex(_pagina_vtex([1, 2]))]
+    restantes = [httpx.ConnectTimeout("timeout"), _FakeResponseVtex(_pagina_vtex([1, 2], records=100))]
 
     def fake_post(_url, json):
         assert restantes, "se pidieron más intentos de los guionados"
@@ -167,12 +167,10 @@ def test_dia_recupera_de_un_timeout_transitorio(monkeypatch):
 def test_dia_agotar_el_tope_de_paginas_levanta(monkeypatch):
     # Llegar a MAX_PAGES significa que el corte por página vacía nunca llegó: la
     # categoría quedó recorrida a medias.
-    from src.scrapers import scraper_dia
-
     scraper = DiaScraper()
-    monkeypatch.setattr(scraper_dia, "MAX_PAGES", 3)
+    monkeypatch.setattr(scraper, "MAX_PAGES", 3)
     _falsear_paginas(monkeypatch, scraper, [
-        _pagina_vtex([1]), _pagina_vtex([2]), _pagina_vtex([3]),
+        _pagina_vtex([1], records=100), _pagina_vtex([2], records=100), _pagina_vtex([3], records=100),
     ])
 
     with pytest.raises(CategoryScrapeError, match="tope"):

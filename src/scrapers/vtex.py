@@ -1,24 +1,30 @@
 # src/scrapers/vtex.py
 """
-Lo que Día y Carrefour comparten por correr sobre la misma plataforma.
+Lo que comparten las tiendas que corren sobre VTEX (Día, Carrefour, Vea).
 
-Las dos tiendas le pegan a la misma operación `productSearchV3` de VTEX con la
-misma persisted query, así que la lectura de la respuesta es idéntica y vivía
-duplicada a medias: Carrefour tenía la validación y Día no tenía ninguna. Lo
-mismo pasaba con el parseo de cada producto (`parse_vtex_offer` más abajo):
-las dos tiendas repetían ~70 líneas prácticamente idénticas, con el riesgo de
-que un fix a una (un nuevo caso de `unit_type`, un ajuste al parser dietario)
-se aplicara a una copia y no a la otra.
+Todas le pegan a la misma operación `productSearchV3` con la misma persisted
+query, así que la lectura de la respuesta, el parseo de cada producto
+(`parse_vtex_offer`) y el barrido entero (`VtexCatalogScraper`) viven acá una
+sola vez. Antes eran copias por tienda que derivaban: Carrefour tenía la
+validación del payload y Día no tenía ninguna. Sumar una tienda VTEX es una
+subclase de tres atributos.
 """
 import html
 import logging
+import random
 import re
+import time
 from urllib.parse import urlsplit
+
+import httpx
 
 from src.dietary_parser import detect_dietary_flags
 from src.ean import normalize_ean
 from src.scrapers.errors import CategoryScrapeError
+from src.scrapers.http_retry import request_with_retry
+from src.shelves import shelf_for_key
 from src.size_parser import extract_real_volume, normalize_magnitude
+from src.taxonomy import category_path
 
 logger = logging.getLogger(__name__)
 
@@ -338,3 +344,213 @@ def parse_vtex_offer(p: dict, shelf: str | None, taxonomy_path: str | None,
         # `AttributeError` en vez de simplemente no encontrar promociones.
         "raw_promos": sellers[0].get("commertialOffer", {}) if sellers else {},
     }
+
+
+class VtexCatalogScraper:
+    """
+    El barrido de catálogo de una tienda VTEX. Cada tienda es una subclase que
+    sólo declara `STORE_KEY`, `LABEL` y `BASE_URL` (ver scraper_dia.py).
+
+    Día y Carrefour eran el mismo archivo con otro dominio, y lo que los
+    diferenciaba era deriva, no diseño: Día mandaba `map` fijo en "c,c" y no
+    cortaba por `recordsFiltered`. Unificados sobre la versión de Carrefour,
+    relevado contra el endpoint de Día en vivo: mismo `recordsFiltered` y mismos
+    SKUs, precios y EAN que su payload anterior.
+    """
+
+    STORE_KEY: str   # "dia": columna de SHELVES y dump de taxonomía
+    LABEL: str       # "DÍA": prefijo de los logs y de los errores
+    BASE_URL: str    # el dominio PÚBLICO: los links se arman siempre sobre éste
+
+    # Tamaño de la grilla del sitio. VTEX pagina por índices absolutos [from, to].
+    PAGE_SIZE = 16
+
+    # Tope duro de páginas por categoría. Es una red de seguridad, no el criterio
+    # de corte: si el endpoint empezara a devolver siempre la misma página (o
+    # ignorara el `from`), el corte por "página vacía" no llegaría nunca.
+    MAX_PAGES = 60
+
+    def __init__(self):
+        self.headers = {
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:152.0) Gecko/20100101 Firefox/152.0",
+            "Accept": "*/*",
+            "Accept-Language": "es-AR,es;q=0.9",
+            "Content-Type": "application/json",
+            "Referer": f"{self.BASE_URL}/"
+        }
+        self.client = httpx.Client(headers=self.headers, http2=True, timeout=15.0)
+
+    @property
+    def graphql_url(self) -> str:
+        # POST con el JSON en el body en vez del GET con las variables en Base64
+        # en la URL: es el mismo endpoint y evita codificar/escapar el payload.
+        return f"{self.BASE_URL}/_v/segment/graphql/v1?workspace=master"
+
+    @staticmethod
+    def _build_payload(category_query: str, from_idx: int, to_idx: int) -> dict:
+        """
+        Arma el body del POST para un tramo de una categoría.
+
+        El `map` se deriva de la cantidad de segmentos (un "c" por facet) en vez
+        de hardcodearse: las categorías tienen dos y tres niveles, y mandar menos
+        "c" que `selectedFacets` es desalinear el contrato de VTEX.
+        """
+        parts = [part for part in category_query.split("/") if part]
+
+        return {
+            "operationName": "productSearchV3",
+            "variables": {
+                "skusFilter": "ALL_AVAILABLE",
+                "simulationBehavior": "default",
+                "installmentCriteria": "MAX_WITHOUT_INTEREST",
+                "productOriginVtex": False,
+                "map": ",".join(["c"] * len(parts)),
+                "query": category_query,
+                "orderBy": "OrderByScoreDESC",
+                "from": from_idx,
+                "to": to_idx,
+                "selectedFacets": [{"key": "c", "value": part} for part in parts],
+                "operator": "and",
+                "fuzzy": "0",
+                "searchState": None,
+                "hideUnavailableItems": True,
+                "facetsBehavior": "Static",
+                "categoryTreeBehavior": "default",
+                "withFacets": False,
+                "variant": "null-null"
+            },
+            "extensions": {
+                "persistedQuery": {
+                    "version": 1,
+                    "sha256Hash": "a96c5ed03ef513568c34b63a4bf8da055ea6296293ee02eadb56e2e895eaffbc",
+                    "sender": "vtex.store-resources@0.x",
+                    "provider": "vtex.search-graphql@0.x"
+                }
+            }
+        }
+
+    def scrape_category_slice(self, category_query: str, from_idx: int, to_idx: int):
+        payload = self._build_payload(category_query, from_idx, to_idx)
+
+        # Un error LEVANTA. Devolver None dejaba al llamador con cero productos,
+        # que su regla de "página vacía = fin de categoría" lee como éxito, y el
+        # pruning después borra lo que no se recorrió.
+        try:
+            response = request_with_retry(lambda: self.client.post(self.graphql_url, json=payload),
+                                          self.LABEL, is_retryable=is_transient_graphql_error)
+        except Exception as exc:
+            logger.exception("[%s] Excepción en request POST.", self.LABEL)
+            raise CategoryScrapeError(
+                f"[{self.LABEL}] Falló el POST de la sección {from_idx}-{to_idx}: {exc}"
+            ) from exc
+
+        if response.status_code != 200:
+            logger.error("[%s] Error %s en la sección %s-%s",
+                         self.LABEL, response.status_code, from_idx, to_idx)
+            raise CategoryScrapeError(
+                f"[{self.LABEL}] HTTP {response.status_code} en la sección {from_idx}-{to_idx}."
+            )
+
+        try:
+            return response.json()
+        except Exception as exc:
+            raise CategoryScrapeError(
+                f"[{self.LABEL}] La sección {from_idx}-{to_idx} no devolvió JSON: {exc}"
+            ) from exc
+
+    def process_products(self, response_json, shelf: str | None = None,
+                         taxonomy_path: str | None = None,
+                         source_category: str | None = None):
+        # Levanta si la respuesta no es un resultado de búsqueda válido: el caso
+        # del sha256Hash rotado, que contesta 200 con `errors` y sin `data`.
+        search = extract_search_payload(response_json, self.LABEL)
+
+        parsed_products = []
+        for p in search.get("products") or []:
+            product = parse_vtex_offer(p, shelf, taxonomy_path, source_category,
+                                       url=storefront_url(p.get("link"), self.BASE_URL))
+            if product is not None:
+                parsed_products.append(product)
+
+        return parsed_products
+
+    def scrape_entire_category(self, category_query: str):
+        """
+        Pagina iterando los índices 'from' y 'to' hasta que VTEX no devuelva más
+        productos o se recorran los `recordsFiltered` que anunció.
+        """
+        from_idx = 0
+        to_idx = self.PAGE_SIZE - 1
+        all_category_products = []
+        seen_skus = set()
+
+        # La góndola canónica de este slug (src/shelves.py) es la categoría con
+        # la que se guarda el producto: idéntica en todas las cadenas, que es lo
+        # que hace comparables sus catálogos. La ruta de taxonomía se resuelve
+        # para usarla como evidencia dietaria, no se persiste.
+        shelf = shelf_for_key(self.STORE_KEY, category_query)
+        taxonomy_path = category_path(self.STORE_KEY, category_query)
+
+        if not shelf:
+            logger.warning("[%s] Ojo: '%s' no está en src/shelves.py; sus "
+                           "productos quedarían sin góndola.", self.LABEL, category_query)
+
+        for _ in range(self.MAX_PAGES):
+            logger.info("[%s] Recopilando %s - Índices %s a %s...",
+                        self.LABEL, category_query, from_idx, to_idx)
+            raw_data = self.scrape_category_slice(category_query, from_idx, to_idx)
+            products = self.process_products(raw_data, shelf, taxonomy_path, category_query)
+
+            if not products:
+                logger.info("[%s] Final de la categoría '%s' alcanzado.", self.LABEL, category_query)
+                break
+
+            nuevos = [p for p in products if p["store_sku"] not in seen_skus]
+            if not nuevos:
+                # El endpoint dejó de respetar el `from`: no sabemos qué parte de
+                # la categoría falta, así que esto es un fallo, no un final.
+                raise CategoryScrapeError(
+                    f"[{self.LABEL}] La página {from_idx}-{to_idx} de '{category_query}' repite "
+                    f"productos ya vistos: la paginación dejó de avanzar."
+                )
+
+            seen_skus.update(p["store_sku"] for p in nuevos)
+            all_category_products.extend(nuevos)
+
+            total_disponible = extract_search_payload(raw_data, self.LABEL).get("recordsFiltered")
+            if isinstance(total_disponible, int) and to_idx + 1 >= total_disponible:
+                logger.info("[%s] Se recorrieron los %s productos de '%s'.",
+                            self.LABEL, total_disponible, category_query)
+                break
+
+            from_idx += self.PAGE_SIZE
+            to_idx += self.PAGE_SIZE
+            time.sleep(random.uniform(1.5, 3.0))  # Delay para evitar bloqueos
+        else:
+            # Agotar el tope significa que ni el corte por página vacía ni el de
+            # `recordsFiltered` llegaron: la categoría quedó recorrida a medias y
+            # reportarla OK habilitaría el pruning sobre un barrido trunco.
+            raise CategoryScrapeError(
+                f"[{self.LABEL}] Se alcanzó el tope de {self.MAX_PAGES} páginas en "
+                f"'{category_query}' sin llegar al final de la categoría."
+            )
+
+        return all_category_products
+
+
+def run_standalone(scraper_cls: type[VtexCatalogScraper]) -> None:
+    """El `__main__` de cada scraper VTEX: barre sus góndolas y las guarda."""
+    from src.database import SmartCartDB
+    from src.shelves import STORE_IDS, keys_for_store
+
+    # Corriendo standalone nadie configuró el logging: sin esto el progreso del
+    # scrapeo no se ve. Bajo el orquestador esto no corre y manda su config.
+    logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
+
+    scraper = scraper_cls()
+    db = SmartCartDB()
+    for cat_query in keys_for_store(scraper_cls.STORE_KEY):
+        productos = scraper.scrape_entire_category(cat_query)
+        if productos:
+            db.save_store_products(productos, STORE_IDS[scraper_cls.STORE_KEY])
+        time.sleep(3.5)  # Delay amigable para evitar blocks
