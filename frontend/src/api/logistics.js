@@ -1,7 +1,7 @@
 import { apiFetch } from "./client";
 
 /**
- * Consulta si una tienda ("coto", "dia" o "carrefour") entrega en una coordenada
+ * Consulta si una tienda (su `key` en STORES: "coto", "dia"...) entrega en una coordenada
  * (GET /logistics/{store}/coverage).
  *
  * Se usa en el onboarding para avisar en el momento, en vez de que el usuario

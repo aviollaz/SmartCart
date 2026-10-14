@@ -6,5 +6,6 @@ de este registro.
 """
 from src.scrapers.scraper_carrefour import CarrefourScraper
 from src.scrapers.scraper_dia import DiaScraper
+from src.scrapers.scraper_vea import VeaScraper
 
-VTEX_SCRAPERS = {cls.STORE_KEY: cls for cls in (DiaScraper, CarrefourScraper)}
+VTEX_SCRAPERS = {cls.STORE_KEY: cls for cls in (DiaScraper, CarrefourScraper, VeaScraper)}

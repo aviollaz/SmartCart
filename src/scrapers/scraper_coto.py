@@ -69,7 +69,7 @@ def build_coto_url(value: str, product_id: str) -> str | None:
     escape porcentual inválido: el CDN contesta **400 Bad Request** antes de
     rutear. No es un caso de borde. El desglose de /optimize abre una pestaña
     por producto de Coto —no hay carrito por URL como en las VTEX, ver
-    VTEX_CHECKOUT_DOMAINS en src/api.py—, así que un solo nombre con "%" le
+    VTEX_CHECKOUT_STORES en src/api.py—, así que un solo nombre con "%" le
     muestra al usuario una página de error cruda en medio del checkout.
 
     Se normaliza en vez de percent-encodear porque el slug no resuelve nada: lo

@@ -59,6 +59,8 @@ BANK_ALIASES = {
     "cabal": "cabal",
     "prex": "prex",
     "personal pay": "personal_pay",
+    # La tarjeta de crédito de Cencosud (Jumbo, Disco, Vea).
+    "cencopay": "cencopay",
     "banco del sol": "banco_del_sol",
     "del sol": "banco_del_sol",
     "club la nacion": "club_la_nacion",
@@ -185,6 +187,7 @@ DISPLAY_NAMES = {
     "club_la_nacion": "Club La Nación",
     "personal_pay": "Personal Pay",
     "banco_del_sol": "Banco del Sol",
+    "cencopay": "CencoPay",
 }
 
 

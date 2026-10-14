@@ -12,7 +12,7 @@ Los registros son capturas reales recortadas, no invenciones.
 import httpx
 import pytest
 
-from src.promotions import CarrefourScraper, CotoScraper, DiaScraper, DiscountScrapeError
+from src.promotions import CarrefourScraper, CotoScraper, DiaScraper, DiscountScrapeError, VeaScraper
 from src.promotions.models import BankDiscount, InvalidDiscount
 
 # --------------------------------------------------------------- payload de Coto
@@ -373,3 +373,84 @@ def test_roundtrip_json():
     """El archivo es el único transporte entre el scraper y el optimizador."""
     original = CotoScraper()._to_discount(_promo_coto())
     assert BankDiscount.from_json_dict(original.to_json_dict()) == original
+
+
+# -------------------------------------------------------------------------- Vea
+
+# Las fechas son epoch en segundos; AHORA cae dentro de la vigencia de todas.
+AHORA = 1791950000
+
+
+def _promo_vea(**overrides):
+    """Una promo de la entidad JN/bankDiscount de Cencosud, recortada de la real."""
+    base = {
+        "banks": [{"name": "CencoPay"}],
+        "days": ["3"],
+        "discount": "20.00",
+        "discountText": "",
+        "installmentsText": "3 Cuotas Sin Interés",
+        "info": "PROMOCIÓN VÁLIDA CON LA TARJETA DE CRÉDITO FÍSICA CENCOPAY SOLO LOS DÍAS "
+                "MIÉRCOLES EN LOS SITIOS WEB OBTENIENDO UN 20% DE DESCUENTO EN TU COMPRA ONLINE.",
+        "legals": "",
+        "websites": ["veaargentina", "discoargentina"],
+        "stores": [],
+        "dateStart": "1790000000",
+        "dateEnd": "1793000000",
+        "priority": "4",
+    }
+    base.update(overrides)
+    return base
+
+
+def _vea():
+    return VeaScraper(now=AHORA)
+
+
+def test_vea_traduce_una_promo_online():
+    descuento = _vea()._to_discount(_promo_vea())
+
+    assert descuento.entidad == "cencopay"
+    assert descuento.porcentaje_descuento == 20.0
+    assert descuento.dias_validos == ("miercoles",)
+
+
+def test_vea_el_dia_6_es_sabado_y_domingo():
+    descuento = _vea()._to_discount(_promo_vea(days=["5", "6"]))
+
+    assert descuento.dias_validos == ("viernes", "sabado", "domingo")
+
+
+def test_vea_lee_el_tope_del_legal():
+    info = ("El beneficio consiste en un reintegro (cashback) del 30%, con tope de $12.000 por semana, "
+            "para compras realizadas con Tarjeta de Crédito Naranja X")
+    descuento = _vea()._to_discount(_promo_vea(banks=[{"name": " Tarjeta Naranja X"}], discount="30.00",
+                                               days=["2"], installmentsText="", info=info))
+
+    assert (descuento.entidad, descuento.tope_reintegro, descuento.tope_periodo) == ("naranja_x", 12000, "semanal")
+
+
+@pytest.mark.parametrize("overrides,motivo", [
+    ({"websites": ["jumboargentina"]}, "otro sitio de cencosud"),
+    ({"dateEnd": "1791000000"}, "fuera de vigencia"),
+    ({"stores": ["507"]}, "sucursales puntuales"),
+    ({"discount": "6.00", "discountText": "cuotas sin interés"}, "cuotas sin interes"),
+    ({"info": "PROMOCIÓN VÁLIDA CON CENCOPAY CUENTA EXCLUSIVO PRESENCIAL."}, "solo local fisico"),
+    ({"info": "25% EN PRODUCTOS SELECCIONADOS DE LAS SECCIONES GALLETITAS"}, "productos seleccionados"),
+    ({"banks": [{"name": "MODO"}], "installmentsText": "en compras iguales o superiores a $100.000"}, "monto minimo"),
+    # El legal de jubilados dice "15% con Cencopay": el banco sale de `banks`.
+    ({"banks": [{"name": "Medios de Pago"}]}, "entidad desconocida"),
+])
+def test_vea_descarta_lo_que_el_modelo_no_representa(overrides, motivo):
+    scraper = _vea()
+
+    assert scraper._to_discount(_promo_vea(**overrides)) is None
+    assert scraper.discards[motivo] == 1
+
+
+def test_vea_value_es_json_adentro_de_un_string():
+    import json
+
+    payload = {"id": "bankDiscount", "value": json.dumps([_promo_vea()])}
+    scraper = VeaScraper(client=_cliente(_handler_json(payload)), now=AHORA)
+
+    assert [d.entidad for d in scraper.scrape()] == ["cencopay"]

@@ -13,14 +13,14 @@ número, y un solver mockeado no probaría nada de eso.
 import pytest
 
 from src import strategic_swaps as swaps_module
-from src.optimizer import optimize_cart
+from src.optimizer import DEFAULT_DELIVERY_COSTS, optimize_cart
 from src.strategic_swaps import find_strategic_swaps
 
 COTO = "coto_online"
 DIA = "dia_online"
 CARREFOUR = "carrefour_online"
 
-DELIVERY = {COTO: 3000, DIA: 3000, CARREFOUR: 3500}
+DELIVERY = DEFAULT_DELIVERY_COSTS
 
 
 # --------------------------------------------------------------------------

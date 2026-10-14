@@ -16,12 +16,14 @@ from src.promotions.playwright_base import PlaywrightScraper
 from src.promotions.scraper_carrefour import CarrefourScraper
 from src.promotions.scraper_coto import CotoScraper
 from src.promotions.scraper_dia import DiaScraper
+from src.promotions.scraper_vea import VeaScraper
 
-#: Los tres scrapers, indexados por el nombre corto que usa la CLI.
+#: Los scrapers, indexados por el nombre corto que usa la CLI.
 SCRAPERS = {
     "coto": CotoScraper,
     "dia": DiaScraper,
     "carrefour": CarrefourScraper,
+    "vea": VeaScraper,
 }
 
 __all__ = [
@@ -35,4 +37,5 @@ __all__ = [
     "InvalidDiscount",
     "PlaywrightScraper",
     "SCRAPERS",
+    "VeaScraper",
 ]

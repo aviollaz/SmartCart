@@ -25,6 +25,7 @@ from src.flattener import flatten_cart_prices, evaluate_best_promo, parse_promot
 from src.coto_logistics import check_coverage, resolve_coto_logistics
 from src.dia_logistics import check_coverage as check_dia_coverage, resolve_dia_logistics
 from src.carrefour_logistics import check_coverage as check_carrefour_coverage, resolve_carrefour_logistics
+from src.vea_logistics import check_coverage as check_vea_coverage, resolve_vea_logistics
 from src.schema import ensure_schema
 from src.shelves import SECTIONS, SHELVES, sections as shelf_sections, shelf_label
 from src.stores import STORES
@@ -785,7 +786,7 @@ def _compute_price_savings(result: dict, flat_prices: dict, excluded_stores: lis
 # Una tienda VTEX arma link si tiene `checkout_domain` en src/stores.py, pero su
 # scraper tiene que guardar `store_item_id` (ver save_store_products): sin esa
 # columna la tienda no arma link, a propósito.
-VTEX_CHECKOUT_DOMAINS = {s.id: s.checkout_domain for s in STORES if s.checkout_domain}
+VTEX_CHECKOUT_STORES = {s.id: s for s in STORES if s.checkout_domain}
 
 
 def generate_vtex_magic_link(store_domain: str, products: list, sales_channel: int = 1, seller_id: int = 1) -> str:
@@ -876,11 +877,11 @@ def _optional_feature(nombre: str, default, fn, *args, **kwargs):
 
 def _resolve_logistics_stage(request):
     """
-    Etapa de logística: cobertura y envío real de Coto, Día y Carrefour.
+    Etapa de logística: cobertura y envío real de cada tienda.
 
     Va antes del solver porque cambia dos de sus entradas: qué tiendas
     participan y cuánto cuesta su envío. Nunca lanza (fail-open, ver
-    src/coto_logistics.py, src/dia_logistics.py y src/carrefour_logistics.py), así que un problema con el
+    src/coto_logistics.py y src/vtex_logistics.py), así que un problema con el
     sitio de una tienda no puede tumbar la optimización entera.
 
     :return: (delivery_costs, excluded_stores, logistics), con `logistics`
@@ -894,6 +895,7 @@ def _resolve_logistics_stage(request):
         ("coto", "coto_online", resolve_coto_logistics),
         ("dia", "dia_online", resolve_dia_logistics),
         ("carrefour", "carrefour_online", resolve_carrefour_logistics),
+        ("vea", "vea_online", resolve_vea_logistics),
     ):
         info = resolve(request.lat, request.lng, fallback_delivery_cost=delivery_costs.get(store_id))
         logistics[key] = info
@@ -950,7 +952,7 @@ def _attach_vtex_checkout_links(cur, split: dict) -> None:
 
     Muta `split` in-place.
     """
-    for store_id, domain in VTEX_CHECKOUT_DOMAINS.items():
+    for store_id, store in VTEX_CHECKOUT_STORES.items():
         if store_id not in split:
             continue
 
@@ -984,8 +986,9 @@ def _attach_vtex_checkout_links(cur, split: dict) -> None:
         # todo cargado y paga menos productos de los que eligió.
         if len(link_payload) == len(store_products):
             split[store_id]["checkout_url"] = generate_vtex_magic_link(
-                store_domain=domain,
-                products=link_payload
+                store_domain=store.checkout_domain,
+                products=link_payload,
+                sales_channel=store.sales_channel,
             )
         elif link_payload:
             logger.warning(
@@ -1327,6 +1330,17 @@ def get_carrefour_coverage(
     """
     return check_carrefour_coverage(lat, lng)
 
+@app.get("/logistics/vea/coverage")
+def get_vea_coverage(
+    lat: float = Query(..., description="Latitud del domicilio de entrega"),
+    lng: float = Query(..., description="Longitud del domicilio de entrega")
+):
+    """
+    Indica si Vea envía a domicilio en una coordenada dada. Mismo contrato que
+    /logistics/dia/coverage.
+    """
+    return check_vea_coverage(lat, lng)
+
 @app.get("/categories", response_model=List[SectionResponse])
 def get_categories():
     """
@@ -1400,8 +1414,10 @@ def get_demo_cart():
 
     Tres criterios, cada uno por algo que salió mal al probarlo:
 
-    * **`store_count = 3`.** Un producto que vende una sola cadena no le da
+    * **`store_count >= 3`.** Un producto que vende una sola cadena no le da
       nada que decidir al optimizador, que es justo lo que se quiere mostrar.
+      Es `>=` y no `=`: con una cuarta cadena, `= 3` dejaba afuera justamente a
+      los productos que venden todas.
     * **El producto MEDIANO de cada góndola, no el más caro.** El más caro es
       el criterio obvio y da un carrito de licores de $384.000 (medido). La
       mediana da leche, fideos, arroz y yerba: una compra.
@@ -1429,7 +1445,7 @@ def get_demo_cart():
               ON sp.unified_product_id = u.id AND sp.in_stock
             WHERE u.shelf = ANY(%s)
             GROUP BY u.id, u.shelf
-            HAVING count(DISTINCT sp.store_id) = 3
+            HAVING count(DISTINCT sp.store_id) >= 3
         ),
         rankeados AS (
             SELECT id, shelf,

@@ -35,6 +35,17 @@ def test_dia_transformer():
     assert len(parsed_teaser) == 1
     assert parsed_teaser[0]["type"] == "multi_buy"
 
+def test_vea_ignora_su_list_price():
+    # Relevado: el ListPrice de Vea vale Price x 82,645 o x 100. Leído como en
+    # Día saldría un "98% Off Directo" y un base_price cien veces mayor.
+    oferta = {"ListPrice": 610744, "Price": 7390, "teasers": [], "discountHighlights": []}
+
+    base_price, promos = PromoTransformer.vea(oferta, "4252")
+
+    assert base_price == 7390
+    assert promos == []
+
+
 # --- Paridad entre banks.py y el selector del frontend ----------------------
 #
 # `optimize_cart` compara `promo["card"] in user_cards` por IGUALDAD EXACTA, así
