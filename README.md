@@ -6,33 +6,6 @@ solver de restricciones (Google OR-Tools) **cómo repartir el carrito entre las
 tres cadenas gastando lo menos posible** — contemplando promociones, descuentos
 bancarios, costos de envío y el mínimo de compra de cada tienda.
 
-## Demo
-
-**Probalo en vivo: <https://smart-cart-rouge.vercel.app>** — en la home, *Probar
-con un carrito de ejemplo* arma un carrito con el catálogo de hoy; después,
-*Optimizar*.
-
-> Si nadie la usó en un rato, la primera carga puede tardar ~30 segundos: el
-> servidor se apaga solo cuando no hay tráfico (es lo que lo mantiene gratis) y
-> al volver carga el modelo de búsqueda. Después contesta al instante.
-
-<!-- ------------------------------------------------------------------------
-     PENDIENTE: grabar la demo. Ver issue #19.
-
-     Cómo publicarla SIN commitear el binario: arrastrar el archivo a un
-     comentario de un issue de este repo (o a un Release). GitHub lo sube a su
-     propia CDN y devuelve una URL; se pega acá y listo. Un .mp4 versionado lo
-     paga cada clone para siempre.
-
-     Reemplazar los dos bloques de abajo por:
-       ![Demo](https://github.com/user-attachments/assets/UUID-DEL-GIF)
-       https://github.com/user-attachments/assets/UUID-DEL-VIDEO
-------------------------------------------------------------------------- -->
-
-> **La demo en video todavía no está grabada.** Mientras tanto, el recorrido es:
-> buscar productos → armar el carrito → *Optimizar* → ver el reparto por tienda,
-> el ahorro y las sugerencias de reemplazo.
-
 ## Cómo funciona
 
 1. **Scraping** — cada cadena expone una API interna (Coto un BFF REST, Día y
