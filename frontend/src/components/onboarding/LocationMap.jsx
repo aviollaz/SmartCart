@@ -54,7 +54,7 @@ export function LocationMap({ position, onPick }) {
       center={[center.lat, center.lng]}
       zoom={position ? ADDRESS_ZOOM : CITY_ZOOM}
       scrollWheelZoom={false}
-      className="h-56 w-full rounded-md"
+      className="h-40 w-full rounded-md sm:h-56"
     >
       <TileLayer
         url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"

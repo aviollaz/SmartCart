@@ -33,6 +33,9 @@ export function LocationModal({ onClose }) {
   const [candidates, setCandidates] = useState([]);
   const [status, setStatus] = useState("idle"); // idle | searching | empty | error | confirming
   const [coverageWarning, setCoverageWarning] = useState(null);
+  // Elegir un candidato colapsa la lista: en el celular, lista + mapa ocupaban
+  // la pantalla entera y el botón de confirmar quedaba fuera de vista.
+  const [showCandidates, setShowCandidates] = useState(true);
   // Punto elegido pero todavía no confirmado: {displayName, lat, lng}. Arranca
   // en la dirección vigente (si hay) para que el mapa abra con el pin puesto
   // donde el usuario ya está, en vez de mandarlo de nuevo al centro de CABA.
@@ -66,6 +69,7 @@ export function LocationModal({ onClose }) {
     try {
       const results = await geocodeAddress(query);
       setCandidates(results);
+      setShowCandidates(true);
       setStatus(results.length === 0 ? "empty" : "idle");
     } catch {
       setCandidates([]);
@@ -76,6 +80,7 @@ export function LocationModal({ onClose }) {
   function selectCandidate(candidate) {
     setCoverageWarning(null);
     setPendingPoint(candidate);
+    setShowCandidates(false);
   }
 
   // Al soltar el pin o clickear el mapa. El reverse geocoding se pide una sola
@@ -154,139 +159,156 @@ export function LocationModal({ onClose }) {
 
   return (
     <div
-      className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4"
+      className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-2 sm:p-4"
       onClick={onClose ? (event) => event.target === event.currentTarget && onClose() : undefined}
     >
-      <div className="max-h-[90vh] w-full max-w-lg overflow-y-auto rounded-lg border border-line bg-surface p-6 shadow-lg">
-        <div className="mb-4 flex items-center gap-2">
-          <MapPin className="text-brand-accent" size={20} />
-          <h2 className="font-display text-lg font-bold text-ink">¿A dónde te llevamos el pedido?</h2>
-          {onClose && (
+      {/* Columna flex: sólo el cuerpo scrollea y el pie con los botones queda
+          siempre a la vista. `dvh` y no `vh`: en el celular `vh` incluye la
+          barra del navegador y el pie quedaba tapado. */}
+      <div className="flex max-h-[90dvh] w-full max-w-lg flex-col rounded-lg border border-line bg-surface shadow-lg">
+        <div className="overflow-y-auto p-4 sm:p-6">
+          <div className="mb-4 flex items-center gap-2">
+            <MapPin className="text-brand-accent" size={20} />
+            <h2 className="font-display text-lg font-bold text-ink">¿A dónde te llevamos el pedido?</h2>
+            {onClose && (
+              <button
+                type="button"
+                onClick={onClose}
+                aria-label="Cerrar"
+                className="ml-auto rounded-md p-1 text-ink-muted hover:bg-surface-muted hover:text-ink"
+              >
+                <X size={18} />
+              </button>
+            )}
+          </div>
+
+          <p className="mb-4 text-sm text-ink-muted">
+            Necesitamos tu dirección para saber si los supermercados entregan en tu zona y cuánto
+            cuesta el envío. Sin eso, el precio final es una estimación.
+          </p>
+
+          <form onSubmit={handleSearch} className="flex gap-2">
+            <input
+              type="text"
+              value={query}
+              onChange={(event) => setQuery(event.target.value)}
+              placeholder="Ej: Av. Corrientes 1234, CABA"
+              className="flex-1 rounded-md border border-line bg-surface px-3 py-2 text-sm text-ink"
+              autoFocus
+            />
             <button
-              type="button"
-              onClick={onClose}
-              aria-label="Cerrar"
-              className="ml-auto rounded-md p-1 text-ink-muted hover:bg-surface-muted hover:text-ink"
+              type="submit"
+              disabled={status === "searching" || !query.trim()}
+              className="flex items-center gap-2 rounded-md bg-brand-accent px-4 py-2 text-sm font-semibold text-white hover:bg-brand-accent-dark disabled:opacity-50"
             >
-              <X size={18} />
+              <Search size={14} />
+              {status === "searching" ? "Buscando..." : "Buscar"}
             </button>
+          </form>
+
+          {status === "empty" && (
+            <p className="mt-3 text-sm text-state-warning">
+              No encontramos esa dirección. Probá agregando la localidad o el partido, o marcá el
+              punto directamente en el mapa.
+            </p>
+          )}
+
+          {status === "error" && (
+            <p className="mt-3 text-sm text-state-warning">
+              No pudimos buscar la dirección en este momento. Marcá el punto en el mapa o seguí sin
+              dirección.
+            </p>
+          )}
+
+          {candidates.length > 0 && showCandidates && (
+            <ul className="mt-4 max-h-40 divide-y divide-line overflow-y-auto rounded-md border border-line">
+              {candidates.map((candidate) => {
+                const selected = isSamePoint(pendingPoint, candidate);
+                return (
+                  <li key={`${candidate.lat},${candidate.lng}`}>
+                    <button
+                      type="button"
+                      onClick={() => selectCandidate(candidate)}
+                      className={`w-full px-3 py-2 text-left text-sm hover:bg-surface-muted ${
+                        selected ? "bg-brand-violet-100 font-semibold text-ink" : "text-ink"
+                      }`}
+                    >
+                      {candidate.displayName}
+                    </button>
+                  </li>
+                );
+              })}
+            </ul>
+          )}
+
+          <div className="mt-4">
+            <p className="mb-2 text-xs text-ink-muted">
+              {pendingPoint
+                ? "Arrastrá el pin o hacé clic en el mapa para ajustar el punto exacto."
+                : "También podés marcar tu ubicación haciendo clic en el mapa."}
+            </p>
+            <LocationMap position={pendingPoint} onPick={handleMapPick} />
+          </div>
+
+          {pendingPoint && (
+            <p className="mt-3 text-sm text-ink">
+              <span className="font-semibold">Ubicación elegida: </span>
+              {pendingPoint.displayName || formatCoords(pendingPoint)}
+              {candidates.length > 1 && !showCandidates && (
+                <button
+                  type="button"
+                  onClick={() => setShowCandidates(true)}
+                  className="ml-2 font-semibold text-brand-accent underline"
+                >
+                  Cambiar
+                </button>
+              )}
+            </p>
           )}
         </div>
 
-        <p className="mb-4 text-sm text-ink-muted">
-          Necesitamos tu dirección para saber si los supermercados entregan en tu zona y cuánto
-          cuesta el envío. Sin eso, el precio final es una estimación.
-        </p>
-
-        <form onSubmit={handleSearch} className="flex gap-2">
-          <input
-            type="text"
-            value={query}
-            onChange={(event) => setQuery(event.target.value)}
-            placeholder="Ej: Av. Corrientes 1234, CABA"
-            className="flex-1 rounded-md border border-line bg-surface px-3 py-2 text-sm text-ink"
-            autoFocus
-          />
+        <div className="border-t border-line p-4 sm:px-6">
+          {/* En el pie y no en el cuerpo: aparece al tocar Confirmar, y en el
+              celular el cuerpo puede estar scrolleado lejos de acá. */}
+          {coverageWarning && (
+            <div className="mb-3 rounded-md border border-state-warning/40 bg-state-warning/10 p-3">
+              {coverageWarning.uncovered.map(({ name, message }) => (
+                <div key={name} className="mb-2">
+                  <p className="text-sm font-semibold text-ink">{name} no entrega en esta dirección</p>
+                  <p className="mt-1 text-xs text-ink-muted">
+                    {message || `${name} no realiza entregas en esta dirección.`}
+                  </p>
+                </div>
+              ))}
+              <button
+                type="button"
+                onClick={acceptWithoutUncovered}
+                className="text-sm font-semibold text-brand-accent underline"
+              >
+                Usar igual esta dirección (sin {coverageWarning.uncovered.map((u) => u.name).join(" ni ")})
+              </button>
+            </div>
+          )}
           <button
-            type="submit"
-            disabled={status === "searching" || !query.trim()}
-            className="flex items-center gap-2 rounded-md bg-brand-accent px-4 py-2 text-sm font-semibold text-white hover:bg-brand-accent-dark disabled:opacity-50"
+            type="button"
+            onClick={handleConfirm}
+            disabled={!pendingPoint || status === "confirming"}
+            className="w-full rounded-md bg-brand-violet-700 px-4 py-2 text-sm font-semibold text-white hover:bg-brand-violet-900 disabled:opacity-50"
           >
-            <Search size={14} />
-            {status === "searching" ? "Buscando..." : "Buscar"}
+            {status === "confirming" ? "Verificando cobertura..." : "Confirmar esta ubicación"}
           </button>
-        </form>
 
-        {status === "empty" && (
-          <p className="mt-3 text-sm text-state-warning">
-            No encontramos esa dirección. Probá agregando la localidad o el partido, o marcá el
-            punto directamente en el mapa.
-          </p>
-        )}
-
-        {status === "error" && (
-          <p className="mt-3 text-sm text-state-warning">
-            No pudimos buscar la dirección en este momento. Marcá el punto en el mapa o seguí sin
-            dirección.
-          </p>
-        )}
-
-        {candidates.length > 0 && (
-          <ul className="mt-4 max-h-40 divide-y divide-line overflow-y-auto rounded-md border border-line">
-            {candidates.map((candidate) => {
-              const selected = isSamePoint(pendingPoint, candidate);
-              return (
-                <li key={`${candidate.lat},${candidate.lng}`}>
-                  <button
-                    type="button"
-                    onClick={() => selectCandidate(candidate)}
-                    className={`w-full px-3 py-2 text-left text-sm hover:bg-surface-muted ${
-                      selected ? "bg-brand-violet-100 font-semibold text-ink" : "text-ink"
-                    }`}
-                  >
-                    {candidate.displayName}
-                  </button>
-                </li>
-              );
-            })}
-          </ul>
-        )}
-
-        <div className="mt-4">
-          <p className="mb-2 text-xs text-ink-muted">
-            {pendingPoint
-              ? "Arrastrá el pin o hacé clic en el mapa para ajustar el punto exacto."
-              : "También podés marcar tu ubicación haciendo clic en el mapa."}
-          </p>
-          <LocationMap position={pendingPoint} onPick={handleMapPick} />
+          <button
+            type="button"
+            onClick={() => {
+              skipLocation();
+              onClose?.();
+            }}
+            className="mt-3 w-full text-center text-xs text-ink-muted underline hover:text-ink"
+          >
+            Seguir sin dirección (usamos costos de envío estimados por zona)
+          </button>
         </div>
-
-        {pendingPoint && (
-          <p className="mt-3 text-sm text-ink">
-            <span className="font-semibold">Ubicación elegida: </span>
-            {pendingPoint.displayName || formatCoords(pendingPoint)}
-          </p>
-        )}
-
-        {coverageWarning && (
-          <div className="mt-3 rounded-md border border-state-warning/40 bg-state-warning/10 p-3">
-            {coverageWarning.uncovered.map(({ name, message }) => (
-              <div key={name} className="mb-2">
-                <p className="text-sm font-semibold text-ink">{name} no entrega en esta dirección</p>
-                <p className="mt-1 text-xs text-ink-muted">
-                  {message || `${name} no realiza entregas en esta dirección.`}
-                </p>
-              </div>
-            ))}
-            <button
-              type="button"
-              onClick={acceptWithoutUncovered}
-              className="text-sm font-semibold text-brand-accent underline"
-            >
-              Usar igual esta dirección (sin {coverageWarning.uncovered.map((u) => u.name).join(" ni ")})
-            </button>
-          </div>
-        )}
-
-        <button
-          type="button"
-          onClick={handleConfirm}
-          disabled={!pendingPoint || status === "confirming"}
-          className="mt-4 w-full rounded-md bg-brand-violet-700 px-4 py-2 text-sm font-semibold text-white hover:bg-brand-violet-900 disabled:opacity-50"
-        >
-          {status === "confirming" ? "Verificando cobertura..." : "Confirmar esta ubicación"}
-        </button>
-
-        <button
-          type="button"
-          onClick={() => {
-            skipLocation();
-            onClose?.();
-          }}
-          className="mt-3 w-full text-center text-xs text-ink-muted underline hover:text-ink"
-        >
-          Seguir sin dirección (usamos costos de envío estimados por zona)
-        </button>
       </div>
     </div>
   );
