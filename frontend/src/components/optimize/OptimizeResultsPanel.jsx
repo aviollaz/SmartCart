@@ -1,5 +1,6 @@
 import { ChevronDown, Lightbulb } from "lucide-react";
 import { useCart } from "../../context/CartContext";
+import { STORES } from "../../utils/constants";
 import { formatPrice } from "../../utils/formatters";
 import { FewerStoresCard } from "./FewerStoresCard";
 import { LogisticsNotice } from "./LogisticsNotice";
@@ -19,7 +20,7 @@ export function OptimizeResultsPanel({ result, maxStores, onAcceptSuggestion, on
   const splitEntries = Object.entries(result.split || {});
   // Envío "(estimado)": la tienda tiene consulta en vivo y esta vez cayó a la
   // tabla por zona.
-  const logisticsKey = { coto_online: "coto", dia_online: "dia", carrefour_online: "carrefour" };
+  const logisticsKey = Object.fromEntries(STORES.map((s) => [s.id, s.key]));
 
   return (
     <div className="flex flex-col gap-4">

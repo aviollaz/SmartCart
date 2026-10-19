@@ -154,11 +154,12 @@ def _resolve(req):
 
 @pytest.fixture(autouse=True)
 def _dia_sin_novedad(monkeypatch):
-    """Día y Carrefour no consultan la red en estos tests: responden como su fallback."""
+    """Día, Carrefour y Vea no consultan la red en estos tests: responden como su fallback."""
     sin_novedad = lambda lat, lng, fallback_delivery_cost: {
         "covered": True, "delivery_cost": fallback_delivery_cost, "source": "fallback"}
     monkeypatch.setattr(api, "resolve_dia_logistics", sin_novedad)
     monkeypatch.setattr(api, "resolve_carrefour_logistics", sin_novedad)
+    monkeypatch.setattr(api, "resolve_vea_logistics", sin_novedad)
 
 
 def test_dia_sin_cobertura_se_excluye_y_coto_live_pisa_el_costo(monkeypatch):
@@ -173,7 +174,7 @@ def test_dia_sin_cobertura_se_excluye_y_coto_live_pisa_el_costo(monkeypatch):
     assert excluded == [DIA]
     assert costs[COTO] == 3399.0
     assert costs[DIA] == 3000
-    assert set(logistics) == {"coto", "dia", "carrefour"}
+    assert set(logistics) == {"coto", "dia", "carrefour", "vea"}
 
 
 def test_dia_cubierto_pisa_su_costo(monkeypatch):

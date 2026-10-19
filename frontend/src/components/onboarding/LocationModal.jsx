@@ -126,13 +126,9 @@ export function LocationModal({ onClose }) {
     // vez de que el usuario se entere recién al optimizar. Un ok:false es "no
     // pudimos preguntar", no "no hay cobertura": no bloquea la confirmación ni
     // se guarda como veredicto.
-    const [coto, dia, carrefour] = await Promise.all([
-      checkCoverage("coto", pendingPoint),
-      checkCoverage("dia", pendingPoint),
-      checkCoverage("carrefour", pendingPoint),
-    ]);
+    const coverages = await Promise.all(STORES.map((s) => checkCoverage(s.key, pendingPoint)));
     const coverageByStore = Object.fromEntries(
-      [["coto_online", coto], ["dia_online", dia], ["carrefour_online", carrefour]].filter(([, coverage]) => coverage.ok)
+      STORES.map((s, i) => [s.id, coverages[i]]).filter(([, coverage]) => coverage.ok)
     );
     const uncovered = Object.entries(coverageByStore)
       .filter(([, coverage]) => coverage.covered === false)

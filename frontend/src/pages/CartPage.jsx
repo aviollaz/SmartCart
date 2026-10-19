@@ -3,6 +3,7 @@ import { useCart } from "../context/CartContext";
 import { useProfile } from "../context/ProfileContext";
 import { useHistory } from "../context/HistoryContext";
 import { optimizeCart } from "../api/optimize";
+import { STORES } from "../utils/constants";
 import { storeName } from "../utils/formatters";
 import { useCartProductsContext } from "../context/CartProductsContext";
 import { CartLineItem } from "../components/cart/CartLineItem";
@@ -104,10 +105,10 @@ export function CartPage({ onOpenLocation }) {
         // que su veredicto es más fresco que el guardado en el onboarding. Solo
         // se persiste un "no entrega" afirmativo: la respuesta sin coordenadas
         // trae covered:true por fail-open, y guardarlo pisaría un "no" real.
-        for (const [key, storeId] of [["coto", "coto_online"], ["dia", "dia_online"]]) {
+        for (const { key, id } of STORES) {
           const logistics = response.data.logistics?.[key];
           if (logistics?.covered === false) {
-            setStoreCoverage(storeId, { covered: false, message: logistics.message });
+            setStoreCoverage(id, { covered: false, message: logistics.message });
           }
         }
       } else {

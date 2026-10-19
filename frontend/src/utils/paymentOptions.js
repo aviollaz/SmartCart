@@ -33,6 +33,7 @@ export const CARD_OPTIONS = [
   { value: "columbia", label: "Columbia" },
   { value: "banco_del_sol", label: "Banco del Sol" },
   { value: "carrefour_banco", label: "Carrefour Banco" },
+  { value: "cencopay", label: "CencoPay" },
   { value: "naranja_x", label: "Naranja X" },
   { value: "amex", label: "American Express" },
   { value: "cabal", label: "Cabal" },

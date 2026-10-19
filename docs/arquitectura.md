@@ -16,7 +16,7 @@
 
 Los supermercados argentinos no cobran lo mismo por el mismo producto, y esa
 dispersión de precios no es chica: el mismo paquete de yerba puede diferir 20-30%
-entre Coto, Día y Carrefour, y ninguna cadena gana en todo. Comparar a mano —
+entre Coto, Día, Carrefour y Vea, y ninguna cadena gana en todo. Comparar a mano —
 abrir tres sitios, buscar cada producto, sumar— no es algo que alguien haga
 para una compra semanal de treinta ítems.
 
@@ -51,7 +51,7 @@ El repositorio son dos procesos independientes que se hablan por HTTP:
 flowchart LR
     subgraph Offline["Pipelines offline (nocturno / bajo demanda)"]
         direction TB
-        SCR["Scrapers\nCoto / Día / Carrefour\n(httpx, VTEX GraphQL)"]
+        SCR["Scrapers\nCoto / Día / Carrefour / Vea\n(httpx, VTEX GraphQL)"]
         EMB["Embeddings\nsentence-transformers"]
         BANK["Descuentos bancarios\nhttpx + Playwright"]
         SCR --> EMB
@@ -83,8 +83,8 @@ flowchart LR
 | --- | --- | --- |
 | Base de datos | PostgreSQL + extensión `pgvector` (HNSW, cosine ops) | Neon (serverless, escala a cero) |
 | Backend | Python, FastAPI, `psycopg[binary,pool]`, Pydantic, `pandas`, `sentence-transformers` (`all-MiniLM-L6-v2`), Google OR-Tools (CP-SAT), Tesseract vía `pytesseract` | Google Cloud Run (contenedor Docker, scale-to-zero) |
-| Scraping de catálogo | `httpx` contra APIs internas: BFF REST de Coto, GraphQL persisted-query de VTEX (Día y Carrefour) | GitHub Actions (cron nocturno) |
-| Scraping de promos bancarias | `httpx` (Coto) + `Playwright`/Chromium (Día y Carrefour, que renderizan la grilla en el cliente) | Manual / bajo demanda |
+| Scraping de catálogo | `httpx` contra APIs internas: BFF REST de Coto, GraphQL persisted-query de VTEX (Día, Carrefour y Vea) | GitHub Actions (cron nocturno) |
+| Scraping de promos bancarias | `httpx` (Coto, y Vea vía Master Data de VTEX) + `Playwright`/Chromium (Día y Carrefour, que renderizan la grilla en el cliente) | Manual / bajo demanda |
 | Frontend | React 19, Vite, Tailwind CSS v4 (config CSS-first, sin `tailwind.config.js`), React Router, `react-leaflet` (mapa de dirección), estado con Context + `useReducer`/`useState` (sin Redux/Zustand/React Query), `fetch` nativo (sin axios) | Vercel |
 | Analítica | Servicio HTTP separado (`SmartCart Performance Analyzer`), Postgres propio en `:5433`, ingest en `:8001`, alimenta Power BI | Fuera de este repo |
 
@@ -103,13 +103,15 @@ del sitio", y no hay noción de "el mismo usuario en otro dispositivo".
 sitio ya usa para pintar su propia grilla — no hay scraping de HTML.
 
 - **Coto** (`scraper_coto.py`) — BFF REST propio, paginado.
-- **Día** y **Carrefour** (`scraper_dia.py`, `scraper_carrefour.py`) — mismo
-  motor de e-commerce, VTEX, con una *persisted query* GraphQL
-  (`productSearchV3`, `sha256Hash` fijo) que ninguna de las dos puede pedir
-  con campos nuevos sin que el hash rote del lado del store.
+- **Día**, **Carrefour** y **Vea** (`scraper_dia.py`, `scraper_carrefour.py`,
+  `scraper_vea.py`) — mismo motor de e-commerce, VTEX, con una *persisted
+  query* GraphQL (`productSearchV3`, `sha256Hash` fijo) que ninguna puede pedir
+  con campos nuevos sin que el hash rote del lado del store. El barrido es uno
+  solo, `VtexCatalogScraper` en `vtex.py`: cada tienda es una subclase con su
+  dominio, y se registra en `vtex_stores.py`.
 
 **Input:** una clave de categoría por tienda (un id `catv...` para Coto, un
-slug de URL para Día/Carrefour). Las claves que efectivamente se barren no las
+slug de URL para las tiendas VTEX). Las claves que efectivamente se barren no las
 elige cada scraper: salen de `src/shelves.py` (ver 3.1.1).
 
 **Output:** por producto, precio de lista, promociones crudas (formato propio
@@ -386,9 +388,10 @@ por Y, podés sacar la tienda Z y ahorrar $N".
 
 ### 3.8 Descuentos bancarios (`src/promotions/`, `src/bank_promos.py`)
 
-**Tecnología:** `httpx` (Coto, endpoint público tipo ATG) + `Playwright`/
-Chromium (Día y Carrefour, que renderizan la grilla de promos del lado del
-cliente, sin equivalente en JSON).
+**Tecnología:** `httpx` (Coto, endpoint público tipo ATG; Vea, la entidad
+`JN/bankDiscount` de Master Data que comparte con Jumbo y Disco) +
+`Playwright`/Chromium (Día y Carrefour, que renderizan la grilla de promos del
+lado del cliente, sin equivalente en JSON).
 
 **Input:** las páginas/endpoints de promociones bancarias de cada cadena.
 

@@ -12,10 +12,11 @@ from pydantic import ValidationError
 
 import src.api as api
 from src.api import OptimizationRequest, _optimize_purchase_window
+from src.optimizer import DEFAULT_DELIVERY_COSTS
 
 COTO, DIA = "coto_online", "dia_online"
 LUNES = date(2026, 10, 5)
-DELIVERY = {COTO: 3000, DIA: 3000, "carrefour_online": 3500}
+DELIVERY = DEFAULT_DELIVERY_COSTS
 CART = [{"unified_id": "prod_a", "quantity": 1}, {"unified_id": "prod_b", "quantity": 1}]
 
 

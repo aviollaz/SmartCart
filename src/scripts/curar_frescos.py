@@ -37,7 +37,8 @@ from sentence_transformers import SentenceTransformer
 
 from src.embeddings import DEFAULT_EMBEDDING_MODEL
 from src.fresh_items import FRESH_ITEMS, FRESH_SHELVES
-from src.scrapers import scraper_carrefour, scraper_coto, scraper_dia
+from src.scrapers import scraper_coto
+from src.scrapers.vtex_stores import VTEX_SCRAPERS
 from src.shelves import SHELVES, STORES
 
 _PIEZA = re.compile(r"peso\s+(aproximado|m[ií]nimo)", re.I)
@@ -48,8 +49,7 @@ _UN = re.compile(r"\bx\s*(ud|uni|un|u)\b\.?|\bx\s*unidad\b|\bx\s*atado\b", re.I)
 def _scrapers():
     return {
         "coto": scraper_coto.CotoScraper().scrape_category,
-        "dia": scraper_dia.DiaScraper().scrape_entire_category,
-        "carrefour": scraper_carrefour.CarrefourScraper().scrape_entire_category,
+        **{cls.STORE_KEY: cls().scrape_entire_category for cls in VTEX_SCRAPERS.values()},
     }
 
 

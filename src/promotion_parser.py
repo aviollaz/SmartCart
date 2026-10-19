@@ -234,3 +234,24 @@ class PromoTransformer:
             "carrefour",
             price_gap_membership="mi_carrefour" if requiere_membresia else None,
         )
+
+    @staticmethod
+    def vea(raw_commertial_offer: dict, product_id: str) -> tuple[float, list]:
+        """
+        Traduce la oferta comercial de Vea (VTEX) al estándar único, ignorando
+        su `ListPrice`.
+
+        En Vea ese campo no es un precio de lista: relevado sobre 239 productos
+        de seis categorías (oct 2026), vale siempre `Price` × 82,645 o × 100
+        (aceite: $7.390 contra $610.744). Leído como en Día, cada producto
+        saldría con un "98% Off Directo" y un `base_price` cien veces mayor. Así
+        que el precio es `Price` y la diferencia no se interpreta.
+
+        Las promos reales de Vea (2do al 70%, 4x3...) no vienen en `teasers` ni
+        en la simulación de checkout; sólo como nombres de colección con un
+        "Hasta ..." que no dice el descuento de cada producto. Hasta encontrar de
+        dónde las saca el sitio, Vea se cotiza sin promos por producto: de más,
+        nunca de menos.
+        """
+        oferta = {**raw_commertial_offer, "ListPrice": raw_commertial_offer.get("Price", 0.0)}
+        return PromoTransformer._vtex(oferta, product_id, "vea")

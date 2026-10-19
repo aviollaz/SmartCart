@@ -40,13 +40,17 @@ def test_todas_las_claves_existen_en_la_taxonomia(store):
 
 
 @pytest.mark.parametrize("slug", SHELVES)
-def test_cada_gondola_cubre_las_tres_tiendas(slug):
+def test_cada_gondola_declara_todas_las_tiendas(slug):
     """
     El sentido de la tabla es la alineación: una góndola que le falta a una
     tienda es exactamente el caso que no se puede comparar entre cadenas.
+
+    Por eso cada fila tiene que nombrar a cada tienda. Una tupla vacía
+    (`vea=()`) es una ausencia decidida —la taxonomía de esa tienda no separa
+    el estante— y la fila dice por qué; no nombrarla es un olvido, y falla.
     """
     for store in STORES:
-        assert SHELVES[slug].keys_for(store), f"'{slug}' no tiene claves de {store}"
+        assert store in SHELVES[slug].keys, f"'{slug}' no declara claves de {store}"
 
 
 @pytest.mark.parametrize("slug,store", [(s, t) for s in SHELVES for t in STORES])

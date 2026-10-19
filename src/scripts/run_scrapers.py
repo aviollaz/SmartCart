@@ -35,8 +35,9 @@ from dataclasses import dataclass, field
 from typing import Callable, Iterable
 
 from src.database import SmartCartDB
-from src.scrapers import scraper_carrefour, scraper_coto, scraper_dia
-from src.shelves import STORE_IDS
+from src.scrapers import scraper_coto
+from src.scrapers.vtex_stores import VTEX_SCRAPERS
+from src.shelves import STORE_IDS, keys_for_store
 
 logger = logging.getLogger(__name__)
 
@@ -175,16 +176,14 @@ def run_coto(db: SmartCartDB) -> StoreRunResult:
                       scraper.scrape_category, 2.0)
 
 
-def run_dia(db: SmartCartDB) -> StoreRunResult:
-    scraper = scraper_dia.DiaScraper()
-    return _run_store(db, "dia", STORE_IDS["dia"], "DÍA", scraper_dia.MVP_CATEGORIES,
-                      scraper.scrape_entire_category, 3.5)
-
-
-def run_carrefour(db: SmartCartDB) -> StoreRunResult:
-    scraper = scraper_carrefour.CarrefourScraper()
-    return _run_store(db, "carrefour", STORE_IDS["carrefour"], "CARREFOUR",
-                      scraper_carrefour.MVP_CATEGORIES, scraper.scrape_entire_category, 3.5)
+# Las tiendas VTEX comparten scraper (src/scrapers/vtex.py), así que también
+# comparten runner.
+def _vtex_runner(scraper_cls) -> Callable[[SmartCartDB], StoreRunResult]:
+    def run(db: SmartCartDB) -> StoreRunResult:
+        key = scraper_cls.STORE_KEY
+        return _run_store(db, key, STORE_IDS[key], scraper_cls.LABEL, keys_for_store(key),
+                          scraper_cls().scrape_entire_category, 3.5)
+    return run
 
 
 # A nivel módulo y no dentro de main(): el orquestador lo importa para armar su
@@ -192,8 +191,7 @@ def run_carrefour(db: SmartCartDB) -> StoreRunResult:
 # tienda es una entrada acá, no dos listas que se desincronizan.
 STORE_RUNNERS: dict[str, tuple[Callable[[SmartCartDB], StoreRunResult], str]] = {
     "coto": (run_coto, STORE_IDS["coto"]),
-    "dia": (run_dia, STORE_IDS["dia"]),
-    "carrefour": (run_carrefour, STORE_IDS["carrefour"]),
+    **{cls.STORE_KEY: (_vtex_runner(cls), STORE_IDS[cls.STORE_KEY]) for cls in VTEX_SCRAPERS.values()},
 }
 
 

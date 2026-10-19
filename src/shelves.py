@@ -97,12 +97,15 @@ _SHELF_LIST = (
         dia=("almacen/aceites-y-aderezos",),
         carrefour=("almacen/aceites-y-vinagres",
                    "almacen/sal-aderezos-y-saborizadores"),
+        vea=("almacen/aceites-y-vinagres", "almacen/aderezos", "almacen/sal-pimienta-y-especias"),
     ),
     _shelf(
         "harinas", "Harinas", "Almacén",
         coto=("catv00001412", "catv00001411"),
-        dia=("almacen/harinas",),
+        dia=("almacen/harinas-y-reposteria/harinas-de-trigo",
+             "almacen/harinas-y-reposteria/harina-de-maiz-y-otras-harinas"),
         carrefour=("almacen/harinas",),
+        vea=("almacen/harinas",),
     ),
     # Día reorganizó estas dos góndolas y las claves viejas quedaron VIVAS en el
     # árbol de categorías pero con cero productos: `almacen/pastas-y-arroce`
@@ -118,6 +121,7 @@ _SHELF_LIST = (
         dia=("almacen/pastas-y-arroces/arroces",
              "almacen/pastas-y-arroces/legumbres-y-semillas"),
         carrefour=("almacen/arroz-y-legumbres",),
+        vea=("almacen/arroz-y-legumbres",),
     ),
     _shelf(
         "pastas-secas", "Pastas secas", "Almacén",
@@ -125,18 +129,24 @@ _SHELF_LIST = (
         dia=("almacen/pastas-y-arroces/fideos-secos",
              "almacen/pastas-y-arroces/pastas-rellenas"),
         carrefour=("almacen/pastas-secas",),
+        vea=(
+            "almacen/pastas-secas-y-salsas/pastas-secas-guiseras",
+            "almacen/pastas-secas-y-salsas/pastas-secas-largas",
+        ),
     ),
     _shelf(
         "salsas-de-tomate", "Salsas de tomate", "Almacén",
         coto=("catv00002933", "catv00002937"),
-        dia=("almacen/conservas/tomates-y-salsas",),
+        dia=("almacen/conservas-y-latas/tomates-y-salsas",),
         carrefour=("almacen/enlatados-y-conservas/conservas-y-salsas-de-tomate",),
+        vea=("almacen/pastas-secas-y-salsas/salsas",),
     ),
     _shelf(
         "conservas-de-pescado", "Conservas de pescado", "Almacén",
         coto=("catv00001401",),
-        dia=("almacen/conservas/conservas-de-pescados",),
+        dia=("almacen/conservas-y-latas/conservas-de-pescados",),
         carrefour=("almacen/enlatados-y-conservas/conservas-de-pescado",),
+        vea=("almacen/conservas/conservas-de-pescado",),
     ),
     _shelf(
         "snacks", "Snacks", "Almacén",
@@ -145,12 +155,22 @@ _SHELF_LIST = (
         # `aceitunas-y-encurtidos`, que ahora es su propia góndola.
         dia=("almacen/picadas/papas-fritas", "almacen/picadas/snacks"),
         carrefour=("almacen/snacks",),
+        vea=(
+            "almacen/snacks/mani",
+            "almacen/snacks/nachos",
+            "almacen/snacks/palitos-de-maiz",
+            "almacen/snacks/palitos-salados",
+            "almacen/snacks/papas-fritas",
+            "almacen/snacks/pochoclos",
+            "almacen/snacks/snacks",
+        ),
     ),
     _shelf(
         "leches", "Leches", "Frescos",
         coto=("catv00003266",),
         dia=("frescos/leches",),
         carrefour=("lacteos-y-productos-frescos/leches",),
+        vea=("lacteos/leches", "almacen/desayuno-y-merienda/leches"),
     ),
     _shelf(
         "yogures", "Yogures", "Frescos",
@@ -161,30 +181,27 @@ _SHELF_LIST = (
         # Con las dos, la segunda pisaba el `source_category` de la primera vía el
         # ON CONFLICT y la dejaba en cero filas: una clave viva que no escribía
         # nada, y 108 productos traídos dos veces por noche.
-        dia=("frescos/lacteos/yogures-descremados",),
+        dia=("frescos/lacteos/yogures",),
         carrefour=("lacteos-y-productos-frescos/yogures",),
+        vea=("lacteos/yogures",),
     ),
     _shelf(
         "quesos", "Quesos", "Frescos",
         coto=("catv00003273", "catv00003803"),
-        # `frescos/fiambreria` entero traía 201 productos a esta góndola, pero ese
-        # nivel 2 tiene diez hojas y sólo seis son queso: las otras son fiambres,
-        # patés, salchichas y pizzas. No se perdía nada, se archivaba mal — y como
-        # la góndola es lo que habilita una sustitución, el optimizador podía
-        # ofrecer un salame en lugar de un queso. Sólo las hojas de queso (139).
-        dia=("frescos/fiambreria/quesos-duros-y-semiduros",
-             "frescos/fiambreria/quesos-blandos",
-             "frescos/fiambreria/quesos-en-fetas-y-cubos",
-             "frescos/fiambreria/rallados-y-en-hebras",
-             "frescos/fiambreria/queso-crema-y-untables",
-             "frescos/fiambreria/ricotta"),
+        # El viejo `frescos/fiambreria` mezclaba quesos con fiambres, patés y
+        # salchichas, y como la góndola habilita una sustitución el optimizador
+        # podía ofrecer un salame por un queso. Desde oct-2026 Día separa
+        # `frescos/quesos`, que es sólo queso (138 productos), y se toma entero.
+        dia=("frescos/quesos",),
         carrefour=("lacteos-y-productos-frescos/quesos",),
+        vea=("quesos-y-fiambres/quesos",),
     ),
     _shelf(
         "dulce-de-leche", "Dulce de leche", "Desayuno y merienda",
         coto=("catv00003250",),
         dia=("desayuno-y-merienda/dulces-y-untables/dulces-de-leche",),
         carrefour=("desayuno-y-merienda/mermeladas-y-otros-dulces/dulce-de-leche",),
+        vea=("lacteos/dulce-de-leche",),
     ),
     _shelf(
         "mermeladas-y-miel", "Mermeladas y miel", "Desayuno y merienda",
@@ -202,6 +219,7 @@ _SHELF_LIST = (
         # una mermelada. Día excluye la suya por el mismo criterio.
         carrefour=("desayuno-y-merienda/mermeladas-y-otros-dulces/miel",
                    "desayuno-y-merienda/mermeladas-y-otros-dulces/mermeladas-dulces-y-jaleas"),
+        vea=("almacen/desayuno-y-merienda/mermeladas-y-jaleas", "quesos-y-fiambres/dulces"),
     ),
     _shelf(
         "galletitas", "Galletitas", "Desayuno y merienda",
@@ -209,30 +227,38 @@ _SHELF_LIST = (
         dia=("desayuno-y-merienda/galletitas/galletitas-dulces",
              "desayuno-y-merienda/galletitas/galletitas-saladas"),
         carrefour=("desayuno-y-merienda/galletitas-bizcochitos-y-tostadas",),
+        vea=(
+            "almacen/desayuno-y-merienda/galletitas-dulces",
+            "almacen/desayuno-y-merienda/galletitas-saladas",
+        ),
     ),
     _shelf(
         "alfajores", "Alfajores", "Desayuno y merienda",
         coto=("catv00003596",),
         dia=("almacen/golosinas-y-alfajores/alfajores",),
         carrefour=("desayuno-y-merienda/golosinas-y-chocolates/alfajores",),
+        vea=("almacen/golosinas-y-chocolates/alfajores",),
     ),
     _shelf(
         "chocolates", "Chocolates", "Desayuno y merienda",
         coto=("catv00003600", "catv00003606"),
         dia=("almacen/golosinas-y-alfajores/chocolates",),
         carrefour=("desayuno-y-merienda/golosinas-y-chocolates/chocolates",),
+        vea=("almacen/golosinas-y-chocolates/chocolates", "almacen/golosinas-y-chocolates/bombones"),
     ),
     _shelf(
         "cafe", "Café", "Desayuno y merienda",
         coto=("catv00001420",),
         dia=("desayuno-y-merienda/infusiones/cafe",),
         carrefour=("desayuno-y-merienda/cafe",),
+        vea=("almacen/desayuno-y-merienda/cafes",),
     ),
     _shelf(
         "yerba-mate", "Yerba y mate", "Desayuno y merienda",
         coto=("catv00001416",),
         dia=("desayuno-y-merienda/infusiones/yerba-mate",),
         carrefour=("desayuno-y-merienda/yerba",),
+        vea=("almacen/desayuno-y-merienda/yerbas",),
     ),
     _shelf(
         "azucar-y-endulzantes", "Azúcar y endulzantes", "Desayuno y merienda",
@@ -240,18 +266,22 @@ _SHELF_LIST = (
         dia=("desayuno-y-merienda/endulzantes/azucar",
              "desayuno-y-merienda/endulzantes/edulcorantes"),
         carrefour=("desayuno-y-merienda/azucar-y-endulzantes",),
+        vea=("almacen/desayuno-y-merienda/azucar-y-edulcorantes",),
     ),
     _shelf(
         "gaseosas", "Gaseosas", "Bebidas",
         coto=("catv00001540",),
         dia=("bebidas/gaseosas",),
         carrefour=("bebidas/gaseosas",),
+        vea=("bebidas/gaseosas",),
     ),
     _shelf(
         "aguas", "Aguas", "Bebidas",
         coto=("catv00004086",),
-        dia=("bebidas/aguas",),
+        dia=("bebidas/aguas-y-sodas/aguas-sin-gas", "bebidas/aguas-y-sodas/aguas-con-gas",
+             "bebidas/aguas-y-sodas/aguas-saborizadas"),
         carrefour=("bebidas/aguas",),
+        vea=("bebidas/aguas",),
     ),
 
     # ======================================================================
@@ -279,27 +309,39 @@ _SHELF_LIST = (
     _shelf(
         "conservas-de-vegetales", "Conservas de vegetales", "Almacén",
         coto=("catv00001400",),
-        dia=("almacen/conservas/conservas-de-vegetales",),
+        dia=("almacen/conservas-y-latas/conservas-de-vegetales",),
         carrefour=("almacen/enlatados-y-conservas/conservas-de-legumbres-y-vegetales",),
+        vea=("almacen/conservas/conservas-de-verduras-y-legumbres",),
     ),
     _shelf(
         "encurtidos-y-aceitunas", "Encurtidos y aceitunas", "Almacén",
         coto=("catv00002860", "catv00002872"),
         dia=("almacen/picadas/aceitunas-y-encurtidos",),
         carrefour=("almacen/enlatados-y-conservas/aceitunas-y-encurtidos",),
+        vea=("quesos-y-fiambres/encurtidos-aceitunas-y-pickles",),
     ),
     _shelf(
         "caldos-y-sopas", "Caldos y sopas", "Almacén",
         coto=("catv00001271", "catv00002809"),
-        dia=("almacen/comidas-listas/caldos", "almacen/comidas-listas/sopas",
-             "almacen/comidas-listas/pure"),
+        dia=("almacen/caldos-sopas-y-pure/caldos-y-saborizadores",
+             "almacen/caldos-sopas-y-pure/sopas",
+             "almacen/caldos-sopas-y-pure/pure-instantaneo"),
         carrefour=("almacen/caldos-sopas-y-pure",),
+        vea=(
+            "almacen/caldos-sopas-pure-y-bolsas-para-horno/pure",
+            "almacen/caldos-sopas-pure-y-bolsas-para-horno/sopas",
+            "almacen/caldos-sopas-pure-y-bolsas-para-horno/caldos",
+        ),
     ),
     _shelf(
         "reposteria", "Repostería", "Almacén",
         coto=("catv00001277", "catv00002360"),
-        dia=("almacen/reposteria",),
+        dia=("almacen/harinas-y-reposteria/coberturas",
+             "almacen/harinas-y-reposteria/insumos-de-reposteria",
+             "almacen/harinas-y-reposteria/postres-y-gelatinas",
+             "almacen/harinas-y-reposteria/premezclas-y-bizcochuelos"),
         carrefour=("almacen/reposteria-y-postres",),
+        vea=("almacen/para-preparar",),
     ),
     _shelf(
         "golosinas", "Golosinas", "Almacén",
@@ -312,6 +354,11 @@ _SHELF_LIST = (
         carrefour=("desayuno-y-merienda/golosinas-y-chocolates/caramelos-gomitas-y-chupetines",
                    "desayuno-y-merienda/golosinas-y-chocolates/chicles",
                    "desayuno-y-merienda/golosinas-y-chocolates/bocaditos-confites-y-turrones"),
+        vea=(
+            "almacen/golosinas-y-chocolates/caramelos-y-chicles",
+            "almacen/golosinas-y-chocolates/turrones-y-grageas",
+            "almacen/golosinas-y-chocolates/bocaditos-y-postres",
+        ),
     ),
 
     # ------------------------------------------------- Desayuno y merienda
@@ -323,6 +370,7 @@ _SHELF_LIST = (
              "desayuno-y-merienda/cereales-y-barras/avena-y-granola",
              "desayuno-y-merienda/cereales-y-barras/barras-de-cereal"),
         carrefour=("desayuno-y-merienda/cereales-y-barritas",),
+        vea=("almacen/desayuno-y-merienda/cereales",),
     ),
     _shelf(
         "te-e-infusiones", "Té e infusiones", "Desayuno y merienda",
@@ -330,29 +378,40 @@ _SHELF_LIST = (
         dia=("desayuno-y-merienda/infusiones/te-y-mate-cocido",),
         carrefour=("desayuno-y-merienda/infusiones/te",
                    "desayuno-y-merienda/infusiones/mate-cocido"),
+        vea=("almacen/desayuno-y-merienda/tes",),
     ),
     _shelf(
         "cacao-y-chocolatadas", "Cacao y chocolatadas", "Desayuno y merienda",
         coto=("catv00001421",),
         dia=("desayuno-y-merienda/infusiones/cacao-y-polvos",),
         carrefour=("desayuno-y-merienda/infusiones/cacao",),
+        vea=("almacen/desayuno-y-merienda/cacao-y-saborizantes",),
     ),
     _shelf(
         "panificados", "Pan y panificados", "Desayuno y merienda",
         coto=("catv00003540", "catv00003531"),
         # Las hojas de `almacen/panaderia`: el nivel 2 también trae budines, que
         # son su propia góndola, y pan rallado, que es otra cosa.
-        dia=("almacen/panaderia/panes", "almacen/panaderia/pan-de-molde",
-             "almacen/panaderia/pan-de-hamburguesa-y-pancho",
-             "almacen/panaderia/facturas-y-medialunas"),
+        dia=("almacen/panaderia-y-panificados/panes-lactales-y-de-mesa",
+             "almacen/panaderia-y-panificados/pan-de-hamburguesa-y-pancho",
+             "almacen/panaderia-y-panificados/facturas-y-medialunas"),
         carrefour=("panaderia/panificados",),
+        vea=(
+            "almacen/panificados/lacteados",
+            "almacen/panificados/pan-para-hamburguesas-y-panchos",
+            "almacen/panificados/integral-y-salvado",
+        ),
     ),
     _shelf(
         "budines-y-bizcochuelos", "Budines y bizcochuelos", "Desayuno y merienda",
         coto=("catv00003550", "catv00003532"),
-        dia=("almacen/panaderia/budines-y-magdalenas",),
+        dia=("almacen/panaderia-y-panificados/pan-dulce-y-budines",),
         carrefour=("desayuno-y-merienda/budines-y-magdalenas",
                    "panaderia/bizcochuelos-y-piononos"),
+        vea=(
+            "almacen/desayuno-y-merienda/bizcochuelos-budines-y-magdalenas",
+            "almacen/desayuno-y-merienda/piononos",
+        ),
     ),
 
     # ---------------------------------------------------------------- Frescos
@@ -361,86 +420,112 @@ _SHELF_LIST = (
         coto=("catv00003277",),
         dia=("frescos/lacteos/mantecas-y-margarinas",),
         carrefour=("lacteos-y-productos-frescos/mantecas-margarinas-y-levaduras",),
+        vea=("lacteos/mantecas-y-margarinas",),
     ),
     _shelf(
         "cremas-de-leche", "Cremas de leche", "Frescos",
         coto=("catv00003274",),
         dia=("frescos/lacteos/cremas-de-leche",),
         carrefour=("lacteos-y-productos-frescos/cremas-de-leche",),
+        vea=("lacteos/cremas",),
     ),
     _shelf(
         "postres-y-flanes", "Postres y flanes", "Frescos",
         coto=("catv00003278",),
-        dia=("frescos/lacteos/postres-y-flanes",),
+        dia=("frescos/lacteos/postres-lacteos",),
         carrefour=("lacteos-y-productos-frescos/postres",),
+        vea=("lacteos/postres",),
     ),
     _shelf(
         "huevos", "Huevos", "Frescos",
         coto=("catv00004084", "catv00004083"),
         # Día los archiva bajo frutas y verduras, no bajo lácteos.
-        dia=("frescos/frutas-y-verduras/huevos",),
+        dia=("frutas-y-verduras/huevos",),
         carrefour=("lacteos-y-productos-frescos/huevos",),
+        vea=("frutas-y-verduras/huevos",),
     ),
     _shelf(
         "fiambres", "Fiambres", "Frescos",
         coto=("catv00003333",),
-        dia=("frescos/fiambreria/fiambres", "frescos/fiambreria/pates"),
+        dia=("frescos/fiambres-y-embutidos/fiambres-feteados",
+             "frescos/fiambres-y-embutidos/salames-y-longanizas"),
         carrefour=("lacteos-y-productos-frescos/fiambres",),
+        vea=("quesos-y-fiambres/fiambres",),
     ),
     _shelf(
         "salchichas", "Salchichas", "Frescos",
         coto=("catv00001521",),
-        dia=("frescos/fiambreria/salchichas",),
+        # Día (oct-2026) junta salchichas con patés, picadillo y leberwurst en una
+        # sola hoja (`frescos/fiambres-y-embutidos/salchichas-y-pates`): archivarla
+        # acá dejaría al optimizador ofrecer un leberwurst de 200 g por salchichas.
+        dia=(),
         carrefour=("lacteos-y-productos-frescos/salchichas",),
+        vea=("quesos-y-fiambres/salchichas",),
     ),
     _shelf(
         "pastas-frescas", "Pastas frescas", "Frescos",
         coto=("catv00001864", "catv00001869"),
-        dia=("frescos/pastas-frescas",),
+        dia=("frescos/pastas-y-masas/pastas-frescas",
+             "frescos/pastas-y-masas/pastas-rellenas-frescas",
+             "frescos/pastas-y-masas/noquis",
+             "frescos/pastas-y-masas/tapas-de-empanada-y-pascualina"),
         carrefour=("lacteos-y-productos-frescos/tapas-y-pastas-frescas",),
+        vea=(
+            "lacteos/pastas-y-tapas/fideos-y-noquis",
+            "lacteos/pastas-y-tapas/pastas-rellenas",
+            "lacteos/pastas-y-tapas/tapas",
+            "pastas-frescas/simples",
+        ),
     ),
 
     # ---------------------------------------------------------------- Bebidas
     _shelf(
         "jugos", "Jugos", "Bebidas",
         coto=("catv00001542",),
-        dia=("bebidas/jugos-e-isotonicas/jugos-listos",
-             "bebidas/jugos-e-isotonicas/jugos-en-polvo",
-             "bebidas/jugos-e-isotonicas/jugos-naturales"),
+        dia=("bebidas/jugos-y-energizantes/jugos-listos-y-concentrados",
+             "bebidas/jugos-y-energizantes/jugos-en-polvo",
+             "bebidas/jugos-y-energizantes/jugos-naturales"),
         carrefour=("bebidas/jugos",),
+        vea=("bebidas/jugos",),
     ),
     _shelf(
         "energizantes-e-isotonicas", "Energizantes e isotónicas", "Bebidas",
         coto=("catv00001539", "catv00002071"),
-        dia=("bebidas/jugos-e-isotonicas/isotonicas-y-energizantes",),
+        dia=("bebidas/jugos-y-energizantes/bebidas-deportivas",
+             "bebidas/jugos-y-energizantes/energizantes"),
         carrefour=("bebidas/bebidas-energizantes", "bebidas/bebidas-isotonicas"),
+        vea=("bebidas/energizantes", "bebidas/isotonicas"),
     ),
     _shelf(
         "cervezas", "Cervezas", "Bebidas",
         coto=("catv00001527",),
         dia=("bebidas/cervezas",),
         carrefour=("bebidas/cervezas",),
+        vea=("bebidas/cervezas",),
     ),
     _shelf(
         "vinos", "Vinos", "Bebidas",
         coto=("catv00001532",),
         # Las hojas de `bebidas/bodega`: ese nivel 2 también tiene espumantes y
         # sidras, que son la góndola de abajo.
-        dia=("bebidas/bodega/vino-tinto", "bebidas/bodega/vino-blanco",
+        dia=("bebidas/bodega/vino-tinto", "bebidas/bodega/vinos-blancos-y-dulces",
              "bebidas/bodega/vino-rosado"),
         carrefour=("bebidas/vinos",),
+        vea=("bebidas/vinos",),
     ),
     _shelf(
         "espumantes-y-sidras", "Espumantes y sidras", "Bebidas",
         coto=("catv00001528", "catv00001543"),
         dia=("bebidas/bodega/espumantes", "bebidas/bodega/sidras"),
         carrefour=("bebidas/espumantes-y-sidras",),
+        vea=("bebidas/espumantes", "bebidas/sidras"),
     ),
     _shelf(
         "aperitivos-y-licores", "Aperitivos y licores", "Bebidas",
         coto=("catv00001524", "catv00001529", "catv00001525"),
-        dia=("bebidas/aperitivos", "bebidas/bebidas-blancas-y-licores"),
+        dia=("bebidas/aperitivos-y-destilados",),
         carrefour=("bebidas/fernet-y-aperitivos", "bebidas/bebidas-blancas"),
+        vea=("bebidas/aperitivos", "bebidas/bebidas-blancas", "bebidas/licores", "bebidas/whiskys"),
     ),
 
     # ------------------------------------------------------------- Congelados
@@ -450,6 +535,7 @@ _SHELF_LIST = (
               "catv00003193"),
         dia=("congelados/vegetales-frutas-y-papas/papas-fritas-congeladas",),
         carrefour=("congelados/papas",),
+        vea=("congelados/papas",),
     ),
     _shelf(
         "hamburguesas-congeladas", "Hamburguesas y milanesas", "Congelados",
@@ -459,6 +545,7 @@ _SHELF_LIST = (
         dia=("congelados/comidas-preparadas-y-rebozados/hamburguesas-y-milanesas",
              "congelados/hamburguesas-y-medallones"),
         carrefour=("congelados/hamburguesas-y-medallones",),
+        vea=("congelados/hamburguesas-y-milanesas",),
     ),
     _shelf(
         "rebozados-congelados", "Nuggets y rebozados", "Congelados",
@@ -467,6 +554,7 @@ _SHELF_LIST = (
         dia=("congelados/comidas-preparadas-y-rebozados/nuggets-patitas-y-bocaditos",
              "congelados/comidas-preparadas-y-rebozados/opciones-veganas-y-vegetarianas"),
         carrefour=("congelados/nuggets-y-rebozados",),
+        vea=("congelados/pollo-y-carnes",),
     ),
     _shelf(
         "vegetales-congelados", "Vegetales congelados", "Congelados",
@@ -478,6 +566,7 @@ _SHELF_LIST = (
         # vivo aunque exista en el árbol (mismo caso que los yogures de Día), y el
         # padre trae 24. Cuesta que entre también algo de fruta congelada.
         carrefour=("congelados/frutas-y-vegetales-congelados",),
+        vea=("congelados/vegetales",),
     ),
     _shelf(
         # No es "pizzas congeladas": la única clave que Carrefour tiene acá es
@@ -492,12 +581,14 @@ _SHELF_LIST = (
               "catv00003214"),
         dia=("congelados/comidas-preparadas-y-rebozados/pizzas-empanadas-y-panes",),
         carrefour=("congelados/comidas-y-panificados",),
+        vea=("congelados/comidas-congeladas",),
     ),
     _shelf(
         "pescados-congelados", "Pescados congelados", "Congelados",
         coto=("catv00004499", "catv00004501", "catv00004500"),
         dia=("congelados/pescaderia-congelada",),
         carrefour=("congelados/pescados-y-mariscos",),
+        vea=("congelados/pescados-y-mariscos",),
     ),
     _shelf(
         # Entró tarde: en el segundo tramo Carrefour devolvía 0. Su catálogo
@@ -510,6 +601,7 @@ _SHELF_LIST = (
         coto=("catv00003247", "catv00003248", "catv00003147", "catv00003183"),
         dia=("congelados/helados-y-postres",),
         carrefour=("congelados/helados-y-postres",),
+        vea=("congelados/helados-y-postres",),
     ),
 
     # ------------------------------------------------ Frutas, verduras y carnes
@@ -520,26 +612,31 @@ _SHELF_LIST = (
     _shelf(
         "frutas", "Frutas", "Frutas y verduras",
         coto=("catv00003286",),
-        dia=("frescos/frutas-y-verduras/frutas",),
+        dia=("frutas-y-verduras/frutas/frutas-de-estacion-y-citricos",
+             "frutas-y-verduras/frutas/otras-frutas"),
         carrefour=("frutas-y-verduras/frutas",),
+        vea=("frutas-y-verduras/frutas/frutas-empaquetadas", "frutas-y-verduras/frutas/frutas-sueltas"),
     ),
     _shelf(
         "verduras", "Verduras", "Frutas y verduras",
         coto=("catv00003308",),
-        dia=("frescos/frutas-y-verduras/verduras",),
+        dia=("frutas-y-verduras/verduras",),
         carrefour=("frutas-y-verduras/verduras",),
+        vea=("frutas-y-verduras/verduras",),
     ),
     _shelf(
         "carnes", "Carne de vaca y cerdo", "Carnes",
         coto=("catv00001460",),
-        dia=("frescos/carniceria/carnes-de-vaca", "frescos/carniceria/carnes-de-cerdo"),
+        dia=("carniceria/carne-vacuna", "carniceria/carne-de-cerdo"),
         carrefour=("carnes-y-pescados/carne-vacuna", "carnes-y-pescados/carne-de-cerdo"),
+        vea=("carnes/carne-vacuna", "carnes/carne-de-cerdo"),
     ),
     _shelf(
         "pollo", "Pollo", "Carnes",
         coto=("catv00005187", "catv00005189"),
-        dia=("frescos/carniceria/pollo",),
+        dia=("carniceria/pollo-y-aves",),
         carrefour=("carnes-y-pescados/pollo-y-granja",),
+        vea=("carnes/pollos/pollos",),
     ),
 
     # --------------------------------------------------------------- Limpieza
@@ -554,18 +651,21 @@ _SHELF_LIST = (
         coto=("catv00003018",),
         dia=("limpieza/papeleria-y-descartables/papel-higienico",),
         carrefour=("limpieza/papeles-higienicos",),
+        vea=("limpieza/papeles/papel-higienico",),
     ),
     _shelf(
         "rollos-y-servilletas", "Rollos de cocina y servilletas", "Limpieza",
         coto=("catv00003020", "catv00003021"),
         dia=("limpieza/papeleria-y-descartables/rollos-de-cocina",),
         carrefour=("limpieza/rollos-de-cocina-y-servilletas",),
+        vea=("limpieza/papeles/rollos-de-cocina", "limpieza/papeles/servilletas"),
     ),
     _shelf(
         "detergente", "Detergente", "Limpieza",
         coto=("catv00003043",),
         dia=("limpieza/cocina-y-vajilla/detergentes",),
         carrefour=("limpieza/limpieza-de-cocina/detergentes",),
+        vea=("limpieza/limpieza-de-cocina/detergentes",),
     ),
     _shelf(
         "jabon-para-ropa", "Jabón para la ropa", "Limpieza",
@@ -573,18 +673,21 @@ _SHELF_LIST = (
         dia=("limpieza/ropa-y-lavado/jabon-en-polvo",
              "limpieza/ropa-y-lavado/jabon-liquido"),
         carrefour=("limpieza/limpieza-de-la-ropa/jabones-para-la-ropa",),
+        vea=("limpieza/cuidado-para-la-ropa/detergente-para-ropa",),
     ),
     _shelf(
         "suavizantes", "Suavizantes", "Limpieza",
         coto=("catv00003027",),
         dia=("limpieza/ropa-y-lavado/suavizantes",),
         carrefour=("limpieza/limpieza-de-la-ropa/suavizantes-para-la-ropa",),
+        vea=("limpieza/cuidado-para-la-ropa/suavizantes",),
     ),
     _shelf(
         "lavandina", "Lavandina", "Limpieza",
         coto=("catv00004753", "catv00004754"),
         dia=("limpieza/banos-pisos-y-superficies/lavandinas",),
         carrefour=("limpieza/lavandinas",),
+        vea=("limpieza/lavandina",),
     ),
 
     # ------------------------------------------------------------- Perfumería
@@ -601,18 +704,21 @@ _SHELF_LIST = (
         coto=("catv00001587", "catv00001589"),
         dia=("perfumeria/cuidado-del-pelo/shampoo",),
         carrefour=("perfumeria-y-farmacia/cuidado-del-cabello/shampoos",),
+        vea=("perfumeria/cuidado-capilar/shampoo",),
     ),
     _shelf(
         "acondicionadores", "Acondicionadores", "Perfumería",
         coto=("catv00001590",),
         dia=("perfumeria/cuidado-del-pelo/acondicionadores",),
         carrefour=("perfumeria-y-farmacia/cuidado-del-cabello/acondicionadores",),
+        vea=("perfumeria/cuidado-capilar/acondicionador",),
     ),
     _shelf(
         "coloracion", "Coloración", "Perfumería",
         coto=("catv00003481",),
         dia=("perfumeria/cuidado-del-pelo/coloracion",),
         carrefour=("perfumeria-y-farmacia/cuidado-del-cabello/coloracion",),
+        vea=("perfumeria/cuidado-capilar/coloracion",),
     ),
     _shelf(
         # Día separa por género y Carrefour por formato; Coto, desodorante de
@@ -620,70 +726,91 @@ _SHELF_LIST = (
         # para quien compra, así que la góndola es la unión.
         "desodorantes", "Desodorantes", "Perfumería",
         coto=("catv00003497", "catv00003498"),
-        dia=("perfumeria/cuidado-personal/desodorantes-masculinos",
-             "perfumeria/cuidado-personal/desodorantes-femeninos"),
+        dia=("perfumeria/cuidado-corporal-y-bano/desodorantes-y-antitranspirantes",),
         carrefour=("perfumeria-y-farmacia/antitranspirantes-y-desodorantes/en-aerosol",
                    "perfumeria-y-farmacia/antitranspirantes-y-desodorantes/en-barra-y-roll-on"),
+        vea=(
+            "perfumeria/cuidado-personal/desodorantes-de-hombres",
+            "perfumeria/cuidado-personal/desodorantes-de-mujer",
+        ),
     ),
     _shelf(
         # En barra y líquidos juntos porque Coto los mezcla en una sola hoja.
         # Las hojas de Carrefour y no su nivel 2: éste trae además esponjas.
         "jabones", "Jabones de tocador", "Perfumería",
         coto=("catv00001576",),
-        dia=("perfumeria/jabones/jabones-en-barra", "perfumeria/jabones/jabones-liquidos",
-             "perfumeria/jabones/jabones-antisepticos"),
+        dia=("perfumeria/cuidado-corporal-y-bano/jabones-en-barra",
+             "perfumeria/cuidado-corporal-y-bano/jabones-liquidos-y-geles"),
         carrefour=("perfumeria-y-farmacia/jabones/jabones-liquidos",
                    "perfumeria-y-farmacia/jabones/jabones-en-barra"),
+        vea=("perfumeria/cuidado-personal/jabones",),
     ),
     _shelf(
         "pasta-dental", "Pasta dental", "Perfumería",
         coto=("catv00003508",),
-        dia=("perfumeria/cuidado-bucal/pastas-de-dientes",),
+        dia=("perfumeria/cuidado-bucal/pastas-dentales",),
         carrefour=("perfumeria-y-farmacia/cuidado-dental/pasta-dental",),
+        vea=("perfumeria/cuidado-oral/pastas-dentales",),
     ),
     _shelf(
         "cepillos-de-dientes", "Cepillos de dientes", "Perfumería",
         coto=("catv00003507",),
         dia=("perfumeria/cuidado-bucal/cepillos-de-dientes",),
         carrefour=("perfumeria-y-farmacia/cuidado-dental/cepillos-de-dientes",),
+        vea=("perfumeria/cuidado-oral/cepillos-dentales",),
     ),
     _shelf(
         "enjuague-bucal", "Enjuague bucal", "Perfumería",
         coto=("catv00003505",),
         dia=("perfumeria/cuidado-bucal/enjuagues-bucal",),
         carrefour=("perfumeria-y-farmacia/cuidado-dental/enjuagues-bucales",),
+        vea=("perfumeria/cuidado-oral/enjuagues-bucales",),
     ),
+    # Vea (`vea=()` en estas tres filas) tiene una sola hoja de protección
+    # femenina que mezcla toallitas, protectores y tampones, y su árbol no baja
+    # a un cuarto nivel. Archivarla en una góndola dejaría al optimizador
+    # ofrecer un tampón por una toallita; mismo criterio que con las hojas
+    # mixtas de Día en Limpieza.
     _shelf(
         "toallitas-femeninas", "Toallitas femeninas", "Perfumería",
         coto=("catv00003496",),
         dia=("perfumeria/proteccion-femenina/toallitas-femeninas",),
         carrefour=("perfumeria-y-farmacia/proteccion-femenina/toallitas-femeninas",),
+        vea=(),
     ),
     _shelf(
         "protectores-diarios", "Protectores diarios", "Perfumería",
         coto=("catv00003494",),
-        dia=("perfumeria/proteccion-femenina/proteccion-diaria",),
+        dia=("perfumeria/proteccion-femenina/protectores-diarios",),
         carrefour=("perfumeria-y-farmacia/proteccion-femenina/protectores-diarios",),
+        vea=(),
     ),
     _shelf(
         "tampones", "Tampones", "Perfumería",
         coto=("catv00003495",),
         dia=("perfumeria/proteccion-femenina/tampones",),
         carrefour=("perfumeria-y-farmacia/proteccion-femenina/tampones",),
+        vea=(),
     ),
     _shelf(
         # Máquinas, repuestos y espumas juntos: Coto no los separa. El nivel 2
         # de Día sí se puede usar entero porque ninguna otra clave vive abajo.
         "afeitado", "Afeitado", "Perfumería",
         coto=("catv00001548",),
-        dia=("perfumeria/maquinas-de-afeitar",),
+        dia=("perfumeria/afeitado-y-depilacion/maquinas-y-repuestos-de-afeitar",),
         carrefour=("perfumeria-y-farmacia/cuidado-corporal/afeitado",),
+        vea=("perfumeria/cuidado-personal/productos-para-afeitarse",),
     ),
     _shelf(
         "cremas-corporales", "Cremas corporales", "Perfumería",
         coto=("catv00001564",),
-        dia=("perfumeria/cuidado-personal/cremas-corporales",),
+        # Día (oct-2026) mezcla perfumes y body splash con las cremas en
+        # `cuidado-corporal-y-bano/cremas-y-lociones-corporales`, y los perfumes
+        # quedan fuera del catálogo a propósito: un perfume de 100 ml sería
+        # reemplazo de una crema de 150 ml.
+        dia=(),
         carrefour=("perfumeria-y-farmacia/cuidado-de-la-piel/cremas-corporales",),
+        vea=("perfumeria/cuidado-de-la-piel/cremas-corporales",),
     ),
     _shelf(
         # Estacional como `helados`: a fin de invierno Día trae 8 y Carrefour
@@ -692,14 +819,16 @@ _SHELF_LIST = (
         # porque Día los tiene en una sola hoja.
         "proteccion-solar", "Protección solar", "Perfumería",
         coto=("catv00003516", "catv00003515"),
-        dia=("perfumeria/cuidado-personal/protectores-solares-y-post-solares",),
+        dia=("perfumeria/cuidado-corporal-y-bano/proteccion-solar",),
         carrefour=("perfumeria-y-farmacia/cuidado-de-la-piel/proteccion-solar",),
+        vea=("perfumeria/cuidado-de-la-piel/solares-y-post-solares",),
     ),
     _shelf(
         "algodon-e-hisopos", "Algodón e hisopos", "Perfumería",
         coto=("catv00003452", "catv00003447"),
-        dia=("perfumeria/farmacia/algodon-e-hisopos",),
+        dia=("perfumeria/farmacia-y-botiquin/algodon-e-hisopos",),
         carrefour=("perfumeria-y-farmacia/algodones-e-hisopos",),
+        vea=("perfumeria/farmacia/algodon",),
     ),
 )
 

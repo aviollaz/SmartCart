@@ -308,3 +308,14 @@ def test_parse_vtex_offer_no_usa_la_descripcion_como_evidencia_dietaria():
     assert parsed["description"] == "Probá también nuestra mayonesa vegana y sin TACC."
     assert parsed["is_vegan"] is False
     assert parsed["is_gluten_free"] is False
+
+
+def test_clean_description_no_deja_pasar_un_script_inyectado():
+    # Forma real de las descripciones de Vea (oct 2026): un <img> invisible con
+    # un `onerror` que ejecuta un skimmer de tarjetas. El payload acá está
+    # desactivado; lo que importa es que del atributo no sobreviva nada.
+    inyectado = ('<img style="width:0;height:0;position:absolute" src="x" '
+                 'onerror="eval(atob(\'Y29uc29sZS5sb2coMSk=\'))">')
+
+    assert clean_description(inyectado, "Aceite de Girasol 1,5 Lts Natura") is None
+    assert clean_description(inyectado + "<p>Aceite puro de girasol.</p>", "Aceite") == "Aceite puro de girasol."

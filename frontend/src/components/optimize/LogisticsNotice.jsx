@@ -1,10 +1,5 @@
 import { AlertTriangle } from "lucide-react";
-
-const LOGISTICS_STORES = [
-  { key: "coto", id: "coto_online", name: "Coto" },
-  { key: "dia", id: "dia_online", name: "Día" },
-  { key: "carrefour", id: "carrefour_online", name: "Carrefour" },
-];
+import { STORES } from "../../utils/constants";
 
 /**
  * Avisa qué tiendas quedaron fuera porque no entregan en la dirección.
@@ -17,7 +12,7 @@ const LOGISTICS_STORES = [
  */
 export function LogisticsNotice({ result }) {
   const excludedStores = result.excluded_stores || [];
-  const uncovered = LOGISTICS_STORES.filter(({ key, id }) => {
+  const uncovered = STORES.filter(({ key, id }) => {
     const logistics = result.logistics?.[key];
     return logistics && (excludedStores.includes(id) || logistics.covered === false);
   });

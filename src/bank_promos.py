@@ -48,12 +48,10 @@ SIN_TOPE_CAP = 100_000_000
 # antes, no quedarse sin ningún descuento.
 FALLBACK_BANK_PROMOS = {
     "coto_online": [
-        {"card": "galicia", "discount_pct": 20, "cap": 5000,
-         "description": "20% de ahorro con Galicia (Tope $5000)"},
+        {},
     ],
     "dia_online": [
-        {"card": "macro", "discount_pct": 15, "cap": 3000,
-         "description": "15% de ahorro con Macro (Tope $3000)"},
+        {},
     ],
 }
 

@@ -6,12 +6,15 @@
 // tests/test_stores.py lo exige.
 //
 // Agregar un supermercado al frontend es agregar una entrada acá (y su columna
-// en deliveryCosts.js): ningún componente nombra un store_id literal. `color`
-// es sólo para el diagrama del reparto de la home; no son los colores de marca.
+// en deliveryCosts.js): ningún componente nombra un store_id literal. `key` es
+// la del backend: indexa `logistics` en la respuesta de /optimize y arma
+// GET /logistics/{key}/coverage. `color` es sólo para el diagrama del reparto
+// de la home; no son los colores de marca.
 export const STORES = [
-  { id: "coto_online", name: "Coto", label: "Disponible en Coto", color: "bg-red-500" },
-  { id: "dia_online", name: "Día", label: "Disponible en Día", color: "bg-rose-600" },
-  { id: "carrefour_online", name: "Carrefour", label: "Disponible en Carrefour", color: "bg-blue-600" },
+  { id: "coto_online", name: "Coto", key: "coto", label: "Disponible en Coto", color: "bg-red-500" },
+  { id: "dia_online", name: "Día", key: "dia", label: "Disponible en Día", color: "bg-rose-600" },
+  { id: "carrefour_online", name: "Carrefour", key: "carrefour", label: "Disponible en Carrefour", color: "bg-blue-600" },
+  { id: "vea_online", name: "Vea", key: "vea", label: "Disponible en Vea", color: "bg-amber-500" },
 ];
 
 // Formulario de feedback para los testers de la demo, enlazado al final de la
