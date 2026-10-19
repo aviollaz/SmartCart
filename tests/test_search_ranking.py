@@ -53,7 +53,7 @@ def test_los_resultados_vienen_ordenados_por_el_score_combinado(client, q):
     pura y esta secuencia no sería monótona en cuanto dos productos con distinta
     cantidad de tiendas quedaran a distancia parecida.
     """
-    resultados = client.get("/search", params={"q": q, "limit": 20}).json()
+    resultados = client.get("/search", params={"q": q, "page_size": 20}).json()["items"]
     assert resultados, f"'{q}' no devolvió resultados"
 
     scores = [_score(p) for p in resultados]
@@ -67,7 +67,7 @@ def test_el_bonus_esta_topeado(client, q):
     superar a otro que esté más de `STORE_BONUS * STORE_BONUS_CAP` más cerca.
     Sin el LEAST(), sumar tiendas en el futuro aflojaría el ranking solo.
     """
-    resultados = client.get("/search", params={"q": q, "limit": 20}).json()
+    resultados = client.get("/search", params={"q": q, "page_size": 20}).json()["items"]
     tope = STORE_BONUS * STORE_BONUS_CAP
 
     for anterior, siguiente in zip(resultados, resultados[1:]):
@@ -80,7 +80,7 @@ def test_el_bonus_esta_topeado(client, q):
 
 
 def test_store_count_viene_poblado(client):
-    resultados = client.get("/search", params={"q": "leche", "limit": 20}).json()
+    resultados = client.get("/search", params={"q": "leche", "page_size": 20}).json()["items"]
     assert resultados
 
     for p in resultados:
@@ -99,7 +99,7 @@ def test_el_bonus_efectivamente_sube_productos_multitienda(client):
     del ranking real no puede tener MENOS tiendas promedio que el top-10
     ordenado por distancia sola.
     """
-    resultados = client.get("/search", params={"q": "yogur", "limit": 20}).json()
+    resultados = client.get("/search", params={"q": "yogur", "page_size": 20}).json()["items"]
     assert len(resultados) >= 10
 
     por_distancia = sorted(resultados, key=lambda p: p["distance"])
@@ -155,8 +155,8 @@ def test_category_es_determinista(client):
     grande, Postgres devolvía 50 filas en el orden que tuviera a mano y dos
     llamadas iguales podían traer productos distintos.
     """
-    primera = client.get(f"/category/{GONDOLA}", params={"limit": 20}).json()
-    segunda = client.get(f"/category/{GONDOLA}", params={"limit": 20}).json()
+    primera = client.get(f"/category/{GONDOLA}", params={"page_size": 20}).json()["items"]
+    segunda = client.get(f"/category/{GONDOLA}", params={"page_size": 20}).json()["items"]
 
     if not primera:
         pytest.skip(f"no hay productos en la góndola {GONDOLA}")
@@ -169,7 +169,7 @@ def test_category_ordena_por_disponibilidad(client):
     En /category no hay relevancia que resignar (su `distance` es 0.0 fija), así
     que el orden por cantidad de tiendas es estricto, sin bonus ni tope.
     """
-    resultados = client.get(f"/category/{GONDOLA}", params={"limit": 20}).json()
+    resultados = client.get(f"/category/{GONDOLA}", params={"page_size": 20}).json()["items"]
     if not resultados:
         pytest.skip(f"no hay productos en la góndola {GONDOLA}")
 

@@ -25,7 +25,7 @@ def test_fastapi_endpoints():
         logger.info(f"Probando endpoint de búsqueda (GET /search?q={query})...")
         response = client.get(f"/search?q={query}")
         assert response.status_code == 200, "Search endpoint falló"
-        results = response.json()
+        results = response.json()["items"]
         
         logger.info(f"Se obtuvieron {len(results)} resultados de la búsqueda.")
         assert len(results) > 0, "No se retornó ningún resultado de búsqueda semántica"

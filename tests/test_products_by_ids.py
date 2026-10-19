@@ -26,9 +26,9 @@ def _sample_ids(client, n=3):
     """Ids reales del catalogo. Se toman de /search en vez de hardcodear EANs,
     igual que hace test_api.py, para que el test no dependa de que este scrapeado
     un producto en particular."""
-    response = client.get("/search?q=leche&limit=10")
+    response = client.get("/search?q=leche&page_size=10")
     assert response.status_code == 200
-    ids = [p["unified_id"] for p in response.json()]
+    ids = [p["unified_id"] for p in response.json()["items"]]
     if len(ids) < n:
         pytest.skip("El catalogo no tiene suficientes productos indexados")
     return ids[:n]
@@ -81,7 +81,7 @@ def test_paridad_de_campos_con_category():
     ser dos implementaciones."""
     with TestClient(app) as client:
         gondola = client.get("/categories").json()[0]["shelves"][0]["slug"]
-        desde_categoria = client.get(f"/category/{gondola}?limit=5").json()
+        desde_categoria = client.get(f"/category/{gondola}?page_size=5").json()["items"]
         if not desde_categoria:
             pytest.skip(f"La gondola '{gondola}' no tiene productos")
 

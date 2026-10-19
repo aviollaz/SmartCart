@@ -4,7 +4,7 @@ import logging
 from contextlib import asynccontextmanager
 from datetime import date, datetime, timedelta, timezone
 from typing import List, Optional, Dict, Any
-from fastapi import FastAPI, Query, HTTPException, BackgroundTasks
+from fastapi import FastAPI, Depends, Query, HTTPException, BackgroundTasks
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field, field_validator
@@ -148,6 +148,22 @@ class ProductResponse(BaseModel):
     # que la UI lo atribuya ("Según Día"). Coto nunca tiene: su BFF no la expone.
     description: Optional[str] = None
     description_store: Optional[str] = None
+
+class BrandCount(BaseModel):
+    brand: str = Field(..., example="Taragüi")
+    count: int = Field(..., example=12)
+
+class ProductPage(BaseModel):
+    # Una página de /search o /category. Las facetas (`brands`, `price_bounds`)
+    # describen el universo ENTERO de la consulta, no la página: el cliente sólo
+    # ve `items`, así que si las calculara él, una marca que no cae en la página
+    # 1 no existiría para el filtro — que es exactamente el bug que esto arregla.
+    items: List[ProductResponse] = []
+    total: int = Field(..., description="Productos que cumplen los filtros, sumando todas las páginas")
+    page: int
+    page_size: int
+    brands: List[BrandCount] = []
+    price_bounds: List[float] = Field([0.0, 0.0], description="[mínimo, máximo] del precio que muestra la card")
 
 class ShelfResponse(BaseModel):
     slug: str = Field(..., example="yerba-mate")
@@ -633,21 +649,128 @@ def _build_product_response(row: dict, offers: list, distance: float = 0.0) -> d
     }
 
 
-@app.get("/search", response_model=List[ProductResponse])
+LISTING_SORTS = ("relevance", "price_asc", "price_desc")
+DEFAULT_PAGE_SIZE = 48
+MAX_PAGE_SIZE = 100
+NO_BRAND = "Sin marca"
+
+
+def _listing_params(
+    page: int = Query(1, ge=1),
+    page_size: int = Query(DEFAULT_PAGE_SIZE, ge=1, le=MAX_PAGE_SIZE),
+    brands: List[str] = Query([], description="Marcas a mostrar (vacío = todas)"),
+    stores: List[str] = Query([], description="Sólo productos con stock en alguna de estas tiendas"),
+    price_min: Optional[float] = Query(None, ge=0),
+    price_max: Optional[float] = Query(None, ge=0),
+    sort: str = Query("relevance", pattern="^(relevance|price_asc|price_desc)$"),
+    hidden_stores: List[str] = Query([], description="Tiendas que no entregan o que el usuario deshabilitó"),
+) -> dict:
+    return {
+        "page": page, "page_size": page_size, "brands": brands, "stores": stores,
+        "price_min": price_min, "price_max": price_max, "sort": sort,
+        "hidden_stores": hidden_stores,
+    }
+
+
+def _paginate_listing(rows: list, offers_by_product: dict, params: dict) -> dict:
+    """
+    Filtra, ordena y pagina el universo de /search o /category, y calcula sus
+    facetas. Devuelve un ProductPage.
+
+    Vive en el backend porque el cliente sólo recibe una página: con las facetas
+    calculadas allá, una marca que no caía en los primeros 50 no aparecía ni en
+    la grilla ni en el filtro de marcas.
+
+    `hidden_stores` (no entregan, o el usuario las deshabilitó) se saca ANTES de
+    armar el producto, así `min_price`/`unit_price` salen calculados sobre las
+    ofertas que quedan; un producto que sólo vendían esas tiendas se descarta.
+    Las facetas cuentan el universo ya sin esas tiendas pero antes de los
+    filtros de marca/precio/tienda: si contaran después, elegir una marca haría
+    desaparecer a las demás del filtro y no habría cómo sumar otra.
+
+    El precio de filtro y orden es `_display_price`, el mismo que muestra la
+    card. Un producto sin precio no se descarta por el rango (no hay con qué
+    compararlo), igual que hacía el frontend.
+    """
+    hidden = set(params["hidden_stores"])
+    universe = []
+    for row in rows:
+        offers = offers_by_product.get(row["id"], [])
+        if hidden:
+            offers = [o for o in offers if o["store_id"] not in hidden]
+            if not offers:
+                continue
+            row = {**row, "store_count": len({o["store_id"] for o in offers if o["in_stock"]})}
+        universe.append(_build_product_response(row, offers, distance=float(row["distance"])))
+
+    brand_counts: Dict[str, int] = {}
+    for product in universe:
+        brand = product["brand"] or NO_BRAND
+        brand_counts[brand] = brand_counts.get(brand, 0) + 1
+    prices = [p for p in (_display_price(x["available_at_stores"]) for x in universe) if p]
+
+    selected_brands = set(params["brands"])
+    selected_stores = set(params["stores"])
+    price_min, price_max = params["price_min"], params["price_max"]
+
+    def keep(product: dict) -> bool:
+        if selected_brands and (product["brand"] or NO_BRAND) not in selected_brands:
+            return False
+        if selected_stores and not any(
+            o["in_stock"] and o["store_id"] in selected_stores for o in product["available_at_stores"]
+        ):
+            return False
+        price = _display_price(product["available_at_stores"])
+        if price and ((price_min is not None and price < price_min)
+                      or (price_max is not None and price > price_max)):
+            return False
+        return True
+
+    filtered = [p for p in universe if keep(p)]
+    # "relevance" conserva el orden de la consulta (distancia en /search, tiendas
+    # y nombre en /category). sorted() es estable, así que un empate de precio
+    # también lo conserva.
+    if params["sort"] != "relevance":
+        filtered = sorted(
+            filtered,
+            key=lambda p: _display_price(p["available_at_stores"]) or 0,
+            reverse=params["sort"] == "price_desc",
+        )
+
+    page, page_size = params["page"], params["page_size"]
+    start = (page - 1) * page_size
+    return {
+        "items": filtered[start:start + page_size],
+        "total": len(filtered),
+        "page": page,
+        "page_size": page_size,
+        "brands": [
+            {"brand": brand, "count": count}
+            for brand, count in sorted(brand_counts.items(), key=lambda kv: (-kv[1], kv[0]))
+        ],
+        "price_bounds": [min(prices), max(prices)] if prices else [0.0, 0.0],
+    }
+
+
+@app.get("/search", response_model=ProductPage)
 def search_products(
     q: str = Query(..., description="Texto de búsqueda libre (ej. 'Puré de papas')", min_length=1),
-    limit: int = Query(20, description="Cantidad máxima de resultados (entre 1 y 50)", ge=1, le=50),
     gluten_free: bool = Query(False, description="Devolver solo productos con declaración explícita 'sin TACC'"),
     vegan: bool = Query(False, description="Devolver solo productos con declaración explícita 'vegano'"),
     memberships: List[str] = Query([], description="Membresías declaradas (ej. mi_carrefour): desbloquean su precio"),
+    listing: dict = Depends(_listing_params),
 ):
     """
     Realiza una búsqueda semántica en tiempo real sobre el catálogo de productos unificados.
+
+    El universo que se pagina es el pool de SEARCH_POOL_SIZE vecinos ya
+    reordenado: más allá de ese puesto la búsqueda semántica es ruido, y es
+    además lo único que el índice HNSW devuelve (ver `hnsw.ef_search`).
     """
     if "model" not in ml_models:
         raise HTTPException(status_code=503, detail="El modelo de NLP no está inicializado.")
 
-    logger.info(f"Procesando búsqueda semántica: '{q}' (limite={limit})")
+    logger.info(f"Procesando búsqueda semántica: '{q}' (pagina={listing['page']})")
     
     try:
         # 1. Generar embedding de la query
@@ -658,8 +781,8 @@ def search_products(
         db = SmartCartDB()
 
         # Los filtros dietarios se resuelven en SQL y no en el cliente: el frontend
-        # solo ve los `limit` vecinos más cercanos, así que filtrar ahí devolvería
-        # un puñado de productos en vez de `limit` productos que cumplan el filtro.
+        # solo ve una página, así que filtrar ahí devolvería un puñado de
+        # productos en vez de una página de productos que cumplan el filtro.
         # Solo se filtra por TRUE — un FALSE en estas columnas es "sin evidencia".
         dietary_clause = _dietary_filter_clause(gluten_free, vegan)
 
@@ -669,19 +792,18 @@ def search_products(
         with pooled_connection(db.conn_string) as conn:
             with conn.cursor() as cur:
                 nearest_products = search_rows(
-                    cur, vector_str, q, limit,
+                    cur, vector_str, q, SEARCH_POOL_SIZE,
                     dietary_clause=dietary_clause, mode=DEFAULT_SEARCH_MODE,
                 )
                 
                 if not nearest_products:
                     logger.info("No se encontraron productos indexados con embeddings.")
-                    return []
-                
+
                 # 3. Obtener ofertas asociadas de store_products para los productos unificados encontrados
                 product_ids = [p["id"] for p in nearest_products]
                 offers_by_product = _fetch_offers_by_product(cur, product_ids, memberships)
 
-        # 4. Estructurar la respuesta final de búsqueda
+        # 4. Filtrar, paginar y estructurar la respuesta
         #
         # Va por el mismo _build_product_response() que /category y
         # /products/by-ids. Antes armaba el dict a mano y era el único endpoint
@@ -692,14 +814,7 @@ def search_products(
         # La distancia se pasa CRUDA, no el score de ordenamiento: es la
         # relevancia semántica, y mezclarle el bonus por disponibilidad volvería
         # el campo inservible para cualquier lectura futura.
-        return [
-            _build_product_response(
-                p,
-                offers_by_product.get(p["id"], []),
-                distance=float(p["distance"]),
-            )
-            for p in nearest_products
-        ]
+        return _paginate_listing(nearest_products, offers_by_product, listing)
 
     except Exception as e:
         logger.error(f"Error interno durante la búsqueda semántica: {e}")
@@ -1580,16 +1695,20 @@ def get_deals(
         raise HTTPException(status_code=500, detail=str(e))
 
 
-@app.get("/category/{shelf_slug}", response_model=List[ProductResponse])
+@app.get("/category/{shelf_slug}", response_model=ProductPage)
 def get_products_by_shelf(
     shelf_slug: str,
-    limit: int = 50,
     gluten_free: bool = Query(False, description="Devolver solo productos con declaración explícita 'sin TACC'"),
     vegan: bool = Query(False, description="Devolver solo productos con declaración explícita 'vegano'"),
     memberships: List[str] = Query([], description="Membresías declaradas (ej. mi_carrefour): desbloquean su precio"),
+    listing: dict = Depends(_listing_params),
 ):
     """
-    Los productos de una góndola, por su slug (ver GET /categories).
+    Los productos de una góndola, por su slug (ver GET /categories), paginados.
+
+    Se trae la góndola ENTERA y se pagina en Python (`_paginate_listing`): las
+    facetas tienen que describir toda la góndola, y el precio de filtro y orden
+    sale del evaluador de promos, que no existe en SQL.
 
     Un slug de fuera de `src/shelves.py` contesta 404 en vez de una lista vacía:
     la tabla de góndolas es cerrada y conocida, así que "no hay productos" y "ese
@@ -1610,10 +1729,8 @@ def get_products_by_shelf(
                 # Este endpoint no tiene noción de relevancia (su `distance` es
                 # 0.0 fija), así que ordenar por disponibilidad no resigna nada:
                 # a diferencia de /search, acá no hay nada que el bonus pueda
-                # desplazar. Además arregla un problema anterior: sin ORDER BY,
-                # el LIMIT recortaba filas en el orden que Postgres tuviera a
-                # mano y dos llamadas iguales podían devolver productos
-                # distintos. El `name` desempata para que el orden sea estable.
+                # desplazar. El `name` desempata para que el orden —y con él las
+                # páginas— sea estable entre dos llamadas iguales.
                 cur.execute(f"""
                     SELECT u.id, u.ean, u.name, u.brand, u.shelf,
                            u.unit_type, u.total_volume_weight, u.is_gluten_free,
@@ -1626,21 +1743,14 @@ def get_products_by_shelf(
                     {dietary_clause}
                     GROUP BY u.id, u.ean, u.name, u.brand, u.shelf,
                              u.unit_type, u.total_volume_weight, u.is_gluten_free, u.is_vegan
-                    ORDER BY store_count DESC, u.name ASC
-                    LIMIT %s
-                """, (shelf_slug, limit))
+                    ORDER BY store_count DESC, u.name ASC, u.id
+                """, (shelf_slug,))
                 nearest_products = cur.fetchall()
-
-                if not nearest_products:
-                    return []
 
                 product_ids = [p["id"] for p in nearest_products]
                 offers_by_product = _fetch_offers_by_product(cur, product_ids, memberships)
 
-        return [
-            _build_product_response(p, offers_by_product.get(p["id"], []))
-            for p in nearest_products
-        ]
+        return _paginate_listing(nearest_products, offers_by_product, listing)
     except Exception as e:
         logger.error(f"Error en búsqueda por categoría: {e}")
         raise HTTPException(status_code=500, detail=str(e))
