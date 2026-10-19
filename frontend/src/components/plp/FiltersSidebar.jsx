@@ -3,13 +3,10 @@ import { DietaryFacet } from "./DietaryFacet";
 import { PriceRangeSlider } from "./PriceRangeSlider";
 import { StoreAvailabilityToggle } from "./StoreAvailabilityToggle";
 
-// Sin botón "Aplicar": a diferencia de Carrefour (donde cada filtro implica
-// un round-trip al servidor), acá los facets se calculan sobre un resultado
-// ya fetcheado en memoria, así que cada cambio filtra al instante.
-//
-// La excepción es el facet dietario, que sí va al servidor — por eso llega en
-// props aparte de `filters` en vez de salir de useProductFilters: la distinción
-// entre "vista sobre lo ya traído" y "cambia qué filas existen" tiene que verse.
+// Sin botón "Aplicar": cada cambio pide la página 1 con el filtro nuevo. Todos
+// los facets se resuelven en el backend (la grilla es una sola página); el
+// dietario llega en props aparte porque vive arriba, en SearchResultsPage, y
+// sobrevive al cambio de búsqueda.
 export function FiltersSidebar({ filters, dietary, onToggleDietary }) {
   const {
     brandOptions,

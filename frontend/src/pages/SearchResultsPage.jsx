@@ -13,32 +13,54 @@ const NO_DIETARY_FILTERS = { glutenFree: false, vegan: false };
 
 export function SearchResultsPage() {
   const { shelf } = useParams();
-  const { labelBySlug } = useShelves();
   const [searchParams] = useSearchParams();
   const query = searchParams.get("q");
-
-  const [results, setResults] = useState([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState(null);
   const [dietary, setDietary] = useState(NO_DIETARY_FILTERS);
-  const { memberships } = useProfile();
-  // String y no el array: la identidad del array cambia con cada render del
-  // provider y relanzaría la búsqueda sin que nada haya cambiado.
-  const membershipsKey = (memberships || []).join(",");
-
-  const mode = shelf ? "shelf" : "search";
-  const term = shelf || query;
 
   const toggleDietary = useCallback((key) => {
     setDietary((prev) => ({ ...prev, [key]: !prev[key] }));
   }, []);
 
-  // Los dietarios están en las deps porque se resuelven en SQL: cambiarlos
-  // implica volver a pedir. El flag `cancelled` evita que una respuesta lenta
-  // de un toggle anterior pise a la del toggle actual.
+  // El `key` remonta la vista al cambiar de búsqueda, de góndola o de filtro
+  // dietario, y con eso vuelven a cero los filtros, el orden y la página — sin
+  // un efecto que los resetee después de que ya salió una petición con los
+  // filtros viejos. Los dietarios viven acá arriba porque sobreviven al cambio
+  // de búsqueda.
+  const mode = shelf ? "shelf" : "search";
+  return (
+    <ResultsView
+      key={`${mode}:${shelf || query}:${dietary.glutenFree}:${dietary.vegan}`}
+      mode={mode}
+      shelf={shelf}
+      query={query}
+      dietary={dietary}
+      onToggleDietary={toggleDietary}
+    />
+  );
+}
+
+function ResultsView({ mode, shelf, query, dietary, onToggleDietary }) {
+  const { labelBySlug } = useShelves();
+  const [results, setResults] = useState(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(null);
+  const { memberships } = useProfile();
+  // String y no el array: la identidad del array cambia con cada render del
+  // provider y relanzaría la búsqueda sin que nada haya cambiado.
+  const membershipsKey = (memberships || []).join(",");
+
+  const term = shelf || query;
+
+  const filters = useProductFilters(results);
+  // Misma razón que membershipsKey: el objeto se arma en cada render.
+  const listingKey = JSON.stringify(filters.query);
+
+  // Todo lo que cambia qué filas vuelven está en las deps, porque se resuelve en
+  // el backend. El flag `cancelled` evita que una respuesta lenta de un cambio
+  // anterior pise a la del actual.
   useEffect(() => {
     if (!term) {
-      setResults([]);
+      setResults(null);
       setLoading(false);
       return;
     }
@@ -46,10 +68,12 @@ export function SearchResultsPage() {
     setLoading(true);
     setError(null);
 
+    const listing = JSON.parse(listingKey);
+    const membershipList = membershipsKey.split(",").filter(Boolean);
     const request =
       mode === "shelf"
-        ? getProductsByShelf(term, undefined, dietary, membershipsKey.split(",").filter(Boolean))
-        : searchProducts(term, undefined, dietary, membershipsKey.split(",").filter(Boolean));
+        ? getProductsByShelf(term, listing, dietary, membershipList)
+        : searchProducts(term, listing, dietary, membershipList);
     request
       .then((data) => {
         if (!cancelled) setResults(data);
@@ -64,9 +88,12 @@ export function SearchResultsPage() {
     return () => {
       cancelled = true;
     };
-  }, [mode, term, dietary, membershipsKey]);
+  }, [mode, term, dietary, membershipsKey, listingKey]);
 
-  const filters = useProductFilters(results);
+  function goToPage(page) {
+    filters.setPage(page);
+    window.scrollTo({ top: 0 });
+  }
 
   // El slug de la URL no es presentable ("yerba-mate"): la etiqueta sale de
   // GET /categories, que ya está cacheado por sesión. Mientras carga se muestra
@@ -107,17 +134,40 @@ export function SearchResultsPage() {
         // La sidebar se mantiene montada durante el loading: si se desmontara,
         // tildar un filtro dietario haría desaparecer el checkbox recién tocado.
         <div className="flex flex-col gap-6 lg:flex-row">
-          <FiltersSidebar filters={filters} dietary={dietary} onToggleDietary={toggleDietary} />
+          <FiltersSidebar filters={filters} dietary={dietary} onToggleDietary={onToggleDietary} />
           <div className="flex-1">
             <div className="mb-4 flex items-center justify-between">
               <p className="text-sm text-ink-muted">
                 {loading
                   ? "Buscando productos…"
-                  : `${filters.filteredResults.length} producto${filters.filteredResults.length === 1 ? "" : "s"}`}
+                  : `${results?.total ?? 0} producto${results?.total === 1 ? "" : "s"}`}
               </p>
               <SortDropdown sortBy={filters.sortBy} onChange={filters.setSortBy} options={filters.SORT_OPTIONS} />
             </div>
-            {!loading && <ProductGrid products={filters.filteredResults} emptyMessage={emptyMessage} />}
+            {!loading && <ProductGrid products={results?.items || []} emptyMessage={emptyMessage} />}
+            {!loading && filters.totalPages > 1 && (
+              <nav className="mt-6 flex items-center justify-center gap-4 text-sm text-ink">
+                <button
+                  type="button"
+                  onClick={() => goToPage(filters.page - 1)}
+                  disabled={filters.page <= 1}
+                  className="rounded-md border border-line px-3 py-1.5 hover:bg-surface-muted disabled:opacity-40"
+                >
+                  ‹ Anterior
+                </button>
+                <span className="text-ink-muted">
+                  Página {filters.page} de {filters.totalPages}
+                </span>
+                <button
+                  type="button"
+                  onClick={() => goToPage(filters.page + 1)}
+                  disabled={filters.page >= filters.totalPages}
+                  className="rounded-md border border-line px-3 py-1.5 hover:bg-surface-muted disabled:opacity-40"
+                >
+                  Siguiente ›
+                </button>
+              </nav>
+            )}
           </div>
         </div>
       )}

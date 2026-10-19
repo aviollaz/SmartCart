@@ -1,8 +1,6 @@
-import { useEffect, useMemo, useState } from "react";
+import { useState } from "react";
 import { useProfile } from "../context/ProfileContext";
 import { STORES } from "../utils/constants";
-import { resolveDisplayPrice } from "../utils/formatters";
-import { stripUnavailableStores } from "../utils/storeAvailability";
 
 const SORT_OPTIONS = {
   RELEVANCE: "relevance",
@@ -16,68 +14,36 @@ function emptyStoreFilter() {
   return Object.fromEntries(STORES.map((store) => [store.id, false]));
 }
 
-function computePriceBounds(results) {
-  const prices = results.map(resolveDisplayPrice).filter((p) => typeof p === "number" && p > 0);
-  if (prices.length === 0) return [0, 0];
-  return [Math.min(...prices), Math.max(...prices)];
-}
-
 /**
- * Deriva filtros/orden 100% client-side sobre un resultado ya fetcheado
- * (búsqueda o categoría). Todos los facets salen de datos reales presentes en
- * ProductResponse[] — sin fabricar campos que el backend no provee.
+ * Estado de los filtros, el orden y la página de una grilla (búsqueda o
+ * categoría). NO filtra ni ordena: eso lo hace el backend (`_paginate_listing`
+ * en src/api.py), porque el cliente recibe una sola página y unas facetas
+ * calculadas acá no verían el resto — una marca fuera de la página 1 no
+ * aparecía en el filtro de marcas.
+ *
+ * `page` es la respuesta del backend (ProductPage): de ahí salen las opciones
+ * de marca y los límites del rango de precio. Cambiar cualquier filtro vuelve a
+ * la página 1. Para resetear todo al cambiar de búsqueda, el llamador remonta
+ * el componente (prop `key`) en vez de sincronizarlo con un efecto.
  */
-export function useProductFilters(results) {
+export function useProductFilters(page) {
   const { unavailableStores, excludedStores, hiddenStores } = useProfile();
   const [selectedBrands, setSelectedBrands] = useState(() => new Set());
-  const [priceRange, setPriceRange] = useState(null);
+  // null = sin filtro de precio (el usuario no tocó el slider).
+  const [priceRange, setPriceRangeState] = useState(null);
   const [storeFilter, setStoreFilter] = useState(emptyStoreFilter);
-  const [sortBy, setSortBy] = useState(SORT_OPTIONS.RELEVANCE);
+  const [sortBy, setSortByState] = useState(SORT_OPTIONS.RELEVANCE);
+  const [pageNumber, setPageNumber] = useState(1);
 
-  // El saneo va acá arriba y no dentro del predicado de filteredResults: los
-  // límites de precio, los conteos por marca y el contador "N productos" salen
-  // todos de esta misma lista, y si siguieran mirando `results` contarían
-  // productos que la grilla ya no muestra.
-  const usableResults = useMemo(
-    () => stripUnavailableStores(results, hiddenStores),
-    [results, hiddenStores]
-  );
+  const priceBounds = page?.price_bounds || [0, 0];
 
-  const priceBounds = useMemo(() => computePriceBounds(usableResults), [usableResults]);
-
-  // Clampeado en cada render (no solo vía el useEffect de abajo): cuando
-  // llegan resultados nuevos, priceBounds cambia sincrónicamente en este
-  // mismo render pero el useEffect que resincroniza priceRange recién corre
-  // después del commit. Sin este clamp, <Range> podía recibir por un
-  // instante un value fuera de [min, max] (ej. 0 con min=915) y tirar
-  // "RangeError: value is smaller than min".
-  const effectivePriceRange = useMemo(() => {
-    const [boundMin, boundMax] = priceBounds;
-    const source = priceRange || priceBounds;
-    const clamp = (v) => Math.min(Math.max(v, boundMin), boundMax);
-    return [clamp(source[0]), clamp(source[1])];
-  }, [priceRange, priceBounds]);
-
-  // Cada vez que cambia el set de resultados (nueva búsqueda/categoría),
-  // los filtros vuelven a su estado neutro y el rango de precio se re-ancla
-  // a los límites del nuevo resultado.
-  useEffect(() => {
-    setSelectedBrands(new Set());
-    setStoreFilter(emptyStoreFilter());
-    setPriceRange(priceBounds);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [usableResults]);
-
-  const brandOptions = useMemo(() => {
-    const counts = new Map();
-    for (const product of usableResults) {
-      const brand = product.brand || "Sin marca";
-      counts.set(brand, (counts.get(brand) || 0) + 1);
-    }
-    return Array.from(counts.entries())
-      .map(([brand, count]) => ({ brand, count }))
-      .sort((a, b) => b.count - a.count);
-  }, [usableResults]);
+  // Clampeado en cada render: los límites cambian con los filtros dietarios o
+  // la cobertura, y <Range> tira "RangeError: value is smaller than min" si
+  // recibe un value fuera de [min, max] aunque sea por un instante.
+  const [boundMin, boundMax] = priceBounds;
+  const clamp = (v) => Math.min(Math.max(v, boundMin), boundMax);
+  const rangeSource = priceRange || priceBounds;
+  const effectivePriceRange = [clamp(rangeSource[0]), clamp(rangeSource[1])];
 
   function toggleBrand(brand) {
     setSelectedBrands((prev) => {
@@ -86,54 +52,46 @@ export function useProductFilters(results) {
       else next.add(brand);
       return next;
     });
+    setPageNumber(1);
   }
 
   function toggleStore(storeId) {
     setStoreFilter((prev) => ({ ...prev, [storeId]: !prev[storeId] }));
+    setPageNumber(1);
   }
 
-  const filteredResults = useMemo(() => {
-    const [rangeMin, rangeMax] = effectivePriceRange;
-    const anyStoreFilterActive = Object.values(storeFilter).some(Boolean);
+  function setPriceRange(range) {
+    setPriceRangeState(range);
+    setPageNumber(1);
+  }
 
-    let filtered = usableResults.filter((product) => {
-      const brand = product.brand || "Sin marca";
-      if (selectedBrands.size > 0 && !selectedBrands.has(brand)) return false;
+  function setSortBy(value) {
+    setSortByState(value);
+    setPageNumber(1);
+  }
 
-      const displayPrice = resolveDisplayPrice(product);
-      if (typeof displayPrice === "number" && displayPrice > 0) {
-        if (displayPrice < rangeMin || displayPrice > rangeMax) return false;
-      }
-
-      if (anyStoreFilterActive) {
-        const offers = product.available_at_stores || [];
-        const matchesStore = offers.some(
-          (offer) => storeFilter[offer.store_id] && offer.in_stock
-        );
-        if (!matchesStore) return false;
-      }
-
-      return true;
-    });
-
-    if (sortBy === SORT_OPTIONS.PRICE_ASC) {
-      filtered = [...filtered].sort((a, b) => (resolveDisplayPrice(a) || 0) - (resolveDisplayPrice(b) || 0));
-    } else if (sortBy === SORT_OPTIONS.PRICE_DESC) {
-      filtered = [...filtered].sort((a, b) => (resolveDisplayPrice(b) || 0) - (resolveDisplayPrice(a) || 0));
-    }
-    // SORT_OPTIONS.RELEVANCE: se preserva el orden devuelto por la API (distance asc.)
-
-    return filtered;
-  }, [usableResults, selectedBrands, effectivePriceRange, storeFilter, sortBy]);
+  // Lo que viaja a la API. Las marcas y tiendas van ordenadas para que el
+  // mismo filtro dé siempre la misma petición.
+  const query = {
+    page: pageNumber,
+    brands: [...selectedBrands].sort(),
+    stores: Object.keys(storeFilter).filter((id) => storeFilter[id]).sort(),
+    priceRange,
+    sort: sortBy,
+    hiddenStores,
+  };
 
   return {
-    filteredResults,
+    query,
+    page: pageNumber,
+    setPage: setPageNumber,
+    totalPages: page ? Math.max(1, Math.ceil(page.total / page.page_size)) : 1,
     // Separadas para el aviso de la grilla (la causa cambia el texto) y unidas
     // para el filtro por tienda, que no tiene que ofrecer ninguna de las dos.
     unavailableStores,
     excludedStores,
     hiddenStores,
-    brandOptions,
+    brandOptions: page?.brands || [],
     selectedBrands,
     toggleBrand,
     priceBounds,

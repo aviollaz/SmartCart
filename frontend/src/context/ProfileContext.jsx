@@ -7,8 +7,8 @@ const ProfileContext = createContext(null);
 
 const STORAGE_KEY = "smartcart_profile_v1";
 
-// Referencia estable para el caso "no sabemos nada de cobertura": `useProductFilters`
-// la usa como dependencia de un useMemo, y un [] nuevo por render lo invalidaría siempre.
+// Referencia estable para el caso "no sabemos nada de cobertura": los hooks de
+// catálogo la usan como dependencia, y un [] nuevo por render la invalidaría siempre.
 const NO_UNAVAILABLE_STORES = [];
 
 // UUID anónimo que identifica al NAVEGADOR, no a una persona: SmartCart no tiene

@@ -4,8 +4,9 @@ const DIETARY_OPTIONS = [
 ];
 
 /**
- * Único facet que dispara un re-fetch: el filtrado ocurre en SQL (ver
- * api/products.js). Por eso recibe props propias y no sale de useProductFilters.
+ * El filtrado ocurre en SQL (ver api/products.js). Recibe props propias y no
+ * sale de useProductFilters porque vive en SearchResultsPage y sobrevive al
+ * cambio de búsqueda.
  */
 export function DietaryFacet({ dietary, onToggle }) {
   return (

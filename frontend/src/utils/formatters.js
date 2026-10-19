@@ -98,8 +98,8 @@ export function formatShortAddress(location) {
  * priorizarlo tapaba el descuento. Sigue haciendo falta porque GET /search no
  * lo manda y porque stripUnavailableStores() lo anula a propósito.
  *
- * Se usa tanto para mostrar el precio como para el filtro/orden por precio
- * (hooks/useProductFilters.js), así la grilla ordena por lo que muestra.
+ * El filtro/orden por precio de la grilla usa la misma regla del lado del
+ * backend (`_display_price` en src/api.py), así ordena por lo que se muestra.
  */
 export function resolveDisplayPrice(product) {
   const best = resolveBestOffer(product);

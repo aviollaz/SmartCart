@@ -1,9 +1,5 @@
 import { apiFetch } from "./client";
 
-// A diferencia del resto de los facets (marca, precio, tienda), que se resuelven
-// en memoria sobre lo ya fetcheado, los dietarios viajan a la API: el backend solo
-// devuelve los `limit` productos más cercanos, así que filtrar del lado del cliente
-// mostraría un puñado de resultados en vez de `limit` resultados que cumplan.
 // Solo se manda el parámetro cuando está activo, para no ensuciar la URL.
 function appendDietaryParams(params, dietary) {
   if (dietary?.glutenFree) params.set("gluten_free", "true");
@@ -20,24 +16,46 @@ function appendMemberships(params, memberships) {
   return params;
 }
 
-export function searchProducts(query, limit = 20, dietary, memberships) {
-  const params = new URLSearchParams({ q: query, limit: String(limit) });
+// Página, filtros y orden de la grilla (ver useProductFilters). Todos se
+// resuelven en el backend: el cliente recibe una sola página, así que filtrar
+// acá dejaría afuera lo que no cayó en ella. `hiddenStores` son las tiendas que
+// no entregan o que el usuario deshabilitó: el backend saca sus ofertas antes
+// de calcular precios y facetas.
+function listingParams(listing, dietary, memberships) {
+  const params = new URLSearchParams({ page: String(listing.page) });
+  for (const brand of listing.brands) params.append("brands", brand);
+  for (const store of listing.stores) params.append("stores", store);
+  for (const store of listing.hiddenStores) params.append("hidden_stores", store);
+  if (listing.priceRange) {
+    params.set("price_min", String(listing.priceRange[0]));
+    params.set("price_max", String(listing.priceRange[1]));
+  }
+  if (listing.sort !== "relevance") params.set("sort", listing.sort);
   appendDietaryParams(params, dietary);
   appendMemberships(params, memberships);
+  return params;
+}
+
+/**
+ * Una página de resultados de búsqueda: `{items, total, page, page_size,
+ * brands, price_bounds}`. El universo son los 100 más cercanos a la query.
+ */
+export function searchProducts(query, listing, dietary, memberships) {
+  const params = listingParams(listing, dietary, memberships);
+  params.set("q", query);
   return apiFetch(`/search?${params.toString()}`);
 }
 
 /**
- * Los productos de una góndola, por su slug (ver `getShelfSections`).
+ * Una página de los productos de una góndola, por su slug (ver
+ * `getShelfSections`), con la misma forma que `searchProducts`.
  *
  * El slug es una clave cerrada de src/shelves.py, así que un valor inventado
  * contesta 404 y no una lista vacía: "no hay productos" y "esa góndola no
  * existe" son cosas distintas.
  */
-export function getProductsByShelf(shelfSlug, limit = 50, dietary, memberships) {
-  const params = new URLSearchParams({ limit: String(limit) });
-  appendDietaryParams(params, dietary);
-  appendMemberships(params, memberships);
+export function getProductsByShelf(shelfSlug, listing, dietary, memberships) {
+  const params = listingParams(listing, dietary, memberships);
   return apiFetch(`/category/${encodeURIComponent(shelfSlug)}?${params.toString()}`);
 }
 
