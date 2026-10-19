@@ -26,8 +26,7 @@ PROMO_TRANSFORMERS = {
     # Carrefour también es VTEX: mismo 'commertialOffer' crudo, pero su hueco
     # ListPrice/Price puede ser precio de socio (ver PromoTransformer.carrefour).
     "carrefour_online": lambda prod: PromoTransformer.carrefour(prod['raw_promos'], prod['store_sku']),
-    # Vea es VTEX pero su ListPrice no es un precio (ver PromoTransformer.vea).
-    "vea_online": lambda prod: PromoTransformer.vea(prod['raw_promos'], prod['store_sku']),
+    # Vea (PromoTransformer.vea) está apagada: ver el comentario en src/stores.py.
 }
 
 

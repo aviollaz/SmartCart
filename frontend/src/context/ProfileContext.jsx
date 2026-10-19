@@ -176,10 +176,13 @@ export function ProfileProvider({ children }) {
     return ids.length > 0 ? ids : NO_UNAVAILABLE_STORES;
   }, [profile.storeCoverage]);
 
-  const excludedStores = useMemo(
-    () => (profile.excludedStores?.length ? profile.excludedStores : NO_UNAVAILABLE_STORES),
-    [profile.excludedStores]
-  );
+  // Filtrado contra STORES: un perfil guardado puede nombrar una tienda que ya
+  // no participa (Vea, apagada en oct-2026), y /optimize rechaza con 422 un id
+  // desconocido en user_excluded_stores.
+  const excludedStores = useMemo(() => {
+    const ids = (profile.excludedStores || []).filter((id) => STORES.some((s) => s.id === id));
+    return ids.length > 0 ? ids : NO_UNAVAILABLE_STORES;
+  }, [profile.excludedStores]);
 
   // Lo que se saca de la grilla: las que no llegan más las que el usuario sacó.
   // Van separadas en todo lo demás porque la causa cambia el mensaje — "Coto no

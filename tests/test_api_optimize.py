@@ -174,7 +174,7 @@ def test_dia_sin_cobertura_se_excluye_y_coto_live_pisa_el_costo(monkeypatch):
     assert excluded == [DIA]
     assert costs[COTO] == 3399.0
     assert costs[DIA] == 3000
-    assert set(logistics) == {"coto", "dia", "carrefour", "vea"}
+    assert set(logistics) == {"coto", "dia", "carrefour"}
 
 
 def test_dia_cubierto_pisa_su_costo(monkeypatch):
