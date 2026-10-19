@@ -84,36 +84,23 @@ npm run dev
 ```
 
 App en `http://localhost:5173`. Le pega a la API vía `VITE_API_URL`
-(`frontend/.env`), que **se lee en tiempo de build**: cambiarlo obliga a rehacer
-el build.
+(`frontend/.env`, default `http://localhost:8000`), que **se lee en tiempo de
+build**: cambiarlo obliga a rehacer el build. `npm run build` genera
+`frontend/dist` y `npm run lint` corre oxlint.
 
 ## La base es derivada
 
 No hay dump de ejemplo en el repo, y es a propósito: un barrido completo
-reconstruye `unified_products`, `store_products` y los embeddings desde cero, y
-corre todas las noches igual. Por eso tampoco hay backups ni migración de datos
-al cambiar de servidor — mudarse es editar `DATABASE_URL` y correr un barrido.
-Lo único que no es derivado es el carrito y el historial de compras, que viven en
-el `localStorage` del navegador.
-
-La base de producción es privada. Si querés probar el proyecto sin esperar el
-barrido, pedí acceso de sólo lectura: la API está preparada para servir con un
-rol sin permisos de escritura.
+reconstruye el catálogo y los embeddings desde cero, y corre todas las noches
+igual. La base de producción es privada; si querés probar el proyecto sin
+esperar el barrido, pedí acceso de sólo lectura (la API sirve con un rol sin
+permisos de escritura).
 
 ## Dónde corre
 
-| | hoy |
-|---|---|
-| Barrido nocturno | GitHub Actions, 03:00 AR (`.github/workflows/scrape.yml`) |
-| Base de datos | Neon (PostgreSQL administrado + pgvector) |
-| API (demo pública) | Google Cloud Run, escala a cero |
-| Frontend (demo pública) | Vercel, redeploy con cada push a `main` |
-
-El detalle —por qué Actions y Neon, los límites del plan gratuito, y el
-despliegue en Oracle Cloud que está diseñado pero bloqueado por capacidad— está
-en [`ops/README.md`](ops/README.md), que es el archivo que dice cuál de los dos
-está vigente. Cómo se publica la demo, y por qué en Cloud Run, está en
-[`ops/demo-publica.md`](ops/demo-publica.md).
+El barrido nocturno corre en GitHub Actions, la base en Neon, la API en Google
+Cloud Run y el frontend en Vercel. Cómo se despliega y qué límites cuidar está
+en [`docs/operacion.md`](docs/operacion.md).
 
 ## Tests
 
@@ -129,10 +116,9 @@ La mayoría del resto es Python puro y corre sin nada levantado.
 
 ## Documentación
 
-* [`docs/smartcart_spec.md`](docs/smartcart_spec.md) — especificación técnica y
-  modelo de datos.
-* [Issues](https://github.com/aviollaz/SmartCart/issues) — pendientes y riesgos conocidos, con el
-  razonamiento de cada uno.
-* [`CLAUDE.md`](CLAUDE.md) — arquitectura etapa por etapa: qué decide cada
-  módulo y por qué. Es el más detallado de los tres.
-* [`ops/README.md`](ops/README.md) — dónde corre y cómo se opera.
+* [`docs/arquitectura.md`](docs/arquitectura.md) — cómo está hecho: cada etapa
+  del pipeline, la API, el frontend y por qué se decidió cada cosa.
+* [`docs/operacion.md`](docs/operacion.md) — dónde corre, cómo se despliega y
+  qué límites hay que cuidar.
+* [Issues](https://github.com/aviollaz/SmartCart/issues) — pendientes y riesgos
+  conocidos, con el razonamiento de cada uno.

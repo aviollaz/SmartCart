@@ -9,7 +9,7 @@
 # pre-flight de base y su manejo de señales. Este YAML aporta disparador,
 # entorno, secreto y —desde que las tiendas corren en paralelo— el reparto.
 #
-# Ver ops/README.md por qué el destino es Neon + Actions y no la VM de Oracle.
+# Ver docs/operacion.md por qué el destino es Neon + Actions.
 
 name: Scrapeo nocturno
 
@@ -167,7 +167,7 @@ jobs:
       - name: Verificar que el secreto está cargado
         run: |
           if [ -z "${DATABASE_URL}" ]; then
-            echo "::error::Falta el secreto DATABASE_URL. Ver ops/README.md."
+            echo "::error::Falta el secreto DATABASE_URL. Ver docs/operacion.md."
             exit 1
           fi
           echo "DATABASE_URL presente (${#DATABASE_URL} caracteres)."
@@ -246,7 +246,7 @@ jobs:
       - name: Verificar que el secreto está cargado
         run: |
           if [ -z "${DATABASE_URL}" ]; then
-            echo "::error::Falta el secreto DATABASE_URL. Ver ops/README.md."
+            echo "::error::Falta el secreto DATABASE_URL. Ver docs/operacion.md."
             exit 1
           fi
 

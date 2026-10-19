@@ -11,7 +11,7 @@ env/
 # binarios no son intercambiables.
 .venv-linux/
 
-# Logs del pipeline de scraping (ops/run_pipeline.sh)
+# Logs del pipeline de scraping (src/logging_setup.py)
 logs/
 *.log
 
@@ -29,8 +29,7 @@ logs/
 
 # Archivos de documentación
 # Se ignora el material de referencia (docs/references/ son ~700K de capturas de
-# pantalla de las grillas de promos), pero NO los .md: smartcart_spec.md ya
-# estaba trackeado desde antes de esta regla.
+# pantalla de las grillas de promos), pero NO los .md (ver la negación de abajo).
 # Ojo con el patrón: `docs/` a secas excluye el directorio entero y git ni
 # siquiera desciende, así que una negación adentro no tendría efecto.
 docs/*

@@ -1,4 +1,4 @@
-# Imagen de la API, desplegada en Google Cloud Run (ops/demo-publica.md).
+# Imagen de la API, desplegada en Google Cloud Run (docs/operacion.md).
 #
 # Por qué Cloud Run y no un PaaS gratuito: la API carga `all-MiniLM-L6-v2` para
 # codificar las búsquedas y el pico medido es **413 MB** de RSS (bajo /optimize,

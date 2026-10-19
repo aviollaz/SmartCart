@@ -5,9 +5,7 @@
 > scrapea un supermercado hasta que un usuario ve el carrito repartido entre
 > tiendas. Es la referencia técnica vigente del proyecto.
 >
-> `docs/smartcart_spec.md` es distinto: es la propuesta técnica original
-> (arquitectura pensada, roadmap por semanas, un frontend en Streamlit que ya
-> no existe) y se conserva como documento histórico, no como spec al día.
+> Dónde corre y cómo se despliega está en [`operacion.md`](operacion.md).
 > El backlog razonado vive en los [issues de GitHub](https://github.com/aviollaz/SmartCart/issues) — este documento no lo repite.
 
 ---
@@ -282,9 +280,9 @@ Endpoints, con su input/output real:
 
 | Endpoint | Input | Output |
 | --- | --- | --- |
-| `GET /search?q=` | texto libre | lista de productos, ordenada por relevancia semántica ponderada por disponibilidad multi-tienda (ver más abajo) |
+| `GET /search?q=` | texto libre + página y filtros (ver abajo) | una página de productos, ordenada por relevancia semántica ponderada por disponibilidad multi-tienda (ver más abajo) |
 | `GET /categories` | — | las 60 góndolas agrupadas por sección |
-| `GET /category/{slug}` | slug de góndola | productos de esa góndola (404 si el slug no existe en la tabla) |
+| `GET /category/{slug}` | slug de góndola + página y filtros | una página de los productos de esa góndola (404 si el slug no existe en la tabla) |
 | `POST /products/by-ids` | lista de `unified_id` (hasta 100) | esos productos, en el mismo orden, tal como existen hoy, más la descripción de alguna tienda para la ficha (usado para resolver nombre/precio del carrito y del historial, que en `localStorage` sólo guardan el id) |
 | `GET /deals` | `limit`, membresías y sección opcionales | los productos con mayor descuento de hoy, con `discount_pct` (sección de la home, filtrable por sección) |
 | `GET /demo-cart` | — | un carrito de ejemplo armado por el backend con el catálogo del día (para el botón "Probar con un carrito de ejemplo") |
@@ -292,6 +290,22 @@ Endpoints, con su input/output real:
 | `POST /price-preview` | ítems del carrito + membresías | precio neto por tienda a la cantidad pedida, evaluando promos |
 | `POST /optimize` | carrito, coordenadas opcionales, tarjetas/membresías declaradas, costos de envío por zona, supermercados que el usuario deshabilitó | el reparto óptimo entre tiendas, o 400 con motivo si es inviable |
 | `POST /receipt/parse` | una foto de ticket (`multipart/form-data`) | por línea leída: el texto OCR y, si hubo un match confiable, el producto del catálogo |
+
+**Paginación y filtros (`/search` y `/category`):** los dos devuelven una
+página (`{items, total, page, page_size, brands, price_bounds}`, 48 por página)
+y reciben los filtros de la grilla: `brands`, `stores` (con stock en alguna),
+`price_min`/`price_max`, `sort` (`relevance`/`price_asc`/`price_desc`) y
+`hidden_stores` (las que no entregan en la dirección o el usuario
+deshabilitó). Todo se resuelve en `_paginate_listing`, en Python y no en el
+cliente: el navegador recibe una sola página, así que unas facetas calculadas
+allá no ven el resto — una marca fuera de los primeros 50 no aparecía ni en la
+grilla ni en el filtro de marcas. Tampoco se puede mandar la góndola entera:
+medido, `vinos` son 1.572 productos, 1,8 MB y ~13 s. Las facetas (`brands`,
+`price_bounds`) cuentan el universo antes de los filtros de marca/precio/tienda,
+para que elegir una marca no saque a las demás del filtro. El precio de
+filtro y orden es `_display_price`, el mismo que muestra la card. El universo
+de `/category` es la góndola entera; el de `/search`, el pool de 100 de abajo
+(más allá, la búsqueda semántica es ruido).
 
 **Búsqueda (`GET /search`):** no es sólo "los vecinos más cercanos por
 coseno". Es *retrieve-then-rerank* en una sola query SQL: primero trae un
@@ -442,10 +456,7 @@ logs con fecha en el nombre de archivo (no rotación por proceso, porque el
 job corre unos minutos por noche y nunca cruza medianoche vivo).
 
 **Dónde corre hoy:** GitHub Actions (`workflow_dispatch` + cron), contra
-Neon. Hay un plan alternativo diseñado y documentado para correr en una VM
-Oracle Cloud "Always Free" (`ops/oracle/`), bloqueado hoy por falta de
-capacidad asignada por Oracle en la región — el estado exacto y la razón de
-cada paso quedan en `ops/README.md`, no se repiten acá.
+Neon. Detalle y alternativas evaluadas en [`operacion.md`](operacion.md).
 
 ## 4. Frontend (`frontend/src`)
 
@@ -511,7 +522,7 @@ como `src.<módulo>` en vez de con imports relativos.
 | Base de datos | Neon (Postgres + pgvector serverless) | Escala a cero; el sweep nocturno reconstruye el catálogo en ~30 min, así que no hace falta backup — la base es 100% derivada. |
 | API | Google Cloud Run | RSS real medido ~413 MB bajo `/optimize`; entra cómodo en el tier gratis (180.000 vCPU-s/mes) con `--min-instances 0`. La imagen instala `torch` desde el índice CPU de PyTorch antes que nada, para no arrastrar el runtime de CUDA que trae el wheel de PyPI. |
 | Frontend | Vercel | Deploy en segundos por push; separado de la API para no pagar un rebuild de ~10 min (con `torch` adentro) por cada cambio de UI. |
-| Scraping nocturno | GitHub Actions (cron) | Sin costo de cómputo propio; ver 3.10 para el plan alternativo (Oracle) y su estado. |
+| Scraping nocturno | GitHub Actions (cron) | Sin costo de cómputo propio; ver 3.10. |
 | Analítica | Servicio aparte, fuera de este repo | Ver 3.9. |
 
 Dos variables de entorno son las que evitan que el proyecto se quede sin
@@ -519,6 +530,8 @@ presupuesto gratuito de Neon: `SMARTCART_POOL_MIN_SIZE=0` (una conexión
 persistente cuenta como actividad para Neon y evita que la base se suspenda,
 consumiendo CU-hours las 24 horas) y `SMARTCART_POOL_MAX_IDLE` bajo (evita que
 la última conexión de cada visita quede viva mucho más de lo necesario).
+El comando de redeploy y el resto del detalle operativo están en
+[`operacion.md`](operacion.md).
 
 ## 7. Límites conocidos y trabajo pendiente
 
