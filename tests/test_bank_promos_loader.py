@@ -51,11 +51,7 @@ def _escribir(tmp_path, promos):
 # ------------------------------------------------------------------- fail-open
 
 def test_archivo_inexistente_cae_al_fallback(tmp_path):
-    """
-    Sin el artefacto la app tiene que comportarse como antes de que existiera el
-    scraper, no quedarse sin descuentos: el usuario no vería un error, vería
-    precios peores sin explicación.
-    """
+    """Sin el artefacto no hay descuentos, pero /optimize sigue andando."""
     assert load_bank_promos(today=LUNES, path=str(tmp_path / "no_existe.json")) == FALLBACK_BANK_PROMOS
 
 
@@ -74,8 +70,8 @@ def test_json_valido_con_forma_inesperada_cae_al_fallback(tmp_path):
 def test_el_fallback_no_se_puede_mutar_desde_afuera(tmp_path):
     """El llamador recibe copias; si no, un cambio suyo se filtra al siguiente request."""
     promos = load_bank_promos(today=LUNES, path=str(tmp_path / "nada.json"))
-    promos["coto_online"].append({"card": "intruso"})
-    assert len(FALLBACK_BANK_PROMOS["coto_online"]) == 1
+    promos["coto_online"] = [{"card": "intruso"}]
+    assert "coto_online" not in FALLBACK_BANK_PROMOS
 
 
 # ---------------------------------------------------------------- filtro por día
@@ -171,10 +167,3 @@ def test_marca_las_membresias(tmp_path, entidad, es_membresia):
     promo = load_bank_promos(today=LUNES, path=ruta)["coto_online"][0]
     assert promo["is_membership"] is es_membresia
 
-
-def test_el_fallback_tiene_la_forma_que_consume_el_optimizador():
-    """Se usa tal cual cuando no hay archivo, así que no puede divergir."""
-    for promos in FALLBACK_BANK_PROMOS.values():
-        for promo in promos:
-            assert {"card", "discount_pct", "cap", "description"} <= set(promo)
-            assert isinstance(promo["discount_pct"], int)

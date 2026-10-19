@@ -42,18 +42,10 @@ BANK_PROMOS_PATH = os.path.join(os.path.dirname(__file__), "scrapers", "bank_pro
 # alto pero finito, del mismo orden que MAX_SUBTOTAL_CENTS en src/optimizer.py.
 SIN_TOPE_CAP = 100_000_000
 
-# La tabla que estuvo hardcodeada en optimize_cart hasta que existió el scraper.
-# Sigue siendo el fallback: sin el artefacto —repo recién clonado, corrida que
-# nunca se hizo, archivo corrupto— la app tiene que seguir funcionando igual que
-# antes, no quedarse sin ningún descuento.
-FALLBACK_BANK_PROMOS = {
-    "coto_online": [
-        {},
-    ],
-    "dia_online": [
-        {},
-    ],
-}
+# Sin el artefacto —repo recién clonado, corrida que nunca se hizo, archivo
+# corrupto— no hay descuentos bancarios. Inventar una tabla fija sería cotizar
+# un descuento que quizás no existe, el lado peligroso de la asimetría.
+FALLBACK_BANK_PROMOS = {}
 
 
 def load_bank_promos(today: date | None = None, path: str = BANK_PROMOS_PATH) -> dict:
@@ -62,10 +54,9 @@ def load_bank_promos(today: date | None = None, path: str = BANK_PROMOS_PATH) ->
 
     `today` se inyecta en los tests; en producción es la fecha del sistema.
 
-    Ante cualquier problema con el archivo devuelve FALLBACK_BANK_PROMOS. Es
-    fail-open a propósito, como src/coto_logistics.py: que el artefacto falte no
-    puede dejar al optimizador sin descuentos, porque el usuario no vería un
-    error sino precios peores sin explicación.
+    Ante cualquier problema con el archivo devuelve FALLBACK_BANK_PROMOS (sin
+    descuentos). Es fail-open a propósito, como src/coto_logistics.py: que el
+    artefacto falte no puede romper /optimize.
     """
     documento = _read(path)
     if documento is None:
