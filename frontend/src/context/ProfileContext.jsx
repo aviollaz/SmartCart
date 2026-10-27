@@ -177,8 +177,8 @@ export function ProfileProvider({ children }) {
   }, [profile.storeCoverage]);
 
   // Filtrado contra STORES: un perfil guardado puede nombrar una tienda que ya
-  // no participa (Vea, apagada en oct-2026), y /optimize rechaza con 422 un id
-  // desconocido en user_excluded_stores.
+  // no participa (como Vea entre el 19 y el 27-oct-2026), y /optimize rechaza
+  // con 422 un id desconocido en user_excluded_stores.
   const excludedStores = useMemo(() => {
     const ids = (profile.excludedStores || []).filter((id) => STORES.some((s) => s.id === id));
     return ids.length > 0 ? ids : NO_UNAVAILABLE_STORES;

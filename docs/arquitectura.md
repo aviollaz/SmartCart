@@ -107,10 +107,10 @@ sitio ya usa para pintar su propia grilla — no hay scraping de HTML.
   con campos nuevos sin que el hash rote del lado del store. El barrido es uno
   solo, `VtexCatalogScraper` en `vtex.py`: cada tienda es una subclase con su
   dominio, y se registra en `vtex_stores.py`.
-- **Vea está apagada desde el 19-oct-2026:** vea.com.ar sigue sirviendo un
-  skimmer de tarjetas en las descripciones de sus productos, y SmartCart manda
-  al usuario a ese checkout. El código queda; se sacó su registro (ver el
-  comentario en `src/stores.py`).
+- **Vea estuvo apagada del 19 al 27-oct-2026** por un skimmer de tarjetas en
+  las descripciones de sus productos; se reactivó cuando un barrido del catálogo
+  y del HTML del sitio no encontró rastros. `clean_description()` igual descarta
+  todo HTML de las descripciones.
 
 **Input:** una clave de categoría por tienda (un id `catv...` para Coto, un
 slug de URL para las tiendas VTEX). Las claves que efectivamente se barren no las

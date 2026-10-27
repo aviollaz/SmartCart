@@ -13,7 +13,6 @@ import httpx
 import pytest
 
 from src.promotions import CarrefourScraper, CotoScraper, DiaScraper, DiscountScrapeError, VeaScraper
-from src.promotions import models
 from src.promotions.models import BankDiscount, InvalidDiscount
 
 # --------------------------------------------------------------- payload de Coto
@@ -380,15 +379,6 @@ def test_roundtrip_json():
 
 # Las fechas son epoch en segundos; AHORA cae dentro de la vigencia de todas.
 AHORA = 1791950000
-
-
-@pytest.fixture(autouse=True)
-def _vea_conocida(request, monkeypatch):
-    """Vea está apagada (src/stores.py), así que BankDiscount rechaza su tienda.
-    Los tests de su scraper la vuelven a conocer para que el código siga
-    cubierto mientras tanto: es lo que hace barata la reactivación."""
-    if request.node.name.startswith("test_vea_"):
-        monkeypatch.setattr("src.promotions.models.KNOWN_STORES", (*models.KNOWN_STORES, "vea_online"))
 
 
 def _promo_vea(**overrides):

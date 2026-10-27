@@ -1010,7 +1010,7 @@ def _resolve_logistics_stage(request):
         ("coto", "coto_online", resolve_coto_logistics),
         ("dia", "dia_online", resolve_dia_logistics),
         ("carrefour", "carrefour_online", resolve_carrefour_logistics),
-        # Vea (resolve_vea_logistics) está apagada: ver src/stores.py.
+        ("vea", "vea_online", resolve_vea_logistics),
     ):
         info = resolve(request.lat, request.lng, fallback_delivery_cost=delivery_costs.get(store_id))
         logistics[key] = info
