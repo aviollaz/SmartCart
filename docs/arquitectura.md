@@ -107,10 +107,13 @@ sitio ya usa para pintar su propia grilla — no hay scraping de HTML.
   con campos nuevos sin que el hash rote del lado del store. El barrido es uno
   solo, `VtexCatalogScraper` en `vtex.py`: cada tienda es una subclase con su
   dominio, y se registra en `vtex_stores.py`.
-- **Vea estuvo apagada del 19 al 27-oct-2026** por un skimmer de tarjetas en
-  las descripciones de sus productos; se reactivó cuando un barrido del catálogo
-  y del HTML del sitio no encontró rastros. `clean_description()` igual descarta
-  todo HTML de las descripciones.
+- **Vea viene deshabilitada por defecto.** Estuvo apagada del 19 al 27-oct-2026
+  por un skimmer de tarjetas en las descripciones de sus productos, y el
+  barrido del 27-oct todavía lo encontró en 5 de 20.756. Volvió al registro con
+  un `warning` (`src/stores.py` y `constants.js`): sigue en el catálogo y en el
+  optimizador, pero el usuario la tiene que habilitar en "Supermercados", donde
+  ve el aviso. `clean_description()` igual descarta todo HTML de las
+  descripciones.
 
 **Input:** una clave de categoría por tienda (un id `catv...` para Coto, un
 slug de URL para las tiendas VTEX). Las claves que efectivamente se barren no las

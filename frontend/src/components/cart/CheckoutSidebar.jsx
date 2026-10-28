@@ -1,4 +1,4 @@
-import { CalendarDays, ChevronDown, CreditCard, Store } from "lucide-react";
+import { CalendarDays, ChevronDown, CreditCard, Store, AlertTriangle } from "lucide-react";
 import { useProfile } from "../../context/ProfileContext";
 import { CARD_OPTIONS, MEMBERSHIP_OPTIONS } from "../../utils/paymentOptions";
 import { STORES } from "../../utils/constants";
@@ -58,16 +58,26 @@ function StoresField() {
           const checked = !excludedStores.includes(store.id);
           const locked = checked && enabledCount === 1;
           return (
-            <label key={store.id} className={`flex items-center gap-2 text-sm ${locked ? "text-ink-muted" : "text-ink"}`}>
-              <input
-                type="checkbox"
-                checked={checked}
-                disabled={locked}
-                onChange={() => toggle(store.id)}
-                className="accent-brand-accent"
-              />
-              {store.name}
-            </label>
+            <div key={store.id}>
+              <label className={`flex items-center gap-2 text-sm ${locked ? "text-ink-muted" : "text-ink"}`}>
+                <input
+                  type="checkbox"
+                  checked={checked}
+                  disabled={locked}
+                  onChange={() => toggle(store.id)}
+                  className="accent-brand-accent"
+                />
+                {store.name}
+                {store.warning && <AlertTriangle size={14} className="shrink-0 text-state-warning" aria-hidden="true" />}
+              </label>
+              {/* Una tienda con aviso arranca deshabilitada (ProfileContext);
+                  el texto se ve antes de habilitarla, no después. */}
+              {store.warning && (
+                <p className="ml-6 mt-1 rounded border border-state-warning/40 bg-state-warning/10 px-2 py-1 text-xs text-ink">
+                  {store.warning}
+                </p>
+              )}
+            </div>
           );
         })}
         <p className="text-xs text-ink-muted">Los que desmarques no se usan al optimizar ni aparecen en los precios.</p>

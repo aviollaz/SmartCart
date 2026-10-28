@@ -3,6 +3,9 @@ import { useLocalStorage } from "../hooks/useLocalStorage";
 import { getDeliveryCostsForZone } from "../utils/deliveryCosts";
 import { STORES } from "../utils/constants";
 
+// Las tiendas que arrancan deshabilitadas por un aviso de seguridad.
+const WARNED_STORE_IDS = STORES.filter((store) => store.warning).map((store) => store.id);
+
 const ProfileContext = createContext(null);
 
 const STORAGE_KEY = "smartcart_profile_v1";
@@ -67,6 +70,12 @@ const DEFAULT_PROFILE = {
   // ofertas de la grilla, igual que una tienda sin cobertura. Mismo criterio de
   // migración que el resto: ausente en un perfil viejo = [] = todas habilitadas.
   excludedStores: [],
+  // Tiendas con `warning` (constants.js) que el usuario habilitó a mano. Esas
+  // arrancan deshabilitadas, así que lo que se guarda para ellas es la
+  // decisión de usarlas, no la de sacarlas: guardarlas en `excludedStores`
+  // haría que un perfil viejo, o uno nuevo, las tuviera habilitadas por
+  // omisión. Ausente en un perfil viejo = [] = todas siguen deshabilitadas.
+  optedInStores: [],
   // Tope de supermercados en el split (1, 2…) o null = sin límite. Cada
   // tienda de más es un checkout más que el usuario completa a mano, así que
   // puede preferir pagar algo más y comprar en menos lugares; lo elige desde
@@ -128,8 +137,15 @@ export function ProfileProvider({ children }) {
     setProfile((prev) => ({ ...prev, location: { skipped: true }, storeCoverage: {} }));
   }
 
+  // Recibe la lista completa de deshabilitadas, como la arma el carrito, y la
+  // guarda partida: las tiendas con aviso se guardan al revés (ver
+  // `optedInStores` en DEFAULT_PROFILE).
   function setExcludedStores(excludedStores) {
-    setProfile((prev) => ({ ...prev, excludedStores }));
+    setProfile((prev) => ({
+      ...prev,
+      excludedStores: excludedStores.filter((id) => !WARNED_STORE_IDS.includes(id)),
+      optedInStores: WARNED_STORE_IDS.filter((id) => !excludedStores.includes(id)),
+    }));
   }
 
   function setMaxStores(maxStores) {
@@ -178,11 +194,18 @@ export function ProfileProvider({ children }) {
 
   // Filtrado contra STORES: un perfil guardado puede nombrar una tienda que ya
   // no participa (como Vea entre el 19 y el 27-oct-2026), y /optimize rechaza
-  // con 422 un id desconocido en user_excluded_stores.
+  // con 422 un id desconocido en user_excluded_stores. Se suman las tiendas con
+  // aviso que el usuario no habilitó.
   const excludedStores = useMemo(() => {
-    const ids = (profile.excludedStores || []).filter((id) => STORES.some((s) => s.id === id));
+    const optedIn = profile.optedInStores || [];
+    const ids = [
+      ...(profile.excludedStores || []).filter(
+        (id) => STORES.some((s) => s.id === id) && !WARNED_STORE_IDS.includes(id)
+      ),
+      ...WARNED_STORE_IDS.filter((id) => !optedIn.includes(id)),
+    ];
     return ids.length > 0 ? ids : NO_UNAVAILABLE_STORES;
-  }, [profile.excludedStores]);
+  }, [profile.excludedStores, profile.optedInStores]);
 
   // Lo que se saca de la grilla: las que no llegan más las que el usuario sacó.
   // Van separadas en todo lo demás porque la causa cambia el mensaje — "Coto no

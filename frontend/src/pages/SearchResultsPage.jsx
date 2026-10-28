@@ -5,6 +5,7 @@ import { useProductFilters } from "../hooks/useProductFilters";
 import { useShelves } from "../hooks/useShelves";
 import { useProfile } from "../context/ProfileContext";
 import { storeLabel } from "../utils/formatters";
+import { STORES } from "../utils/constants";
 import { FiltersSidebar } from "../components/plp/FiltersSidebar";
 import { SortDropdown } from "../components/plp/SortDropdown";
 import { ProductGrid } from "../components/plp/ProductGrid";
@@ -102,10 +103,12 @@ function ResultsView({ mode, shelf, query, dietary, onToggleDietary }) {
   // Sin este aviso, la grilla filtrada por cobertura se ve simplemente más
   // chica y parece que faltan productos.
   const excludedLabel = filters.unavailableStores.map(storeLabel).join(" y ");
-  const disabledLabel = filters.excludedStores
-    .filter((id) => !filters.unavailableStores.includes(id))
-    .map(storeLabel)
-    .join(" y ");
+  // Las tiendas con aviso (constants.js) arrancan deshabilitadas sin que el
+  // usuario haya hecho nada, así que "lo deshabilitaste" sería falso para ellas.
+  const disabledIds = filters.excludedStores.filter((id) => !filters.unavailableStores.includes(id));
+  const isWarned = (id) => STORES.some((store) => store.id === id && store.warning);
+  const disabledLabel = disabledIds.filter((id) => !isWarned(id)).map(storeLabel).join(" y ");
+  const warnedLabel = disabledIds.filter(isWarned).map(storeLabel).join(" y ");
   const anyDietaryActive = dietary.glutenFree || dietary.vegan;
   const emptyMessage = anyDietaryActive
     ? `No encontramos productos en ${title} con los filtros de dieta aplicados.`
@@ -123,6 +126,12 @@ function ResultsView({ mode, shelf, query, dietary, onToggleDietary }) {
       {disabledLabel && (
         <p className="mb-4 rounded-md border border-line bg-surface px-3 py-2 text-sm text-ink-muted">
           No mostramos productos de <strong className="text-ink">{disabledLabel}</strong>: lo deshabilitaste en el carrito.
+        </p>
+      )}
+      {warnedLabel && (
+        <p className="mb-4 rounded-md border border-line bg-surface px-3 py-2 text-sm text-ink-muted">
+          No mostramos productos de <strong className="text-ink">{warnedLabel}</strong>: viene deshabilitado por
+          seguridad. Podés habilitarlo en el carrito, en "Supermercados".
         </p>
       )}
 
