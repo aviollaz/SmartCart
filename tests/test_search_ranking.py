@@ -23,6 +23,7 @@ from src.api import (
     app,
 )
 from src.database import SmartCartDB
+from src.stores import STORES
 
 logger = logging.getLogger(__name__)
 
@@ -31,6 +32,10 @@ logger = logging.getLogger(__name__)
 GONDOLA = "leches"
 
 QUERIES = ["yogur bebible", "galletitas", "leche descremada", "aceite", "gaseosa"]
+
+# Vea arranca deshabilitada para todos (Store.warning), así que es el caso real
+# de una tienda oculta.
+OCULTA = "vea_online"
 
 
 @pytest.fixture(scope="module")
@@ -86,9 +91,9 @@ def test_store_count_viene_poblado(client):
     for p in resultados:
         assert p["store_count"] is not None
         assert p["store_count"] >= 0
-        # Solo hay tres tiendas; un número mayor significa que el COUNT no es
-        # DISTINCT y está contando ofertas en vez de tiendas.
-        assert p["store_count"] <= 3
+        # Un número mayor que la cantidad de tiendas significa que el COUNT no
+        # es DISTINCT y está contando ofertas en vez de tiendas.
+        assert p["store_count"] <= len(STORES)
 
 
 def test_el_bonus_efectivamente_sube_productos_multitienda(client):
@@ -107,6 +112,24 @@ def test_el_bonus_efectivamente_sube_productos_multitienda(client):
     tiendas_distancia = sum(p["store_count"] for p in por_distancia[:10]) / 10
 
     assert tiendas_real >= tiendas_distancia
+
+
+@pytest.mark.parametrize("q", QUERIES)
+def test_el_bonus_no_cuenta_tiendas_ocultas(client, q):
+    """
+    La respuesta recalcula `store_count` sin las tiendas ocultas; si el ORDER BY
+    las siguiera contando, un producto que sólo la tienda oculta completaba
+    quedaría arriba con un `store_count` que ya no lo justifica, y el orden
+    dejaría de ser monótono en el score que la propia respuesta permite calcular.
+    """
+    params = {"q": q, "page_size": 20, "hidden_stores": [OCULTA]}
+    resultados = client.get("/search", params=params).json()["items"]
+    assert resultados, f"'{q}' no devolvió resultados"
+
+    for p in resultados:
+        assert all(o["store_id"] != OCULTA for o in p["available_at_stores"])
+    scores = [_score(p) for p in resultados]
+    assert scores == sorted(scores), f"'{q}' ordena contando {OCULTA}"
 
 
 def test_el_pool_no_queda_topeado_por_ef_search():
@@ -170,6 +193,17 @@ def test_category_ordena_por_disponibilidad(client):
     que el orden por cantidad de tiendas es estricto, sin bonus ni tope.
     """
     resultados = client.get(f"/category/{GONDOLA}", params={"page_size": 20}).json()["items"]
+    if not resultados:
+        pytest.skip(f"no hay productos en la góndola {GONDOLA}")
+
+    counts = [p["store_count"] for p in resultados]
+    assert counts == sorted(counts, reverse=True)
+
+
+def test_category_no_cuenta_tiendas_ocultas(client):
+    """Mismo invariante que en /search: el orden usa el `store_count` visible."""
+    params = {"page_size": 48, "hidden_stores": [OCULTA]}
+    resultados = client.get(f"/category/{GONDOLA}", params=params).json()["items"]
     if not resultados:
         pytest.skip(f"no hay productos en la góndola {GONDOLA}")
 

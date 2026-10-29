@@ -26,6 +26,7 @@ sólo trajo la mitad léxica: es la relevancia semántica y el frontend la puede
 leer; el puntaje de orden no sale de acá.
 """
 import re
+from collections.abc import Sequence
 
 # Qué modo usa GET /search. Queda en "denso" hasta que `medir_busqueda.py
 # --modo hibrido` demuestre que el híbrido no pierde contra el actual (ver
@@ -142,6 +143,10 @@ _DENSE_SQL = """
     -- lo borraría sin que nada lo indique.
     LEFT JOIN store_products sp
            ON sp.unified_product_id = u.id AND sp.in_stock
+          -- Las tiendas ocultas (no entregan, o el usuario las deshabilitó) no
+          -- suman al bonus: un producto que sólo Vea completa a 3 tiendas no
+          -- tiene por qué subir para quien no ve Vea.
+          AND NOT (sp.store_id = ANY(%(hidden)s))
     GROUP BY u.id, p.distance
     -- GREATEST(... , 0) porque un producto sin ofertas da -1 y convertiría el
     -- bonus en penalización por accidente.
@@ -183,6 +188,7 @@ _HYBRID_SQL = """
         JOIN unified_products u ON u.id = c.id
         LEFT JOIN store_products sp
                ON sp.unified_product_id = u.id AND sp.in_stock
+              AND NOT (sp.store_id = ANY(%(hidden)s))
         GROUP BY u.id
     ),
     dense_ranked AS (
@@ -210,7 +216,8 @@ _HYBRID_SQL = """
 
 
 def search_rows(cur, vector_literal: str, q: str, limit: int,
-                dietary_clause: str = "", mode: str = DEFAULT_SEARCH_MODE) -> list:
+                dietary_clause: str = "", mode: str = DEFAULT_SEARCH_MODE,
+                hidden_stores: Sequence[str] = ()) -> list:
     """
     Corre la búsqueda y devuelve las filas ya ordenadas y cortadas a `limit`.
 
@@ -218,6 +225,10 @@ def search_rows(cur, vector_literal: str, q: str, limit: int,
     ("[0.1,0.2,...]"). `dietary_clause` sale de `_dietary_filter_clause` de
     src/api.py y se aplica a las DOS mitades: filtrar después de fusionar
     devolvería menos de `limit` resultados.
+
+    `hidden_stores` (ids de tienda) no cuentan para `store_count` ni para el
+    bonus por disponibilidad. No sacan productos: eso lo decide el llamador con
+    las ofertas (`_paginate_listing`), igual que antes.
 
     Sube `hnsw.ef_search` en la conexión antes de consultar: sin eso el pool
     queda topeado en 40 filas (default de pgvector) sin ningún error a la vista.
@@ -229,7 +240,7 @@ def search_rows(cur, vector_literal: str, q: str, limit: int,
     cur.execute("SELECT set_config('hnsw.ef_search', %s, false)", (str(SEARCH_EF_SEARCH),))
 
     params = {"vec": vector_literal, "pool": SEARCH_POOL_SIZE, "bonus": STORE_BONUS,
-              "cap": STORE_BONUS_CAP, "limit": limit}
+              "cap": STORE_BONUS_CAP, "limit": limit, "hidden": list(hidden_stores)}
     tsquery = build_lexical_query(q) if mode == "hibrido" else None
 
     if tsquery is None:

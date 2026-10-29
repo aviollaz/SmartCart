@@ -794,6 +794,7 @@ def search_products(
                 nearest_products = search_rows(
                     cur, vector_str, q, SEARCH_POOL_SIZE,
                     dietary_clause=dietary_clause, mode=DEFAULT_SEARCH_MODE,
+                    hidden_stores=listing["hidden_stores"],
                 )
                 
                 if not nearest_products:
@@ -1739,12 +1740,13 @@ def get_products_by_shelf(
                     FROM unified_products u
                     LEFT JOIN store_products sp
                            ON sp.unified_product_id = u.id AND sp.in_stock
+                          AND NOT (sp.store_id = ANY(%s))
                     WHERE u.shelf = %s
                     {dietary_clause}
                     GROUP BY u.id, u.ean, u.name, u.brand, u.shelf,
                              u.unit_type, u.total_volume_weight, u.is_gluten_free, u.is_vegan
                     ORDER BY store_count DESC, u.name ASC, u.id
-                """, (shelf_slug,))
+                """, (listing["hidden_stores"], shelf_slug))
                 nearest_products = cur.fetchall()
 
                 product_ids = [p["id"] for p in nearest_products]
