@@ -23,7 +23,7 @@ from src.embeddings import DEFAULT_EMBEDDING_MODEL
 from src.optimizer import optimize_cart, DEFAULT_DELIVERY_COSTS, DEFAULT_MIN_SPEND_LIMITS
 from src.flattener import flatten_cart_prices, evaluate_best_promo, parse_promotions_json
 from src.coto_logistics import check_coverage, resolve_coto_logistics
-from src.dia_logistics import check_coverage as check_dia_coverage, resolve_dia_logistics
+from src.dia_logistics import check_coverage as check_dia_coverage, quote_cart as quote_dia_cart, resolve_dia_logistics
 from src.carrefour_logistics import check_coverage as check_carrefour_coverage, resolve_carrefour_logistics
 from src.vea_logistics import check_coverage as check_vea_coverage, resolve_vea_logistics
 from src.schema import ensure_schema
@@ -1311,6 +1311,78 @@ def _optimize_purchase_window(request, cart_data: list, delivery_costs: dict,
     return result, merged
 
 
+# Cuántas veces se puede re-optimizar por el envío de Día. Cada vuelta es una
+# simulación de checkout y un solve más; en la práctica converge en una.
+DIA_REQUOTE_ROUNDS = 3
+
+
+def _dia_item_ids(uids: list) -> dict:
+    """{unified_id: itemId de VTEX} de las ofertas de Día. Ver _attach_vtex_checkout_links."""
+    db = SmartCartDB()
+    with pooled_connection(db.conn_string) as conn:
+        with conn.cursor() as cur:
+            cur.execute("""
+                SELECT unified_product_id, store_item_id
+                FROM store_products
+                WHERE store_id = 'dia_online' AND unified_product_id = ANY(%s)
+                  AND store_item_id IS NOT NULL
+            """, (uids,))
+            return {row["unified_product_id"]: row["store_item_id"] for row in cur.fetchall()}
+
+
+def _quote_dia_split(request, sucursal: str, products: list) -> float | None:
+    """El envío real del carrito que el split manda a Día, o None si no se pudo."""
+    item_ids = _dia_item_ids([p["unified_id"] for p in products])
+    if len(item_ids) != len(products):
+        return None
+    return quote_dia_cart(request.lat, request.lng, sucursal,
+                          [(item_ids[p["unified_id"]], p["quantity"]) for p in products])
+
+
+def _requote_dia_shipping(request, cart_data: list, delivery_costs: dict, excluded_stores: list,
+                          user_excluded: list, logistics: dict, result: dict,
+                          bank_promos: dict) -> tuple[dict, dict]:
+    """
+    Cotiza el envío de Día sobre el carrito que el solver le asignó y, si sale
+    más caro que el usado, vuelve a optimizar con ese costo (issue #15).
+
+    Hace falta porque el envío de Día depende del PESO (ver src/dia_logistics.py)
+    y la etapa de logística sólo conoce el de un carrito liviano: con ese número
+    un carrito de bebidas se cotizaba por debajo de lo que Día cobra, y Día
+    ganaba splits que en la caja salían más caros.
+
+    El costo sólo SUBE entre vueltas: si al encarecer Día el solver le saca
+    peso, el carrito nuevo puede cotizar menos, y bajar el costo de nuevo podría
+    oscilar entre dos splits. Quedarse con el mayor converge y yerra hacia caro,
+    que es el lado seguro. Fail-open: sin cotización queda el costo de antes.
+
+    Muta `delivery_costs` y `logistics["dia"]`. Devuelve (resultado, promos).
+    """
+    dia = logistics.get("dia") or {}
+    if request.lat is None or request.lng is None or dia.get("source") != "live" or not dia.get("sucursal"):
+        return result, bank_promos
+
+    for round_ in range(DIA_REQUOTE_ROUNDS + 1):
+        checkout = (result.get("split") or {}).get("dia_online")
+        if result.get("status") != "success" or not checkout or not checkout.get("products"):
+            break
+        quote = _optional_feature("la cotización del envío de Día", None,
+                                  _quote_dia_split, request, dia["sucursal"], checkout["products"])
+        if quote is None or quote <= delivery_costs["dia_online"]:
+            break
+        if round_ == DIA_REQUOTE_ROUNDS:
+            logger.warning(f"El envío de Día no convergió en {DIA_REQUOTE_ROUNDS} vueltas "
+                           f"(cotizado ${quote}, usado ${delivery_costs['dia_online']}).")
+            break
+        logger.info(f"Envío de Día por peso: ${delivery_costs['dia_online']} -> ${quote}; se re-optimiza.")
+        delivery_costs["dia_online"] = quote
+        dia["delivery_cost"] = quote
+        result, bank_promos = _optimize_purchase_window(
+            request, cart_data, delivery_costs, excluded_stores, user_excluded,
+        )
+    return result, bank_promos
+
+
 @app.post("/optimize")
 def optimize_shopping_cart(request: OptimizationRequest, background_tasks: BackgroundTasks):
     """
@@ -1360,6 +1432,10 @@ def optimize_shopping_cart(request: OptimizationRequest, background_tasks: Backg
 
         result, bank_promos = _optimize_purchase_window(
             request, cart_data, delivery_costs, excluded_stores, user_excluded,
+        )
+        result, bank_promos = _requote_dia_shipping(
+            request, cart_data, delivery_costs, excluded_stores, user_excluded,
+            logistics, result, bank_promos,
         )
         # `excluded_stores` conserva su semántica de siempre —sólo cobertura—
         # porque la leen LogisticsNotice ("Coto no llega a tu dirección") y el

@@ -417,3 +417,88 @@ def test_fewer_stores_options_vacio_con_una_sola_tienda(monkeypatch):
     result = {"total_spent_net": 50000.0, "split": {COTO: {}}}
     assert api._compute_fewer_stores_options(result, api.OptimizationRequest(cart=[]),
                                              [], {}, {}, []) == []
+
+
+# --------------------------------------------------------------------------
+# _requote_dia_shipping: el envío de Día depende del peso (issue #15)
+# --------------------------------------------------------------------------
+
+def _con_dia(*uids):
+    return {"status": "success", "total_spent_net": 1, "split": _split(DIA, *uids)}
+
+
+def _requote(monkeypatch, quotes, results, source="live", lat=-34.47):
+    """
+    Corre el re-cotizado con cotizaciones y re-optimizaciones fijas. Devuelve
+    (resultado, delivery_costs, logistics, cuántas veces re-optimizó).
+    """
+    quotes = list(quotes)
+    results = list(results)
+    reoptimizado = []
+    monkeypatch.setattr(api, "_quote_dia_split", lambda *a: quotes.pop(0))
+
+    def fake_window(request, cart_data, delivery_costs, *a):
+        reoptimizado.append(dict(delivery_costs))
+        return results.pop(0), {}
+
+    monkeypatch.setattr(api, "_optimize_purchase_window", fake_window)
+    request = api.OptimizationRequest(cart=[], lat=lat, lng=-58.52 if lat is not None else None)
+    delivery_costs = {DIA: 4999.0}
+    logistics = {"dia": {"source": source, "sucursal": "ardiaprod1004", "delivery_cost": 4999.0}}
+    result, _ = api._requote_dia_shipping(request, [], delivery_costs, [], [], logistics,
+                                         _con_dia("prod_agua"), {})
+    return result, delivery_costs, logistics, reoptimizado
+
+
+def test_requote_reoptimiza_con_el_envio_del_carrito_real(monkeypatch):
+    final = _con_dia("prod_agua")
+    result, costs, logistics, reopt = _requote(monkeypatch, [11999.0, 11999.0], [final])
+
+    assert reopt == [{DIA: 11999.0}]
+    assert result is final
+    assert costs[DIA] == 11999.0
+    assert logistics["dia"]["delivery_cost"] == 11999.0
+
+
+def test_requote_no_reoptimiza_si_el_envio_no_sube(monkeypatch):
+    _, costs, _, reopt = _requote(monkeypatch, [4999.0], [])
+    assert reopt == []
+    assert costs[DIA] == 4999.0
+
+
+def test_requote_el_costo_solo_sube(monkeypatch):
+    # Encarecida, Día queda con un carrito más liviano que cotiza menos: no se
+    # baja el costo, porque podría oscilar entre los dos splits.
+    _, costs, _, reopt = _requote(monkeypatch, [11999.0, 6899.0], [_con_dia("prod_cafe")])
+    assert len(reopt) == 1
+    assert costs[DIA] == 11999.0
+
+
+def test_requote_sin_cotizacion_deja_el_costo(monkeypatch):
+    _, costs, _, reopt = _requote(monkeypatch, [None], [])
+    assert reopt == []
+    assert costs[DIA] == 4999.0
+
+
+@pytest.mark.parametrize("source,lat", [("fallback", -34.47), ("live", None)])
+def test_requote_sin_logistica_en_vivo_no_cotiza(monkeypatch, source, lat):
+    _, costs, _, reopt = _requote(monkeypatch, [], [], source=source, lat=lat)
+    assert reopt == []
+    assert costs[DIA] == 4999.0
+
+
+def test_requote_tiene_tope_de_vueltas(monkeypatch):
+    n = api.DIA_REQUOTE_ROUNDS
+    quotes = [5000.0 + i for i in range(n + 1)]
+    _, costs, _, reopt = _requote(monkeypatch, quotes, [_con_dia("x")] * n)
+    assert len(reopt) == n
+    assert costs[DIA] == quotes[n - 1]
+
+
+def test_requote_ignora_un_split_sin_dia(monkeypatch):
+    monkeypatch.setattr(api, "_quote_dia_split", lambda *a: pytest.fail("no debía cotizar"))
+    request = api.OptimizationRequest(cart=[], lat=-34.47, lng=-58.52)
+    sin_dia = {"status": "success", "split": _split(COTO, "prod_a")}
+    logistics = {"dia": {"source": "live", "sucursal": "s", "delivery_cost": 4999.0}}
+    result, _ = api._requote_dia_shipping(request, [], {DIA: 4999.0}, [], [], logistics, sin_dia, {})
+    assert result is sin_dia
