@@ -180,3 +180,78 @@ def test_resolve_sin_coordenadas_no_consulta_nada():
     result = resolve_dia_logistics(None, None, fallback_delivery_cost=3500,
                                    client=httpx.Client(transport=httpx.MockTransport(handler)))
     assert result["source"] == "fallback"
+
+
+# --------------------------------------------------------------------------
+# quote_cart: el envío del carrito real, que depende del peso (issue #15)
+# --------------------------------------------------------------------------
+
+SAN_ISIDRO = (-34.4708, -58.5286)
+
+
+def cart_client(payload, seen=None):
+    def handler(request):
+        if seen is not None:
+            seen.append(json.loads(request.content))
+        return httpx.Response(200, json=payload)
+
+    return httpx.Client(transport=httpx.MockTransport(handler))
+
+
+def cart_simulation(items, *lines):
+    """`lines`: los SLAs de cada línea de la respuesta, en orden."""
+    return {
+        "items": [{"id": sku, "quantity": qty} for sku, qty in items],
+        "logisticsInfo": [{"itemIndex": i, "slas": list(slas)} for i, slas in enumerate(lines)],
+    }
+
+
+def envio(price, name="Envío a Domicilio"):
+    return {"id": name, "deliveryChannel": "delivery", "price": price}
+
+
+def test_quote_cart_suma_el_sla_repartido_entre_lineas():
+    # Real (oct 2026): 3 alfajores vuelven en dos líneas y VTEX reparte el
+    # envío de $4.999 entre las dos.
+    payload = cart_simulation([("289319", 2), ("289319", 1)], [envio(166632)], [envio(333268)])
+    assert dia_logistics.quote_cart(*SAN_ISIDRO, "ardiaprod1004", [("289319", 3)],
+                                    client=cart_client(payload)) == 4999.0
+
+
+def test_quote_cart_manda_los_items_reales_a_la_sucursal():
+    seen = []
+    payload = cart_simulation([("295616", 6)], [envio(689900)])
+    quote = dia_logistics.quote_cart(*SAN_ISIDRO, "ardiaprod1004", [("295616", 6)],
+                                     client=cart_client(payload, seen))
+    assert quote == 6899.0
+    assert seen[0]["items"] == [{"id": "295616", "quantity": 6, "seller": "ardiaprod1004"}]
+
+
+def test_quote_cart_toma_el_sla_mas_barato_que_ofrecen_todas_las_lineas():
+    payload = cart_simulation(
+        [("a", 1), ("b", 1)],
+        [envio(300000), envio(100000, "Express")],
+        [envio(300000)],
+    )
+    # "Express" no lo ofrece la segunda línea: no es un envío posible del carrito.
+    assert dia_logistics.quote_cart(*SAN_ISIDRO, "s", [("a", 1), ("b", 1)],
+                                    client=cart_client(payload)) == 6000.0
+
+
+def test_quote_cart_sin_envio_en_una_linea_es_none():
+    # Una línea sin stock en la sucursal: cotizar sin ella sería cotizar un
+    # carrito más liviano.
+    payload = cart_simulation([("a", 1), ("b", 1)], [envio(499900)], [])
+    assert dia_logistics.quote_cart(*SAN_ISIDRO, "s", [("a", 1), ("b", 1)],
+                                    client=cart_client(payload)) is None
+
+
+def test_quote_cart_con_un_item_que_no_volvio_es_none():
+    payload = cart_simulation([("a", 1)], [envio(499900)])
+    assert dia_logistics.quote_cart(*SAN_ISIDRO, "s", [("a", 1), ("b", 1)],
+                                    client=cart_client(payload)) is None
+
+
+def test_quote_cart_no_lanza_si_dia_no_contesta():
+    client = httpx.Client(transport=httpx.MockTransport(lambda r: httpx.Response(500)))
+    assert dia_logistics.quote_cart(*SAN_ISIDRO, "s", [("a", 1)], client=client) is None
