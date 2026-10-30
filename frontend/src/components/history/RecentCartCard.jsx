@@ -28,24 +28,28 @@ export function RecentCartCard({ entry }) {
   };
 
   return (
-    <li className="flex flex-wrap items-center justify-between gap-3 py-3">
-      <div className="min-w-0">
-        <p className="text-sm text-ink">
+    // Alto fijo y sin flex-wrap: el aviso "ya en tu carrito" aparece después de
+    // repetir otra compra, y con flex-wrap reacomodaba la fila y corría el botón.
+    <li className="flex h-16 items-center justify-between gap-3">
+      <div className="min-w-0 flex-1">
+        <p className="truncate text-sm text-ink">
           {entry.at ? FECHA.format(new Date(entry.at)) : "Sin fecha"} ·{" "}
           {unifiedIds.length === 1 ? "1 producto" : `${unifiedIds.length} productos`}
           {typeof entry.total === "number" && <> · pagaste {formatPrice(entry.total)}</>}
         </p>
         {entry.stores.length > 0 && (
-          <p className="text-xs text-ink-muted">{entry.stores.map(storeName).join(" + ")}</p>
+          <p className="truncate text-xs text-ink-muted">{entry.stores.map(storeName).join(" + ")}</p>
         )}
       </div>
 
       <div className="flex shrink-0 items-center gap-2">
-        {yaEnCarrito > 0 && (
-          <span className="text-xs text-ink-muted">
-            {yaEnCarrito === unifiedIds.length ? "ya está todo en tu carrito" : `${yaEnCarrito} ya en tu carrito`}
-          </span>
-        )}
+        <span className="line-clamp-2 w-24 text-right text-xs text-ink-muted sm:w-36">
+          {yaEnCarrito === 0
+            ? ""
+            : yaEnCarrito === unifiedIds.length
+              ? "ya está todo en tu carrito"
+              : `${yaEnCarrito} ya en tu carrito`}
+        </span>
         <button
           type="button"
           onClick={handleRepetir}
