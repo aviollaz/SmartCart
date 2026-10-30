@@ -1,6 +1,6 @@
 import { useCart } from "../context/CartContext";
 import { useProfile } from "../context/ProfileContext";
-import { resolveBestOffer, resolveDisplayPrice } from "../utils/formatters";
+import { resolveBestOffer, resolveBestQuantityPromo, resolveDisplayPrice } from "../utils/formatters";
 import { useFlattenedPrice } from "./useFlattenedPrice";
 
 /**
@@ -22,6 +22,9 @@ import { useFlattenedPrice } from "./useFlattenedPrice";
  * - `byQuantity`: true cuando el precio sale de una promo por cantidad ("c/u
  *   llevando 3"), que la leyenda tiene que nombrar.
  * - `quantity`, `cartEntry`, `pricing` (cargando el precio por cantidad).
+ * - `quantityPromo`: la mejor promo por cantidad (3x2, 4x2…) cuando todavía no
+ *   rige y bajaría el precio que se ve, para anunciarla antes de que el
+ *   usuario suba el selector. null si ya está aplicada o no mejora nada.
  */
 export function useProductPricing(product) {
   const { items } = useCart();
@@ -52,6 +55,15 @@ export function useProductPricing(product) {
   const hasBetterPrice =
     flattened && typeof displayPrice === "number" && flattened.unitPrice < displayPrice - 0.01;
 
+  const shownPrice = hasBetterPrice ? flattened.unitPrice : displayPrice;
+  const bestQuantityPromo = resolveBestQuantityPromo(product);
+  const quantityPromo =
+    bestQuantityPromo &&
+    typeof shownPrice === "number" &&
+    bestQuantityPromo.unit_price < shownPrice - 0.01
+      ? bestQuantityPromo
+      : null;
+
   if (hasBetterPrice) {
     return {
       price: flattened.unitPrice,
@@ -59,6 +71,7 @@ export function useProductPricing(product) {
       storeId: flattened.storeId,
       promoDescription: flattened.promoDescription,
       byQuantity: true,
+      quantityPromo,
       quantity,
       cartEntry,
       pricing,
@@ -71,6 +84,7 @@ export function useProductPricing(product) {
     storeId: catalogPromo ? catalogPromo.store_id : null,
     promoDescription: catalogPromo ? catalogPromo.promo_description : null,
     byQuantity: false,
+    quantityPromo,
     quantity,
     cartEntry,
     pricing,

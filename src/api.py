@@ -89,6 +89,11 @@ class StorePromotion(BaseModel):
     requires_membership: Optional[str] = None
     valid_until: Optional[str] = None
 
+class QuantityPromo(BaseModel):
+    required_quantity: int = Field(..., example=4)
+    unit_price: float = Field(..., example=6830.0)
+    description: Optional[str] = Field(None, example="4x2 Llevando 4")
+
 class StoreOffer(BaseModel):
     store_id: str = Field(..., example="coto_online")
     product_url: Optional[str] = Field(None, example="https://www.cotodigital3.com.ar/...")
@@ -104,6 +109,10 @@ class StoreOffer(BaseModel):
     # precio con descuento directo en vez del de lista.
     promo_unit_price: Optional[float] = Field(None, example=2248.95)
     promo_description: Optional[str] = Field(None, example="50%Dto")
+    # La mejor promo por cantidad de la oferta, evaluada en SU cantidad mínima.
+    # Sin esto un 3x2 no existía para el usuario hasta que subía el selector a
+    # 3 por casualidad. None cuando ninguna mejora el precio a una unidad.
+    quantity_promo: Optional[QuantityPromo] = None
 
 class ProductResponse(BaseModel):
     unified_id: str = Field(..., example="prod_7790000000123")
@@ -461,7 +470,43 @@ def _build_store_offer(sp: dict, user_memberships: Optional[List[str]] = None) -
         "promotions": promotions,
         "promo_unit_price": promo_unit_price,
         "promo_description": promo_description,
+        "quantity_promo": _best_quantity_promo(
+            base_price, raw_promos, promo_unit_price or base_price, user_memberships or []
+        ),
     }
+
+
+def _best_quantity_promo(base_price: float, raw_promos: list, single_unit_price: float,
+                         user_memberships: List[str]) -> Optional[dict]:
+    """
+    La promo por cantidad que deja el unitario más bajo, para anunciarla en la
+    grilla antes de que el usuario suba el selector.
+
+    Cada promo se evalúa sola y en su propia `required_quantity`, con
+    evaluate_best_promo: es el precio que /price-preview va a mostrar cuando el
+    usuario lleve esa cantidad, así que el anuncio no puede prometer otro. Entre
+    un 3x2 y un 4x2 de la misma oferta gana el de menor unitario. Sólo se
+    anuncia si mejora el precio a una unidad (que ya puede traer un descuento
+    directo): una promo que no baja nada no es una noticia.
+    """
+    if base_price <= 0:
+        return None
+    best = None
+    for promo in raw_promos:
+        req_qty = promo.get("required_quantity") or 1
+        if req_qty <= 1:
+            continue
+        result = evaluate_best_promo(base_price, [promo], req_qty, user_memberships)
+        if result["applied_promo_id"] is None:
+            continue
+        unit_price = round(result["total_cost"] / req_qty, 2)
+        if unit_price < single_unit_price - 0.01 and (best is None or unit_price < best["unit_price"]):
+            best = {
+                "required_quantity": req_qty,
+                "unit_price": unit_price,
+                "description": result["promo_description"],
+            }
+    return best
 
 
 # El orden del registro (src/stores.py); el frontend deriva el suyo del espejo

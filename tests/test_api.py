@@ -97,6 +97,58 @@ def test_precio_de_membresia_solo_para_quien_la_declaro():
     assert socio["promo_unit_price"] == 900
 
 
+def _fila_con_promos(promos, base_price=13660):
+    import json
+    return {"store_id": "coto_online", "product_url": None, "base_price": base_price,
+            "in_stock": True, "image_url": None, "promotions_json": json.dumps(promos)}
+
+
+def test_promo_por_cantidad_se_anuncia_la_mejor():
+    """
+    Un 3x2 no aparecía en la grilla hasta que el usuario subía el selector a 3.
+    Con un 3x2 y un 4x2 en la misma oferta se anuncia el de menor unitario, al
+    precio que /price-preview va a mostrar llevando esa cantidad.
+    """
+    from src.api import _build_store_offer
+
+    oferta = _build_store_offer(_fila_con_promos([
+        {"promo_id": "a", "type": "multi_buy", "description": "Llevando 3 pagás 2",
+         "required_quantity": 3, "free_quantity": 1},
+        {"promo_id": "b", "type": "conditional_discount_flat", "description": "4x2 Llevando 4",
+         "required_quantity": 4, "discount_price_per_unit": 6830, "regular_price": 13660},
+    ]))
+
+    assert oferta["promo_unit_price"] is None  # a una unidad no rige ninguna
+    assert oferta["quantity_promo"] == {
+        "required_quantity": 4, "unit_price": 6830, "description": "4x2 Llevando 4",
+    }
+
+
+def test_promo_por_cantidad_que_no_mejora_el_directo_no_se_anuncia():
+    from src.api import _build_store_offer
+
+    oferta = _build_store_offer(_fila_con_promos([
+        {"promo_id": "d", "type": "direct_discount", "description": "50% Off Directo",
+         "discount_price_per_unit": 5000},
+        {"promo_id": "c", "type": "multi_buy", "description": "Llevando 3 pagás 2",
+         "required_quantity": 3, "free_quantity": 1},
+    ], base_price=10000))
+
+    assert oferta["promo_unit_price"] == 5000
+    assert oferta["quantity_promo"] is None  # 3x2 deja 6666 c/u, peor que 5000
+
+
+def test_promo_por_cantidad_de_club_solo_para_socios():
+    from src.api import _build_store_offer
+
+    fila = _fila_con_promos([
+        {"promo_id": "s", "type": "multi_buy", "description": "Llevando 3 pagás 2",
+         "required_quantity": 3, "free_quantity": 1, "requires_membership": "club_dia"},
+    ])
+    assert _build_store_offer(fila)["quantity_promo"] is None
+    assert _build_store_offer(fila, ["club_dia"])["quantity_promo"]["required_quantity"] == 3
+
+
 def test_deals_ordenado_por_descuento():
     """Necesita Postgres poblado, igual que test_fastapi_endpoints."""
     with TestClient(app) as client:

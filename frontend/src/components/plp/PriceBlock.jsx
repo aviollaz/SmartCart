@@ -12,7 +12,7 @@ const SIZES = {
  * producto— así que este bloque tiene que alcanzar solo.
  */
 export function PriceBlock({ product, pricing, size = "md", showPricingHint = true }) {
-  const { price, listPrice, storeId, promoDescription, byQuantity, quantity } = pricing;
+  const { price, listPrice, storeId, promoDescription, byQuantity, quantity, quantityPromo } = pricing;
   const sizes = SIZES[size];
   const unitPriceLabel = formatUnitPrice(product);
 
@@ -37,6 +37,15 @@ export function PriceBlock({ product, pricing, size = "md", showPricingHint = tr
         <p className="text-xs font-semibold text-state-promo">
           {byQuantity ? `c/u llevando ${quantity} en ${storeName(storeId)}` : storeName(storeId)}
           {promoDescription ? ` · ${promoDescription}` : ""}
+        </p>
+      )}
+      {/* Una promo por cantidad no baja el precio grande hasta que se lleva
+          la cantidad, pero tiene que verse antes: si no, un 3x2 sólo se
+          descubre subiendo el selector por casualidad. */}
+      {quantityPromo && (
+        <p className="text-xs font-semibold text-state-promo">
+          {quantityPromo.description || `Llevando ${quantityPromo.required_quantity}`} en{" "}
+          {storeName(quantityPromo.storeId)}: {formatPrice(quantityPromo.unit_price)} c/u
         </p>
       )}
       {showPricingHint && pricing.pricing && !byQuantity && (

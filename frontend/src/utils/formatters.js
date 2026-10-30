@@ -121,6 +121,20 @@ export function resolveBestOffer(product) {
   return best;
 }
 
+/** La mejor promo por cantidad entre todas las ofertas (`quantity_promo`, que
+ * el backend ya evaluó en su cantidad mínima): `{storeId, required_quantity,
+ * unit_price, description}`, o null. Un 3x2 en Carrefour y un 4x2 en Coto se
+ * comparan por unitario, y se anuncia sólo el que deja el producto más barato. */
+export function resolveBestQuantityPromo(product) {
+  let best = null;
+  for (const offer of product.available_at_stores || []) {
+    const promo = offer.quantity_promo;
+    if (!promo || typeof promo.unit_price !== "number") continue;
+    if (!best || promo.unit_price < best.unit_price) best = { ...promo, storeId: offer.store_id };
+  }
+  return best;
+}
+
 /**
  * GET /search no calcula un image_url a nivel de producto (mismo gap que
  * min_price, ver resolveDisplayPrice), aunque sí trae image_url por oferta en
