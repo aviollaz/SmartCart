@@ -17,6 +17,36 @@ def test_coto_transformer():
     assert parsed_direct[0]["discount_price_per_unit"] == 2248.95
 
 
+def test_coto_descuento_directo_se_describe_con_los_precios():
+    # Relevado: Coto mandaba "+10%" sobre un precio que bajaba de $15.650 a
+    # $10.172,50, y la tarjeta mostraba "+10%" al lado de un 35% real.
+    promos = PromoTransformer.coto([{
+        "id": "1",
+        "takingText": None,
+        "discountText": "+10%",
+        "discountPrice": "$10.172,50",
+        "regularPriceText": "Precio Contado: $15.650,00",
+    }])
+    assert promos[0]["description"] == "35% Off Directo"
+
+
+def test_coto_descuento_directo_sin_precio_regular_conserva_el_texto():
+    promos = PromoTransformer.coto([{
+        "id": "1", "takingText": None, "discountText": "25%Dto",
+        "discountPrice": "$2248.95", "regularPriceText": None,
+    }])
+    assert promos[0]["description"] == "25%Dto"
+
+
+def test_coto_promo_por_cantidad_conserva_el_texto_de_coto():
+    promos = PromoTransformer.coto([{
+        "id": "1", "takingText": "Llevando 2", "discountText": "2do al 50%",
+        "discountPrice": "$750", "regularPriceText": "Precio Contado: $1000",
+    }])
+    assert promos[0]["type"] == "conditional_discount_flat"
+    assert promos[0]["description"] == "2do al 50% Llevando 2"
+
+
 def test_dia_transformer():
     # Ejemplo: Promo 3x2 en Día
     dia_raw_offer_teaser = {
