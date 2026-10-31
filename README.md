@@ -1,70 +1,91 @@
 # SmartCart
 
-Optimizador de canasta de compra para supermercados argentinos. Scrapea los
-catálogos de **Coto, Día y Carrefour**, los unifica por EAN y calcula con un
-solver de restricciones (Google OR-Tools) **cómo repartir el carrito entre las
-tres cadenas gastando lo menos posible** — contemplando promociones, descuentos
-bancarios, costos de envío y el mínimo de compra de cada tienda.
+**Live demo: [smart-cart-rouge.vercel.app](https://smart-cart-rouge.vercel.app)**
 
-## Cómo funciona
+SmartCart finds the cheapest way to buy a grocery list in Argentina. It scrapes the
+catalogs of **Coto, Día and Carrefour** every night, unifies them by barcode (EAN),
+and uses a constraint solver (Google OR-Tools CP-SAT) to decide **how to split the
+cart across the three chains to spend as little as possible**, accounting for
+promotions, bank discounts, delivery costs and each store's minimum purchase.
 
-1. **Scraping** — cada cadena expone una API interna (Coto un BFF REST, Día y
-   Carrefour GraphQL de VTEX). Se barren **las mismas 75 góndolas en las tres**,
-   que es lo que hace comparables los catálogos: comparar precios sólo sirve si
-   las tres cadenas recorrieron el mismo estante.
-2. **Unificación** — el EAN es la identidad del producto: `prod_<ean>`. Un
-   producto que venden las tres cadenas es una fila con tres ofertas.
-3. **Búsqueda semántica** — cada producto se vectoriza con
-   `all-MiniLM-L6-v2` y se consulta con pgvector, así "gaseosa cola" encuentra
-   Coca-Cola sin coincidencia literal.
-4. **Optimización** — un modelo CP-SAT decide qué comprar en qué tienda,
-   con el mínimo de compra como restricción dura y el gasto total (subtotal +
-   envíos − descuento bancario) como función objetivo.
+A fourth chain, Vea, is also scraped but ships disabled by default: in October 2026
+its product descriptions carried a payment-card skimmer, which I reported. SmartCart
+strips that HTML before storing anything, and users have to opt in to Vea explicitly.
 
-## Cómo correrlo localmente
+<!-- Add a screenshot or GIF of the app here: ![SmartCart](docs/screenshot.png) -->
 
-### 1. Base de datos
+| | |
+|---|---|
+| Chains scraped | 3 (Coto, Día, Carrefour), the same 75 shelves in each |
+| Refresh | Every night at 03:00 ART, via GitHub Actions |
+| Tests | 540+ (pytest) |
+| Infra | API on Google Cloud Run, Postgres + pgvector on Neon, frontend on Vercel, all on free tiers |
+
+## How it works
+
+1. **Scraping.** Each chain exposes an internal API (Coto a REST BFF, Día and
+   Carrefour VTEX GraphQL). The scrapers sweep **the same 75 shelves in all three
+   chains**, which is what makes the catalogs comparable: comparing prices only
+   makes sense if every chain covered the same aisle. Requests are deliberately
+   paced so the scrapers don't behave like a bot.
+2. **Unification.** The EAN is the product's identity (`prod_<ean>`). A product sold
+   by all three chains is a single row with three offers.
+3. **Semantic search.** Every product is embedded with `all-MiniLM-L6-v2` and
+   queried through pgvector, so "gaseosa cola" finds Coca-Cola without a literal
+   match.
+4. **Optimization.** A CP-SAT model decides what to buy where, with each store's
+   minimum purchase as a hard constraint and total spend (subtotal + delivery −
+   bank discount) as the objective.
+
+## Tech stack
+
+- **Backend:** Python, FastAPI, PostgreSQL + pgvector, OR-Tools, sentence-transformers
+- **Frontend:** React, Vite, Tailwind CSS, Leaflet
+- **Infra:** GitHub Actions (nightly scrape matrix, one job per chain), Google Cloud Run, Neon, Vercel
+
+## Running it locally
+
+### 1. Database
 
 ```bash
 docker-compose up -d
 ```
 
-Levanta Postgres con `pgvector` en `localhost:5432` (usuario/clave/base:
-`smartuser`/`smartpassword`/`smartcart`). El esquema se crea solo: `src/schema.py`
-es DDL idempotente que se aplica al primer uso, no hay migraciones que correr.
+Starts Postgres with `pgvector` on `localhost:5432` (user/password/db:
+`smartuser`/`smartpassword`/`smartcart`). The schema creates itself: `src/schema.py`
+is idempotent DDL applied on first use, so there are no migrations to run.
 
-### 2. Configuración
+### 2. Configuration
 
 ```bash
-cp .env.example .env      # Copy-Item .env.example .env  en PowerShell
+cp .env.example .env      # Copy-Item .env.example .env  in PowerShell
 ```
 
-Para desarrollo local funciona tal cual viene. `.env.example` documenta cada
-variable; la única imprescindible para apuntar el proyecto a otra base es
-`DATABASE_URL`.
+The defaults work for local development. `.env.example` documents every variable;
+the only one you need to point the project at another database is `DATABASE_URL`.
 
-### 3. Poblar el catálogo
+### 3. Populate the catalog
 
 ```bash
 pip install -r requirements.txt
 python -m src.scripts.run_scrapers
 ```
 
-**Este paso es obligatorio y tarda horas** (~1,5 h por tienda) con las tres tiendas: son 75
-góndolas por cadena y el tiempo se lo llevan las pausas deliberadas entre pedidos
-—para no parecer un bot—, no la red. En el barrido nocturno las tres tiendas
-corren en paralelo, pero en local van una atrás de otra.
+**This step is required and takes hours** (about 1.5 h per chain): 75 shelves per
+chain, and the time goes into the deliberate pauses between requests, not the
+network. The nightly run scrapes the three chains in parallel; locally they run one
+after the other.
 
-Para ver el proyecto andando sin esperar tanto, una sola tienda alcanza:
+To see the project working without the wait, one chain is enough:
 
 ```bash
 python -m src.scripts.run_scrapers --store dia     # ~25 min
 ```
 
-> **Un producto sin embedding es invisible para `GET /search`.** El script
-> genera los embeddings al final; si lo cortás antes de que termine, la base
-> queda poblada y el buscador vacío. Es la forma más común de que un primer
-> arranque parezca roto. Se regeneran solos volviendo a correr el script.
+> **A product without an embedding is invisible to `GET /search`.** The script
+> generates embeddings at the end; if you stop it early, the database is populated
+> but search returns nothing. That's the most common reason a first run looks
+> broken. Running the script again regenerates them.
 
 ### 4. Backend
 
@@ -72,8 +93,8 @@ python -m src.scripts.run_scrapers --store dia     # ~25 min
 uvicorn src.api:app --reload
 ```
 
-API en `http://localhost:8000`, documentación interactiva en `/docs`.
-`GET /` reporta el estado (modelo cargado, pool de conexiones, analítica).
+API at `http://localhost:8000`, interactive docs at `/docs`. `GET /` reports the
+service status (model loaded, connection pool, analytics).
 
 ### 5. Frontend
 
@@ -83,42 +104,35 @@ npm install
 npm run dev
 ```
 
-App en `http://localhost:5173`. Le pega a la API vía `VITE_API_URL`
-(`frontend/.env`, default `http://localhost:8000`), que **se lee en tiempo de
-build**: cambiarlo obliga a rehacer el build. `npm run build` genera
-`frontend/dist` y `npm run lint` corre oxlint.
+App at `http://localhost:5173`. It calls the API through `VITE_API_URL`
+(`frontend/.env`, default `http://localhost:8000`), which **is read at build time**:
+changing it requires a rebuild. `npm run build` outputs `frontend/dist` and
+`npm run lint` runs oxlint.
 
-## La base es derivada
+## The database is derived
 
-No hay dump de ejemplo en el repo, y es a propósito: un barrido completo
-reconstruye el catálogo y los embeddings desde cero, y corre todas las noches
-igual. La base de producción es privada; si querés probar el proyecto sin
-esperar el barrido, pedí acceso de sólo lectura (la API sirve con un rol sin
-permisos de escritura).
-
-## Dónde corre
-
-El barrido nocturno corre en GitHub Actions, la base en Neon, la API en Google
-Cloud Run y el frontend en Vercel. Cómo se despliega y qué límites cuidar está
-en [`docs/operacion.md`](docs/operacion.md).
+There's no sample dump in the repo, on purpose: a full sweep rebuilds the catalog
+and embeddings from scratch, and it runs every night anyway. The production
+database is private; if you want to try the project without waiting for a sweep,
+ask for read-only access (the API works with a role that has no write permissions).
 
 ## Tests
 
 ```bash
-pytest                                   # suite completa
-pytest tests/test_optimizer_correctness.py   # sin base ni modelo, corre siempre
+pytest                                       # full suite
+pytest tests/test_optimizer_correctness.py   # no database or model needed
 ```
 
-No son tests unitarios aislados: `tests/test_api.py`, `test_search.py` y
-`test_search_ranking.py` levantan la app real y consultan Postgres, así que
-necesitan la base **arriba y poblada** (y descargan el modelo la primera vez).
-La mayoría del resto es Python puro y corre sin nada levantado.
+`tests/test_api.py`, `test_search.py` and `test_search_ranking.py` start the real app
+and query Postgres, so they need the database **running and populated** (and they
+download the embedding model the first time). Most of the rest is pure Python and
+runs with nothing else up.
 
-## Documentación
+## Documentation (in Spanish)
 
-* [`docs/arquitectura.md`](docs/arquitectura.md) — cómo está hecho: cada etapa
-  del pipeline, la API, el frontend y por qué se decidió cada cosa.
-* [`docs/operacion.md`](docs/operacion.md) — dónde corre, cómo se despliega y
-  qué límites hay que cuidar.
-* [Issues](https://github.com/aviollaz/SmartCart/issues) — pendientes y riesgos
-  conocidos, con el razonamiento de cada uno.
+* [`docs/arquitectura.md`](docs/arquitectura.md): how it's built, every pipeline
+  stage, the API, the frontend, and the reasoning behind each decision.
+* [`docs/operacion.md`](docs/operacion.md): where it runs, how it's deployed and
+  which limits to watch.
+* [Issues](https://github.com/aviollaz/SmartCart/issues): open work and known risks,
+  with the reasoning for each.
