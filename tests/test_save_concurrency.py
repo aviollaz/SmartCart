@@ -11,6 +11,7 @@ si igual aparece un `DeadlockDetected`.
 Corren contra Postgres, sobre `store_id` y EANs sintéticos que no colisionan con
 datos reales, y limpian lo que crean.
 """
+import logging
 import threading
 
 import psycopg
@@ -70,10 +71,15 @@ def _producto(i: int) -> dict:
     }
 
 
-def test_dos_tiendas_en_ordenes_inversos_no_se_deadlockean(db, monkeypatch):
-    # Sin reintentos: si el orden de locks no evitara el ciclo, el deadlock
-    # tiene que llegar hasta acá en vez de quedar tapado por la red de abajo.
-    monkeypatch.setattr(SmartCartDB, "MAX_SAVE_ATTEMPTS", 1)
+def test_dos_tiendas_en_ordenes_inversos_no_se_deadlockean(db, caplog):
+    # Los reintentos quedan ACTIVOS. Dos tiendas insertando a la vez un producto
+    # nuevo pueden chocar en `unified_products_ean_key` (UniqueViolation): es
+    # esperable y el reintento lo resuelve (ver _TRANSIENT_WRITE_ERRORS). Con
+    # MAX_SAVE_ATTEMPTS = 1 ese choque, que depende del timing, hacía fallar el
+    # test en CI. Lo que este test prohíbe es un DEADLOCK, que el orden de locks
+    # tiene que evitar; si ocurriera, el reintento lo taparía, así que se lo
+    # busca en el log que deja cada reintento (abajo).
+    caplog.set_level(logging.WARNING)
     productos = [_producto(i) for i in range(N_PRODUCTOS)]
     lotes = {STORES[0]: productos, STORES[1]: list(reversed(productos))}
     # Crear el esquema antes, para que el DDL no participe de la carrera.
@@ -104,6 +110,8 @@ def test_dos_tiendas_en_ordenes_inversos_no_se_deadlockean(db, monkeypatch):
             "SELECT count(*) FROM store_products WHERE store_id = ANY(%s)", (list(STORES),)
         ).fetchone()[0]
     assert filas == 2 * N_PRODUCTOS
+    reintentos_por_deadlock = [r.getMessage() for r in caplog.records if "DeadlockDetected" in r.getMessage()]
+    assert reintentos_por_deadlock == []
 
 
 def test_un_deadlock_reintenta_el_lote(db, monkeypatch):
