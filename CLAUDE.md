@@ -16,6 +16,29 @@ The repo has two halves that run as separate processes and talk over HTTP:
 
 ## Commands
 
+### Harness: el chequeo y las reglas de cierre
+
+```bash
+# Setup (una vez)
+docker-compose up -d
+pip install torch --index-url https://download.pytorch.org/whl/cpu && pip install -r requirements.txt
+cd frontend && npm ci && cd ..
+
+# EL chequeo — lo corren el hook Stop (.claude/hooks/stop_check.py) y CI (.github/workflows/ci.yml)
+pytest -m "not catalogo"
+cd frontend && npm run lint && npm run build
+```
+
+`-m "not catalogo"` deja afuera los tests marcados `@pytest.mark.catalogo` (necesitan Postgres **poblado** + el modelo); `pytest` a secas corre todo. Los de Postgres vacío (`test_schema`, `test_pruning`, …) se saltean sin Docker y corren de verdad en CI. El hook fuerza la base de docker-compose (`127.0.0.1`, `connect_timeout=1`); a mano, `pytest` usa la `DATABASE_URL` del `.env`, que puede ser Neon. Sin `connect_timeout`, un Postgres apagado en Windows **cuelga** el suite en vez de saltearlo.
+
+- **No se termina una tarea con el chequeo en rojo.** No decir "listo" si falla; si no se puede arreglar, reportarlo con la salida. Un *skip* por falta de Postgres no es verde para cambios en `src/database.py`/`src/schema.py`: levantar Docker y correrlos.
+- **Los tests verifican comportamiento observable** (entradas, salidas, efectos visibles), no implementación: nada de testear funciones privadas, estructura interna ni mockear todo.
+- **Test primero.** Para cada feature o fix: definir y escribir los tests desde lo que tiene que pasar, correrlos y confirmar que **fallan**, recién después implementar.
+- **Si un test existente falla, se arregla el código, no el test.** Cambiar un test solo vale si cambió el comportamiento esperado, y se explica por qué.
+- **Tests legibles por una persona:** el nombre dice el comportamiento en castellano (`test_carrito_bajo_el_minimo_devuelve_400`), el cuerpo en tres bloques visibles (preparar / ejecutar / verificar), datos literales a la vista, una idea por test.
+- **Todo plan de ejecución lista los tests que definen "terminado"** (nombre + qué verifica, una línea cada uno) antes de implementar, para que el usuario los revise.
+- Un test nuevo que necesite la base poblada lleva `@pytest.mark.catalogo`.
+
 ### Backend
 
 ```bash
@@ -33,7 +56,7 @@ python -m src.scripts.medir_busqueda [--modo hibrido]  # relevance baseline for 
 python -m src.scripts.repair_coto_urls --dry-run  # one-shot: sanitize stored Coto product_url
 python -m src.scripts.curar_frescos              # maintain src/fresh_items.py: stale SKUs + unmatched candidates (live scrape, no DB)
 docker build -t smartcart-api . && docker run -p 8080:8080 -e DATABASE_URL=... smartcart-api
-pytest                            # whole suite
+pytest                            # whole suite (needs Postgres populated + model; the quick check is `pytest -m "not catalogo"`)
 pytest tests/test_optimizer.py    # single file
 pytest tests/test_api.py::test_fastapi_endpoints   # single test
 ```

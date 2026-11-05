@@ -34,6 +34,7 @@ def _sample_ids(client, n=3):
     return ids[:n]
 
 
+@pytest.mark.catalogo
 def test_devuelve_los_productos_en_el_orden_pedido():
     with TestClient(app) as client:
         ids = _sample_ids(client)
@@ -47,6 +48,7 @@ def test_devuelve_los_productos_en_el_orden_pedido():
         assert [p["unified_id"] for p in response.json()] == pedido
 
 
+@pytest.mark.catalogo
 def test_un_id_inexistente_se_omite_y_el_resto_vuelve():
     """El contrato del que depende toda la feature: ausente == lo borro el pruning.
 
@@ -64,6 +66,7 @@ def test_un_id_inexistente_se_omite_y_el_resto_vuelve():
         assert devueltos == ids, "El inexistente tiene que desaparecer sin arrastrar a los demas"
 
 
+@pytest.mark.catalogo
 def test_id_duplicado_devuelve_una_sola_fila():
     """El frontend keyea la grilla por unified_id: dos filas iguales serian dos
     claves de React iguales."""
@@ -75,6 +78,7 @@ def test_id_duplicado_devuelve_una_sola_fila():
         assert [p["unified_id"] for p in response.json()] == [uid]
 
 
+@pytest.mark.catalogo
 def test_paridad_de_campos_con_category():
     """min_price, image_url, unit_price y store_count tienen que salir identicos
     por los dos endpoints. Es lo que impide que _build_product_response vuelva a
@@ -96,6 +100,7 @@ def test_paridad_de_campos_con_category():
                 assert obtenido[campo] == esperado[campo], f"{campo} difiere entre los dos endpoints"
 
 
+@pytest.mark.catalogo
 def test_los_limites_de_la_lista_los_rechaza_pydantic():
     with TestClient(app) as client:
         assert client.post("/products/by-ids", json={"unified_ids": []}).status_code == 422

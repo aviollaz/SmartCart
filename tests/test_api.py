@@ -2,10 +2,13 @@
 import logging
 from fastapi.testclient import TestClient
 from src.api import app  # Importación limpia gracias a pytest.ini
+import pytest
+
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
 logger = logging.getLogger(__name__)
 
+@pytest.mark.catalogo
 def test_fastapi_endpoints():
     logger.info("Inicializando TestClient para FastAPI...")
     # El bloque with asegura que los manejadores lifespan (startup y shutdown) se ejecuten,
@@ -149,6 +152,7 @@ def test_promo_por_cantidad_de_club_solo_para_socios():
     assert _build_store_offer(fila, ["club_dia"])["quantity_promo"]["required_quantity"] == 3
 
 
+@pytest.mark.catalogo
 def test_deals_ordenado_por_descuento():
     """Necesita Postgres poblado, igual que test_fastapi_endpoints."""
     with TestClient(app) as client:
@@ -166,6 +170,7 @@ def test_deals_ordenado_por_descuento():
             assert any(o["promo_unit_price"] for o in d["available_at_stores"])
 
 
+@pytest.mark.catalogo
 def test_deals_por_seccion():
     """El filtro por sección de la home. Necesita Postgres poblado."""
     from src.shelves import SHELVES

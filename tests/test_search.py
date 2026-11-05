@@ -4,6 +4,11 @@ import psycopg
 from psycopg.rows import dict_row
 from sentence_transformers import SentenceTransformer
 from src.database import SmartCartDB  # Importación limpia gracias a pytest.ini
+import pytest
+
+# Necesita Postgres poblado + el modelo: fuera del chequeo rápido (ver CLAUDE.md, Harness).
+pytestmark = pytest.mark.catalogo
+
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
 logger = logging.getLogger(__name__)

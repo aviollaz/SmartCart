@@ -25,6 +25,10 @@ from src.api import (
 from src.database import SmartCartDB
 from src.stores import STORES
 
+# Necesita Postgres poblado + el modelo: fuera del chequeo rápido (ver CLAUDE.md, Harness).
+pytestmark = pytest.mark.catalogo
+
+
 logger = logging.getLogger(__name__)
 
 # Una góndola real de src/shelves.py: la tabla es cerrada, así que hardcodear el
