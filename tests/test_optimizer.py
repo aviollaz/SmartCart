@@ -1,6 +1,11 @@
 # tests/test_optimizer.py
 import json
 from src.optimizer import optimize_cart
+import pytest
+
+# Necesita Postgres poblado + el modelo: fuera del chequeo rápido (ver CLAUDE.md, Harness).
+pytestmark = pytest.mark.catalogo
+
 
 def test_optimization_with_minimum_spend():
     # Carrito de compras
