@@ -23,7 +23,7 @@ SCRAPERS = {
     "coto": CotoScraper,
     "dia": DiaScraper,
     "carrefour": CarrefourScraper,
-    # Vea (VeaScraper) está apagada: ver el comentario en src/stores.py.
+    "vea": VeaScraper,
 }
 
 __all__ = [

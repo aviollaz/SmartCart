@@ -175,7 +175,11 @@ function ProductChecklist({ storeId, items, productName }) {
                 >
                   {done && <Check size={12} />}
                 </span>
-                <span className={`flex-1 ${done ? "line-through" : ""}`}>{productName(item)}</span>
+                {/* Una línea por producto: se tilda de a uno y en orden, así que
+                    el siguiente link tiene que quedar siempre a la misma altura. */}
+                <span className={`min-w-0 flex-1 truncate ${done ? "line-through" : ""}`} title={productName(item)}>
+                  {productName(item)}
+                </span>
                 <span className="shrink-0 text-xs text-ink-muted">x{item.quantity}</span>
                 <ExternalLink size={12} className="shrink-0 text-ink-muted" />
               </a>

@@ -65,6 +65,16 @@ class PromoTransformer:
                     "requires_membership": None
                 })
             else:
+                # El `discountText` de un descuento directo no siempre es el
+                # descuento: relevado, "+10%" sobre un precio que baja 35% (es
+                # el adicional que Coto suma a otro que no viene en el campo).
+                # Se describe con los dos precios, igual que `_vtex`, para que
+                # la etiqueta no contradiga lo que la tarjeta muestra tachado.
+                # Las promos por cantidad (rama de arriba) conservan el texto
+                # de Coto: ahí "Llevando 2" sí dice algo que los precios no.
+                if discount_price and regular_price and discount_price < regular_price:
+                    discount_pct = round((1 - discount_price / regular_price) * 100, 2)
+                    description = f"{int(discount_pct)}% Off Directo"
                 parsed_promos.append({
                     "promo_id": f"coto_{promo_id}",
                     "type": "direct_discount",

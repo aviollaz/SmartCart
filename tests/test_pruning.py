@@ -9,6 +9,7 @@ import psycopg
 import pytest
 
 from src.database import SmartCartDB
+from src.schema import ensure_schema_at
 
 STORE = "tienda_de_prueba_pruning"
 
@@ -21,6 +22,9 @@ def db():
             pass
     except Exception as e:
         pytest.skip(f"Postgres no disponible: {e}")
+    # Una base virgen (la de CI) no tiene tablas, y `_limpiar` borra con SQL
+    # directo antes de que nada las cree. Fuera del try: un error de DDL falla.
+    ensure_schema_at(instancia.conn_string)
     yield instancia
     _limpiar(instancia)
 

@@ -1,0 +1,70 @@
+# El chequeo del repo (CLAUDE.md, "Harness") en cada push: lo mismo que corre
+# el hook Stop local. Sin secretos — nunca toca Neon.
+
+name: CI
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  backend:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    # Postgres vacío con pgvector, mismas credenciales que docker-compose: así
+    # test_schema / test_pruning / test_save_concurrency / test_scraper_telemetry
+    # CORREN acá en vez de saltearse como en una máquina sin Docker.
+    services:
+      postgres:
+        image: pgvector/pgvector:pg16
+        env:
+          POSTGRES_USER: smartuser
+          POSTGRES_PASSWORD: smartpassword
+          POSTGRES_DB: smartcart
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U smartuser -d smartcart"
+          --health-interval 5s --health-timeout 5s --health-retries 10
+
+    env:
+      DATABASE_URL: postgresql://smartuser:smartpassword@localhost:5432/smartcart
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: |
+            requirements.txt
+            .github/workflows/ci.yml
+
+      # torch del índice CPU primero: desde PyPI arrastra CUDA y llena el disco
+      # del runner (ver scrape.yml, 26/27-sep-2026).
+      - name: Instalar dependencias
+        run: |
+          pip install torch --index-url https://download.pytorch.org/whl/cpu
+          pip install -r requirements.txt
+
+      - name: pytest
+        run: pytest -m "not catalogo"
+
+  frontend:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    defaults:
+      run:
+        working-directory: frontend
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+      - run: npm ci
+      - run: npm run lint
+      - run: npm run build

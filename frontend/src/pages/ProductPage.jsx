@@ -6,6 +6,7 @@ import { useCart } from "../context/CartContext";
 import { useProfile } from "../context/ProfileContext";
 import { useProductPricing } from "../hooks/useProductPricing";
 import { formatPrice, resolveDisplayImage, storeName } from "../utils/formatters";
+import { STORES } from "../utils/constants";
 import { stripUnavailableStores } from "../utils/storeAvailability";
 import { DietaryBadges } from "../components/plp/DietaryBadges";
 import { PriceBlock } from "../components/plp/PriceBlock";
@@ -211,7 +212,9 @@ function StoreOffers({ offers, unavailableStores, excludedStores }) {
                         ? "Con stock"
                         : "Sin stock hoy"}
                 </span>
-                {offer.product_url && (
+                {/* Nunca a la ficha de una tienda con aviso de seguridad: es
+                    justo donde estaba el código malicioso (constants.js). */}
+                {offer.product_url && !STORES.some((store) => store.id === offer.store_id && store.warning) && (
                   <a
                     href={offer.product_url}
                     target="_blank"

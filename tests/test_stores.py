@@ -43,8 +43,18 @@ def test_registros_de_codigo_nombran_las_mismas_tiendas():
 def test_constants_js_espeja_el_registro():
     fuente = _leer("frontend/src/utils/constants.js")
     bloque = fuente.split("export const STORES = [", 1)[1].split("];", 1)[0]
-    frontend = re.findall(r'\{ id: "([^"]+)", name: "([^"]+)"', bloque)
+    frontend = re.findall(r'\{\s*id: "([^"]+)",\s*name: "([^"]+)"', bloque)
     assert frontend == [(s.id, s.name) for s in STORES]
+
+
+def test_constants_js_avisa_las_mismas_tiendas():
+    """Una tienda con `warning` arranca deshabilitada en el frontend. Si los dos
+    lados no coinciden, o el aviso no se muestra o se muestra sin motivo."""
+    fuente = _leer("frontend/src/utils/constants.js")
+    bloque = fuente.split("export const STORES = [", 1)[1].split("];", 1)[0]
+    entradas = re.split(r"\n  \{", bloque)
+    con_aviso = {re.search(r'id: "([^"]+)"', e).group(1) for e in entradas if "warning:" in e}
+    assert con_aviso == {s.id for s in STORES if s.warning}
 
 
 def test_cada_zona_de_envio_trae_todas_las_tiendas():

@@ -1,9 +1,12 @@
 import { Minus, Plus } from "lucide-react";
 
+// Medidas fijas: alto igual al botón "Agregar" que reemplaza (cambiar uno por
+// otro no mueve la card) y número de ancho fijo (pasar de 9 a 10 no corre los
+// botones de debajo del cursor).
 export function QuantityStepper({ quantity, onIncrement, onDecrement, size = "md" }) {
-  const padding = size === "sm" ? "px-1.5 py-1" : "px-2 py-1.5";
+  const box = size === "sm" ? "h-8 px-1.5" : "h-9 px-2";
   return (
-    <div className={`flex items-center gap-2 rounded-md bg-brand-violet-700 text-white ${padding}`}>
+    <div className={`flex shrink-0 items-center gap-2 rounded-md bg-brand-violet-700 text-white ${box}`}>
       <button
         type="button"
         onClick={onDecrement}
@@ -12,7 +15,7 @@ export function QuantityStepper({ quantity, onIncrement, onDecrement, size = "md
       >
         <Minus size={14} />
       </button>
-      <span className="min-w-4 text-center text-sm font-semibold tabular-nums">{quantity}</span>
+      <span className="w-6 text-center text-sm font-semibold tabular-nums">{quantity}</span>
       <button
         type="button"
         onClick={onIncrement}

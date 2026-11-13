@@ -44,26 +44,33 @@ export function ProductCard({ product }) {
         )}
       </Link>
 
-      <DietaryBadges product={product} className="mb-2" />
-      <PriceBlock product={product} pricing={pricing} showPricingHint={false} />
+      {/* Cada parte ocupa el mismo alto haya o no contenido (etiquetas, promo,
+          marca): en una fila de la grilla todas las cards miden igual, y nada
+          de lo que cambia al tocar el selector lo corre de lugar. */}
+      <div className="mb-2 h-5 overflow-hidden">
+        <DietaryBadges product={product} />
+      </div>
+      <PriceBlock product={product} pricing={pricing} showPricingHint={false} fixedSlots />
 
       <Link
         to={detailUrl}
-        className="mb-3 mt-2 line-clamp-2 flex-1 text-sm text-ink hover:text-brand-violet-700 hover:underline"
+        className="mt-2 line-clamp-2 h-10 text-sm text-ink hover:text-brand-violet-700 hover:underline"
         title={product.name}
       >
         {product.name}
       </Link>
-      {product.brand && <p className="mb-3 -mt-2 text-xs text-ink-muted">{product.brand}</p>}
+      <p className="mb-3 h-4 truncate text-xs text-ink-muted" title={product.brand || undefined}>
+        {product.brand}
+      </p>
 
       {/* Patrón e-commerce estándar: hasta que el producto no está en el carrito
           hay un solo botón "Agregar"; el selector de unidades aparece recién
           después. Bajar a 0 elimina el ítem y la card vuelve sola al botón. */}
       {/* El "Calculando…" va en esta fila y no en el PriceBlock: ahí sumaba una
           línea, la card crecía y el stepper bajaba entre un clic y el siguiente. */}
-      <div className="flex items-center justify-end gap-2">
+      <div className="mt-auto flex h-9 items-center justify-end gap-2">
         {pricing.pricing && !pricing.byQuantity && (
-          <span className="mr-auto text-xs text-ink-muted">Calculando…</span>
+          <span className="mr-auto min-w-0 truncate text-xs text-ink-muted">Calculando…</span>
         )}
         {cartEntry ? (
           <QuantityStepper
@@ -75,7 +82,7 @@ export function ProductCard({ product }) {
           <button
             type="button"
             onClick={() => addItem(product.unified_id, product.name, 1)}
-            className="flex w-full items-center justify-center gap-2 rounded-md bg-brand-accent px-4 py-2 text-sm font-semibold text-white hover:bg-brand-accent-dark"
+            className="flex h-9 w-full items-center justify-center gap-2 rounded-md bg-brand-accent px-4 text-sm font-semibold text-white hover:bg-brand-accent-dark"
           >
             <ShoppingCart size={16} />
             Agregar

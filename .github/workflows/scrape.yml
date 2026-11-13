@@ -33,7 +33,7 @@ on:
         # lo pone la matriz.
         description: "Tiendas a barrer, separadas por coma"
         type: string
-        default: "coto,dia,carrefour"
+        default: "coto,dia,carrefour,vea"
       args:
         # Todo lo demás sigue siendo un campo de texto libre. La lista de flags
         # la define build_arg_parser() en src/scripts/run_scrapers.py, y
@@ -89,7 +89,7 @@ jobs:
           # la matriz se abre— sea el único que no se puede probar antes de
           # pushear. Los nombres no se validan acá: `--store` tiene `choices=`,
           # así que una tienda inventada muere con un mensaje de argparse.
-          lista="${TIENDAS:-coto,dia,carrefour}"
+          lista="${TIENDAS:-coto,dia,carrefour,vea}"
           matriz="["
           sep=""
           IFS=',' read -ra partes <<< "$lista"

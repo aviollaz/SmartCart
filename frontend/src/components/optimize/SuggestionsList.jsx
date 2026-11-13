@@ -19,10 +19,14 @@ function SuggestionRow({ group, onAccept }) {
         {alternatives.map((alt, index) => (
           <li
             key={alt.suggested_uid}
-            className="flex flex-wrap items-center gap-x-3 gap-y-2 rounded-md border border-state-success/30 bg-state-success/10 px-3 py-2"
+            className="flex items-center gap-3 rounded-md border border-state-success/30 bg-state-success/10 px-3 py-2"
           >
             <div className="min-w-0 flex-1">
-              <p className="text-sm font-medium text-ink">{alt.suggested_product}</p>
+              {/* Nombre a dos líneas fijas: los "Cambiar" de la lista quedan a
+                  la misma distancia uno de otro. */}
+              <p className="line-clamp-2 h-10 text-sm font-medium text-ink" title={alt.suggested_product}>
+                {alt.suggested_product}
+              </p>
               <p className="mt-0.5 flex flex-wrap items-center gap-2 text-xs text-ink-muted">
                 <span>
                   {alt.suggested_quantity} × {alt.suggested_size}
