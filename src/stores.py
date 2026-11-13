@@ -40,10 +40,10 @@ STORES = (
     # simulación de checkout (0; para Día ese campo coincide con su mínimo real),
     # sin confirmar todavía en un checkout de verdad.
     #
-    # `warning`: el 27-oct-2026 vea.com.ar seguía sirviendo un skimmer de
-    # tarjetas en la descripción de 5 de 20.756 productos (`eval(atob(…))` en un
-    # `onerror`, exfiltra a un host externo). Por eso arranca deshabilitada.
-    Store("vea", "vea_online", "Vea", 0, 3499, "www.vea.com.ar", sales_channel=34, warning="skimmer"),
+    # Arrancó deshabilitada (`warning`) por un skimmer de tarjetas en las
+    # descripciones de vea.com.ar (oct-2026). El 13-nov-2026 ya no estaba: 0 de
+    # 1.551 productos muestreados con onerror/atob/eval en `description`.
+    Store("vea", "vea_online", "Vea", 0, 3499, "www.vea.com.ar", sales_channel=34),
 )
 
 STORE_IDS = {s.key: s.id for s in STORES}

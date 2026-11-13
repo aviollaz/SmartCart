@@ -8,9 +8,9 @@ and uses a constraint solver (Google OR-Tools CP-SAT) to decide **how to split t
 cart across the three chains to spend as little as possible**, accounting for
 promotions, bank discounts, delivery costs and each store's minimum purchase.
 
-A fourth chain, Vea, is also scraped but ships disabled by default: in October 2026
-its product descriptions carried a payment-card skimmer, which I reported. SmartCart
-strips that HTML before storing anything, and users have to opt in to Vea explicitly.
+A fourth chain, Vea, is also covered. In October 2026 its product descriptions carried
+a payment-card skimmer, which I reported; Vea shipped disabled by default until it was
+gone (Nov 2026). SmartCart strips that HTML before storing anything.
 
 <!-- Add a screenshot or GIF of the app here: ![SmartCart](docs/screenshot.png) -->
 
