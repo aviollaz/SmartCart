@@ -29,6 +29,13 @@ MVP_CATEGORIES = keys_for_store("coto")
 # MAX_PAGES de scraper_carrefour.py.
 MAX_PAGES = 60
 
+# 100 y no 24 (lo que pide el sitio): con 24, Vinos (1.430 productos en nov-2026)
+# llenaba exactamente 60 páginas y la página vacía que cierra la categoría caía
+# en la 61, fuera del tope — fallaba todas las noches. Con 100 entran 6.000 por
+# categoría y el barrido hace ~4 veces menos pedidos. Relevado contra el BFF:
+# 15 páginas, 1.430 SKUs distintos, sin solapamiento entre páginas.
+PAGE_SIZE = 100
+
 
 def _as_price(value) -> float:
     """
@@ -157,7 +164,7 @@ class CotoScraper:
         for _ in range(MAX_PAGES):
             url = (
                 f"https://api.coto.com.ar/api/v1/ms-digital-sitio-bff-web/api/v1/products/categories/{category_id}"
-                f"?page={page}&key=key_r6xzz4IAoTWcipni&num_results_per_page=24"
+                f"?page={page}&key=key_r6xzz4IAoTWcipni&num_results_per_page={PAGE_SIZE}"
                 f"&pre_filter_expression=%7B%22name%22:%22store_availability%22,%22value%22:%22200%22%7D"
                 f"&c=cio-fe-web-coto-3.5.2&i=5792d439-2540-4787-a25c-b6cf441f61c9&s=1"
                 f"&origin_referrer=/sitios/cdigi/productos/categorias/{category_id}"

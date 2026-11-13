@@ -531,8 +531,10 @@ _SHELF_LIST = (
     # ------------------------------------------------------------- Congelados
     _shelf(
         "papas-congeladas", "Papas congeladas", "Congelados",
-        coto=("catv00003195", "catv00003194", "catv00003197", "catv00003196",
-              "catv00003193"),
+        # Sin catv00003193 ("Papas Rústicas"): devuelve 0 productos desde
+        # nov-2026 (total_num_results = 0), y una categoría vacía deja a Coto
+        # PARTIAL todas las noches.
+        coto=("catv00003195", "catv00003194", "catv00003197", "catv00003196"),
         dia=("congelados/vegetales-frutas-y-papas/papas-fritas-congeladas",),
         carrefour=("congelados/papas",),
         vea=("congelados/papas",),
