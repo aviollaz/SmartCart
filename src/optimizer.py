@@ -118,22 +118,22 @@ def optimize_cart(cart_items, user_memberships=None, user_cards=None, min_spend_
     model = cp_model.CpModel()
 
     # Variables de Decisión
-    x = {(i, j): model.NewBoolVar(f'x_{i}_{j}') for i in products for j in stores if j in flat_prices[i]}
-    y = {j: model.NewBoolVar(f'active_store_{j}') for j in stores}
+    compra = {(i, j): model.NewBoolVar(f'x_{i}_{j}') for i in products for j in stores if j in flat_prices[i]}
+    activa = {j: model.NewBoolVar(f'active_store_{j}') for j in stores}
 
     # Restricciones
     for i in products:
-        model.Add(sum(x[i, j] for j in stores if (i, j) in x) == 1)
+        model.Add(sum(compra[i, j] for j in stores if (i, j) in compra) == 1)
     
-    for (i, j), var_x in x.items():
-        model.Add(var_x <= y[j])
+    for (i, j), var_x in compra.items():
+        model.Add(var_x <= activa[j])
 
     for j in stores:
-        costs = [x[i, j] * int(round(flat_prices[i][j]["total_cost"] * 100)) for i in products if (i, j) in x]
-        if costs: model.Add(sum(costs) >= y[j] * int(min_spend_limits[j] * 100))
+        costs = [compra[i, j] * int(round(flat_prices[i][j]["total_cost"] * 100)) for i in products if (i, j) in compra]
+        if costs: model.Add(sum(costs) >= activa[j] * int(min_spend_limits[j] * 100))
 
     if max_stores is not None:
-        model.Add(sum(y.values()) <= max_stores)
+        model.Add(sum(activa.values()) <= max_stores)
 
     subtotal_vars = {}
     discount_vars = {}
@@ -142,7 +142,7 @@ def optimize_cart(cart_items, user_memberships=None, user_cards=None, min_spend_
 
     for j in stores:
         subtotal_vars[j] = model.NewIntVar(0, MAX_SUBTOTAL_CENTS, f'subtotal_{j}')
-        costs = [x[i, j] * int(round(flat_prices[i][j]["total_cost"] * 100)) for i in products if (i, j) in x]
+        costs = [compra[i, j] * int(round(flat_prices[i][j]["total_cost"] * 100)) for i in products if (i, j) in compra]
         model.Add(subtotal_vars[j] == sum(costs))
 
         discount_vars[j] = model.NewIntVar(0, MAX_SUBTOTAL_CENTS, f'discount_{j}')
@@ -169,7 +169,7 @@ def optimize_cart(cart_items, user_memberships=None, user_cards=None, min_spend_
 
         # x2 porque al subtotal se le suma el envío antes de restar el descuento.
         final_cost = model.NewIntVar(0, MAX_SUBTOTAL_CENTS * 2, f'final_cost_{j}')
-        model.Add(final_cost == subtotal_vars[j] + (y[j] * int(delivery_costs[j] * 100)) - discount_vars[j])
+        model.Add(final_cost == subtotal_vars[j] + (activa[j] * int(delivery_costs[j] * 100)) - discount_vars[j])
         store_final_costs_cents[j] = final_cost
 
     model.Minimize(sum(store_final_costs_cents.values()))
@@ -180,7 +180,7 @@ def optimize_cart(cart_items, user_memberships=None, user_cards=None, min_spend_
         total_spent = 0.0
 
         for j in stores:
-            if solver.Value(y[j]) == 1:
+            if solver.Value(activa[j]) == 1:
                 sub = solver.Value(subtotal_vars[j]) / 100.0
                 disc = solver.Value(discount_vars[j]) / 100.0
                 total = sub + delivery_costs[j] - disc
@@ -188,7 +188,7 @@ def optimize_cart(cart_items, user_memberships=None, user_cards=None, min_spend_
                 
                 assigned_cart[j] = {
                     "products": [{"unified_id": i, "quantity": next(item["quantity"] for item in cart_items if item["unified_id"] == i),
-                                  "total_cost": flat_prices[i][j]["total_cost"]} for i in products if (i, j) in x and solver.Value(x[i, j]) == 1],
+                                  "total_cost": flat_prices[i][j]["total_cost"]} for i in products if (i, j) in compra and solver.Value(compra[i, j]) == 1],
                     "subtotal_products": round(sub, 2),
                     "delivery_cost": delivery_costs[j],
                     # La `description` viaja hasta el frontend: sin ella el desglose
