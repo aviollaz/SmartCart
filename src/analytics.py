@@ -59,6 +59,27 @@ load_dotenv()
 # hace falta a /optimize. Perder una métrica es barato; quedarse sin hilos, no.
 ANALYTICS_TIMEOUT_SECONDS = 2.0
 
+
+def _send_timeout() -> float:
+    """
+    Timeout del ENVÍO del evento, configurable por ANALYTICS_SEND_TIMEOUT_SECONDS.
+
+    Existe porque en producción el analyzer corre en Cloud Run con
+    min-instances 0: el primer evento después de un rato despierta la instancia
+    (arranque en frío de unos segundos) y con 2s se perdía justo ese evento, que
+    con poco tráfico es casi todos. Sigue siendo background, así que no demora
+    /optimize; lo que se arriesga es un hilo del threadpool unos segundos más,
+    acotado por --max-instances. El health check del arranque NO lo usa: ahí
+    sigue mandando el 2s, para no demorar el arranque de la API.
+
+    Un valor inválido cae al default en vez de romper: es config de analítica.
+    """
+    try:
+        value = float(os.getenv("ANALYTICS_SEND_TIMEOUT_SECONDS", ANALYTICS_TIMEOUT_SECONDS))
+        return value if value > 0 else ANALYTICS_TIMEOUT_SECONDS
+    except ValueError:
+        return ANALYTICS_TIMEOUT_SECONDS
+
 # La ruta la fija el analyzer y ya cambió una vez (`/events/cart-optimized` ->
 # `/track-optimization`), lo que se manifestó como un 404 por evento y ninguna
 # fila en el warehouse. Si esto vuelve a fallar, el lugar donde mirar es la
@@ -209,7 +230,7 @@ def send_cart_optimized_event(payload: Dict[str, Any]) -> None:
             url,
             json=payload,
             headers={"X-API-Key": api_key},
-            timeout=ANALYTICS_TIMEOUT_SECONDS,
+            timeout=_send_timeout(),
         )
         # Un rechazo silencioso es el peor final posible para esto: el evento se
         # pierde y nadie se entera hasta que el tablero aparece vacío tres meses

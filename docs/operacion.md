@@ -77,7 +77,7 @@ tiendas VTEX casi no cambian.
 `Dockerfile`, desde la raíz del repo y en una sola línea:
 
 ```powershell
-gcloud run deploy smartcart-api --source . --region us-east1 --memory 1Gi --cpu 1 --min-instances 0 --max-instances 3 --cpu-boost --allow-unauthenticated --env-vars-file ops/vars.YAML --set-secrets DATABASE_URL=neon-url:latest
+gcloud run deploy smartcart-api --source . --region us-east1 --memory 1Gi --cpu 1 --min-instances 0 --max-instances 3 --cpu-boost --allow-unauthenticated --env-vars-file ops/vars.YAML --set-secrets DATABASE_URL=neon-url:latest,ANALYTICS_API_KEY=analytics-api-key:latest
 ```
 
 Tarda unos 10 minutos. Para verificar: `GET /` tiene que contestar
@@ -104,8 +104,10 @@ Tarda unos 10 minutos. Para verificar: `GET /` tiene que contestar
 * **El `CMD` del Dockerfile respeta `$PORT`** (forma shell a propósito), instala
   torch CPU (la imagen pasó de 10,3 GB a 2,78 GB) y descarga el modelo en el
   build.
-* **Sin `ANALYTICS_API_KEY`:** el analyzer no es alcanzable desde Cloud Run. Sin
-  la clave no se emite nada y no se rompe nada.
+* **`ANALYTICS_API_KEY` es un secreto** (`analytics-api-key` en Secret Manager),
+  el mismo que usa el analyzer. Si falta, no se emite nada y no se rompe nada:
+  `GET /` lo muestra en `analytics.enabled`. Cómo se despliega el analyzer, en
+  "Analítica" más abajo.
 
 ### Arranque en frío
 
@@ -188,3 +190,63 @@ Para no rediscutirlas desde cero:
 Qué daría vuelta la decisión: que Neon empiece a apretar por usuarios reales.
 Ahí la mudanza es barata por diseño (`DATABASE_URL` + el mismo `Dockerfile`), y
 lo correcto es llevar Postgres y la API a la misma máquina.
+
+
+## Analítica (SmartCart Performance Analyzer)
+
+El analyzer es otro servicio de Cloud Run, `smartcart-analytics` en `us-east1`,
+con su data warehouse en **una base aparte del mismo proyecto de Neon**
+(`smartcart_analytics`). Misma instancia de cómputo a propósito: el evento sale
+de `/optimize`, que ya despertó a Neon, así que la analítica no suma horas de
+cómputo. Un proyecto de Neon aparte se despertaría por su cuenta en cada evento.
+
+Se creó una vez, a mano:
+
+1. **Base.** En la consola de Neon: *Databases → New database*
+   `smartcart_analytics`. El schema (de `db/init/` en el repo del analyzer) se
+   aplica con:
+
+   ```powershell
+   Get-ChildItem db\init\*.sql | ForEach-Object { psql "$env:ANALYTICS_DB_URL" -v ON_ERROR_STOP=1 -f $_.FullName }
+   ```
+
+   donde `ANALYTICS_DB_URL` es la connection string de Neon apuntando a
+   `/smartcart_analytics` con `?sslmode=require`.
+
+2. **Secretos.**
+
+   ```powershell
+   [IO.File]::WriteAllText("$PWD\key.tmp", (python -c "import secrets; print(secrets.token_urlsafe(32))"))
+   [IO.File]::WriteAllText("$PWD\url.tmp", $env:ANALYTICS_DB_URL)
+   gcloud secrets create analytics-api-key --data-file=key.tmp
+   gcloud secrets create analytics-db-url --data-file=url.tmp
+   Remove-Item key.tmp, url.tmp
+   ```
+
+   `WriteAllText` y no `|` ni `>`: en PowerShell los dos agregan un salto de
+   línea (y `>` además escribe UTF-16). Un `\n` al final de la URL rompe la
+   conexión, y en la key hace que httpx rechace el header.
+
+   La cuenta de servicio de Cloud Run necesita `roles/secretmanager.secretAccessor`
+   sobre los dos (la misma que ya lee `neon-url`).
+
+3. **Deploy** (desde el repo del analyzer):
+
+   ```powershell
+   gcloud run deploy smartcart-analytics --source . --region us-east1 --memory 512Mi --cpu 1 --min-instances 0 --max-instances 2 --cpu-boost --allow-unauthenticated --set-env-vars ENVIRONMENT=prod,POOL_MIN_SIZE=0 --set-secrets DATABASE_URL=analytics-db-url:latest,ANALYTICS_API_KEY=analytics-api-key:latest
+   ```
+
+   `--allow-unauthenticated` porque la autenticación es la `X-API-Key`. Con
+   `ENVIRONMENT=prod` el servicio **no arranca** si la key es la de ejemplo.
+
+4. **Redeploy de `smartcart-api`** con el comando de arriba (ya incluye el
+   secreto y `ops/vars.YAML` ya trae `ANALYTICS_URL`).
+
+**Verificar:** `GET /health` del analyzer → `{"status":"ok","db":"ok"}`; `GET /`
+de la API → `analytics.enabled: true`. Después de optimizar un carrito en la
+demo, tiene que aparecer una fila en `fact_optimization` con
+`source_env = 'demo'`.
+
+**Power BI** se conecta directo a Neon: servidor = host de Neon, base
+`smartcart_analytics`, modo Import, y filtrar `source_env = 'demo'` (los demás
+valores son de desarrollo, tests o seed).

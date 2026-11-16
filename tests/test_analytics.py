@@ -263,6 +263,7 @@ def _reset_missing_key_flag():
 
 
 def test_envio_manda_api_key_url_y_timeout(monkeypatch, caplog):
+    monkeypatch.delenv("ANALYTICS_SEND_TIMEOUT_SECONDS", raising=False)
     monkeypatch.setenv("ANALYTICS_API_KEY", "una-clave")
     monkeypatch.setenv("ANALYTICS_URL", "http://localhost:8001/")
 
@@ -287,6 +288,23 @@ def test_envio_manda_api_key_url_y_timeout(monkeypatch, caplog):
     assert captured["headers"] == {"X-API-Key": "una-clave"}
     assert captured["json"] == {"event_id": "abc"}
     assert captured["timeout"] == 2.0
+
+
+@pytest.mark.parametrize("raw, expected", [("10", 10.0), ("0", 2.0), ("-3", 2.0), ("diez", 2.0)])
+def test_timeout_de_envio_configurable_y_a_prueba_de_basura(monkeypatch, raw, expected):
+    """En prod el analyzer arranca en frío (Cloud Run, min-instances 0): con 2s se
+    perdía el primer evento de cada rato. Un valor inválido no puede romper nada."""
+    monkeypatch.setenv("ANALYTICS_API_KEY", "una-clave")
+    monkeypatch.setenv("ANALYTICS_SEND_TIMEOUT_SECONDS", raw)
+    captured = {}
+
+    def fake_post(url, **kwargs):
+        captured.update(kwargs)
+        return httpx.Response(201, json={"status": "stored", "id": 1})
+
+    monkeypatch.setattr(analytics.httpx, "post", fake_post)
+    send_cart_optimized_event({"event_id": "abc"})
+    assert captured["timeout"] == expected
 
 
 def test_sin_api_key_no_emite_y_avisa_una_sola_vez(monkeypatch, caplog):

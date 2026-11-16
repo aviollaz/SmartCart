@@ -1,5 +1,13 @@
 SMARTCART_POOL_MIN_SIZE: "0"
 ANALYTICS_ENV: "demo"
+# Analyzer (SmartCart-Performance-Analyzer) en Cloud Run, mismo proyecto y región.
+# La URL sale del número de proyecto, así que se conoce antes del primer deploy.
+# La ANALYTICS_API_KEY NO va acá (este archivo es público): entra como secreto
+# con --set-secrets, ver docs/operacion.md.
+ANALYTICS_URL: "https://smartcart-analytics-996729163198.us-east1.run.app"
+# El analyzer corre con min-instances 0: el primer evento de cada rato lo
+# despierta. Con los 2s por defecto se perdía justo ese evento.
+ANALYTICS_SEND_TIMEOUT_SECONDS: "10"
 # Tiene que vivir acá y no cargarse aparte con --update-env-vars:
 # `gcloud run deploy --env-vars-file` REEMPLAZA todas las variables del
 # servicio, así que cualquier variable que no esté en este archivo se borra en
