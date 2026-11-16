@@ -77,7 +77,7 @@ tiendas VTEX casi no cambian.
 `Dockerfile`, desde la raíz del repo y en una sola línea:
 
 ```powershell
-gcloud run deploy smartcart-api --source . --region us-east1 --memory 1Gi --cpu 1 --min-instances 0 --max-instances 3 --cpu-boost --allow-unauthenticated --env-vars-file ops/vars.YAML --set-secrets DATABASE_URL=neon-url:latest,ANALYTICS_API_KEY=analytics-api-key:latest
+gcloud run deploy smartcart-api --source . --region us-east1 --memory 1Gi --cpu 1 --min-instances 0 --max-instances 3 --cpu-boost --allow-unauthenticated --env-vars-file ops/vars.YAML --set-secrets "DATABASE_URL=neon-url:latest,ANALYTICS_API_KEY=analytics-api-key:latest"
 ```
 
 Tarda unos 10 minutos. Para verificar: `GET /` tiene que contestar
@@ -233,8 +233,14 @@ Se creó una vez, a mano:
 3. **Deploy** (desde el repo del analyzer):
 
    ```powershell
-   gcloud run deploy smartcart-analytics --source . --region us-east1 --memory 512Mi --cpu 1 --min-instances 0 --max-instances 2 --cpu-boost --allow-unauthenticated --set-env-vars ENVIRONMENT=prod,POOL_MIN_SIZE=0 --set-secrets DATABASE_URL=analytics-db-url:latest,ANALYTICS_API_KEY=analytics-api-key:latest
+   gcloud run deploy smartcart-analytics --source . --region us-east1 --memory 512Mi --cpu 1 --min-instances 0 --max-instances 2 --cpu-boost --allow-unauthenticated --set-env-vars "ENVIRONMENT=prod,POOL_MIN_SIZE=0" --set-secrets "DATABASE_URL=analytics-db-url:latest,ANALYTICS_API_KEY=analytics-api-key:latest"
    ```
+
+   **Desde la carpeta del analyzer, no la de SmartCart**: `--source .` sube el
+   `Dockerfile` de donde estés parado, y el de SmartCart publicaría la API con
+   torch bajo este nombre. **Las comillas son obligatorias en PowerShell**: sin
+   ellas, `a=b,c=d` se lee como una lista y llega a gcloud partido por
+   espacios (`Invalid secret spec`).
 
    `--allow-unauthenticated` porque la autenticación es la `X-API-Key`. Con
    `ENVIRONMENT=prod` el servicio **no arranca** si la key es la de ejemplo.
