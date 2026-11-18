@@ -15,14 +15,18 @@ name: Scrapeo nocturno
 
 on:
   schedule:
-    # 06:00 UTC = 03:00 en Argentina. El cron de Actions es SIEMPRE UTC y no
+    # 05:23 UTC = 02:23 en Argentina. El cron de Actions es SIEMPRE UTC y no
     # acepta zona horaria, pero acá no muerde: Argentina no tiene horario de
     # verano (UTC-3 todo el año), así que el offset es fijo y no hay dos veces al
     # año en que esto corra a la hora equivocada.
     #
-    # GitHub no garantiza la hora exacta: bajo carga la corrida puede demorarse
-    # 15 minutos o más. Para un refresco de catálogo nocturno es irrelevante.
-    - cron: "0 6 * * *"
+    # GitHub no garantiza la hora exacta. Con "0 6" (en punto) arrancaba a
+    # horario hasta el 20-oct-2026; desde el 21 la demora creció de ~4,5 a ~9
+    # horas sin ningún cambio de este lado. La hora en punto es donde se apilan
+    # los schedules de todo GitHub, que recomienda evitarla: de ahí el minuto
+    # suelto. Si la demora sigue, lo puntual es dispararlo desde Cloud Scheduler
+    # (workflow_dispatch por la API), como ya se hizo con el ping de la API.
+    - cron: "23 5 * * *"
 
   workflow_dispatch:
     inputs:
