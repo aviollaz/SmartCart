@@ -15,7 +15,7 @@ import { StrategicSwapCard } from "./StrategicSwapCard";
  * desplegable cerrado) y dónde comprar cada cosa. Antes cada opción y cada
  * aviso era su propia tarjeta y el resultado arrancaba con cinco carteles.
  */
-export function OptimizeResultsPanel({ result, maxStores, onAcceptSuggestion, onApplyStrategicSwap, onChooseMaxStores }) {
+export function OptimizeResultsPanel({ result, knownUncovered, maxStores, onAcceptSuggestion, onApplyStrategicSwap, onChooseMaxStores }) {
   const { items } = useCart();
   const splitEntries = Object.entries(result.split || {});
   // Envío "(estimado)": la tienda tiene consulta en vivo y esta vez cayó a la
@@ -25,7 +25,7 @@ export function OptimizeResultsPanel({ result, maxStores, onAcceptSuggestion, on
   return (
     <div className="flex flex-col gap-4">
       <SavingsPanel result={result} cartItems={items} maxStores={maxStores} onChooseMaxStores={onChooseMaxStores} />
-      <LogisticsNotice result={result} />
+      <LogisticsNotice result={result} knownUncovered={knownUncovered} />
       <MoreOptions
         result={result}
         onAcceptSuggestion={onAcceptSuggestion}

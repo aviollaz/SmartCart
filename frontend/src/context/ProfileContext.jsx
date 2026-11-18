@@ -2,6 +2,7 @@ import { createContext, useContext, useEffect, useMemo } from "react";
 import { useLocalStorage } from "../hooks/useLocalStorage";
 import { getDeliveryCostsForZone } from "../utils/deliveryCosts";
 import { STORES } from "../utils/constants";
+import { checkCoverage } from "../api/logistics";
 
 // Las tiendas que arrancan deshabilitadas por un aviso de seguridad.
 const WARNED_STORE_IDS = STORES.filter((store) => store.warning).map((store) => store.id);
@@ -191,6 +192,31 @@ export function ProfileProvider({ children }) {
       .map(([storeId]) => storeId);
     return ids.length > 0 ? ids : NO_UNAVAILABLE_STORES;
   }, [profile.storeCoverage]);
+
+  // Completa en segundo plano la cobertura de las tiendas sin veredicto: la
+  // consulta del onboarding falló para ellas (se guardan sólo las que
+  // respondieron), o la dirección es anterior a que la tienda existiera (Vea,
+  // nov-2026). Sin esto, el "no llega" aparecía recién al optimizar un carrito
+  // ya armado con sus precios. Un "no" acá saca la tienda de la grilla, que ya
+  // avisa por qué; un fallo no guarda nada y se reintenta la próxima vez.
+  useEffect(() => {
+    if (!coordinates) return;
+    const pending = STORES.filter((store) => !profile.storeCoverage?.[store.id]);
+    if (pending.length === 0) return;
+    let cancelled = false;
+    Promise.all(pending.map((store) => checkCoverage(store.key, coordinates))).then((coverages) => {
+      if (cancelled) return;
+      pending.forEach((store, i) => {
+        if (coverages[i].ok) setStoreCoverage(store.id, coverages[i]);
+      });
+    });
+    return () => {
+      cancelled = true;
+    };
+    // Sólo al cambiar la dirección: los veredictos que guarda este efecto no
+    // tienen que volver a dispararlo.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [coordinates]);
 
   // Filtrado contra STORES: un perfil guardado puede nombrar una tienda que ya
   // no participa (como Vea entre el 19 y el 27-oct-2026), y /optimize rechaza

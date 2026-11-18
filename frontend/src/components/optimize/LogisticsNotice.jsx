@@ -2,7 +2,9 @@ import { AlertTriangle } from "lucide-react";
 import { STORES } from "../../utils/constants";
 
 /**
- * Avisa qué tiendas quedaron fuera porque no entregan en la dirección.
+ * Avisa qué tiendas quedaron fuera porque no entregan en la dirección, sólo
+ * cuando es novedad: las que ya se sabía (`knownUncovered`, el estado del
+ * perfil al pedir la optimización) se avisaron antes y la grilla ya las saca.
  *
  * Sin esto, que una tienda no aparezca en el split es indistinguible de que haya
  * salido cara, y el usuario no tiene forma de saber que el motivo es que no le
@@ -10,11 +12,13 @@ import { STORES } from "../../utils/constants";
  * marca "(estimado)" al lado del envío en la tarjeta de la tienda, que es donde
  * está el número que describe.
  */
-export function LogisticsNotice({ result }) {
+export function LogisticsNotice({ result, knownUncovered = [] }) {
   const excludedStores = result.excluded_stores || [];
   const uncovered = STORES.filter(({ key, id }) => {
     const logistics = result.logistics?.[key];
-    return logistics && (excludedStores.includes(id) || logistics.covered === false);
+    return (
+      logistics && !knownUncovered.includes(id) && (excludedStores.includes(id) || logistics.covered === false)
+    );
   });
 
   return uncovered.map(({ key, name }) => (

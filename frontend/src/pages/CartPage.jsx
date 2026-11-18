@@ -30,6 +30,7 @@ export function CartPage({ onOpenLocation }) {
     maxStores,
     setMaxStores,
     setStoreCoverage,
+    unavailableStores,
   } = useProfile();
   // Sólo el lado de escritura: `entries` de acá abajo ya nombra a los ítems del
   // carrito, y PurchaseHistorySection hace su propio useHistory() para leer.
@@ -44,6 +45,11 @@ export function CartPage({ onOpenLocation }) {
   const [optimizeStatus, setOptimizeStatus] = useState("idle"); // idle | loading | success | infeasible | error
   const [optimizeResult, setOptimizeResult] = useState(null);
   const [infeasibleDetail, setInfeasibleDetail] = useState(null);
+  // Las tiendas que ya se sabía que no llegan cuando se pidió la optimización
+  // vigente. El aviso del resultado sólo nombra las que NO estaban acá: una
+  // tienda ya conocida se avisa antes (onboarding, chequeo al abrir la app,
+  // aviso de la grilla), y repetirlo en cada corrida era ruido.
+  const [knownUncovered, setKnownUncovered] = useState([]);
   // Hasta cuándo puede esperar para comprar. Es de esta compra, no del perfil.
   const [purchaseDays, setPurchaseDays] = useState(1);
 
@@ -81,6 +87,7 @@ export function CartPage({ onOpenLocation }) {
 
       if (response.ok) {
         setOptimizeResult(response.data);
+        setKnownUncovered(unavailableStores);
         setOptimizeStatus("success");
 
         // `items` es el cierre de este useCallback: el carrito TAL COMO se
@@ -122,7 +129,7 @@ export function CartPage({ onOpenLocation }) {
       setOptimizeStatus("error");
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [items, memberships, cards, deliveryCosts, coordinates, anon_user_id, location, excludedStores, purchaseDays, maxStores, recordPurchase]);
+  }, [items, memberships, cards, deliveryCosts, coordinates, anon_user_id, location, excludedStores, purchaseDays, maxStores, recordPurchase, unavailableStores]);
 
   useEffect(() => {
     if (reoptimizeRef.current) {
@@ -291,6 +298,7 @@ export function CartPage({ onOpenLocation }) {
           {optimizeStatus === "success" && optimizeResult && (
             <OptimizeResultsPanel
               result={optimizeResult}
+              knownUncovered={knownUncovered}
               maxStores={maxStores}
               onAcceptSuggestion={handleAcceptSuggestion}
               onApplyStrategicSwap={handleApplyStrategicSwap}
