@@ -5,7 +5,7 @@ import { getDeals } from "../api/products";
 import { useShelves } from "../hooks/useShelves";
 import { useCart } from "../context/CartContext";
 import { useProfile } from "../context/ProfileContext";
-import { STORES } from "../utils/constants";
+import { STORE_NAMES_LIST } from "../utils/formatters";
 import { stripUnavailableStores } from "../utils/storeAvailability";
 import { ProductCarousel } from "../components/plp/ProductCarousel";
 import { PurchaseHistorySection } from "../components/history/PurchaseHistorySection";
@@ -14,12 +14,6 @@ import { PurchaseHistorySection } from "../components/history/PurchaseHistorySec
 // traer más no ocupa más pantalla: sólo alarga lo que se puede recorrer con
 // las flechas. El backend topea en DEALS_MAX_LIMIT (src/api.py).
 const DEALS_LIMIT = 50;
-
-// "Coto, Día, Carrefour y Vea", de la misma lista que el resto de la app: el
-// texto fijo anterior se quedó sin Vea cuando se sumó.
-const NOMBRES_TIENDAS = STORES.map((store) => store.name)
-  .join(", ")
-  .replace(/, ([^,]*)$/, " y $1");
 
 export function HomePage() {
   const { items } = useCart();
@@ -36,7 +30,7 @@ export function HomePage() {
           Tu changuito, al menor precio
         </h1>
         <p className="mx-auto max-w-3xl text-balance text-lg text-ink/80">
-          Comparamos {NOMBRES_TIENDAS} y armamos tu lista de compras al mejor precio.
+          Comparamos {STORE_NAMES_LIST} y armamos tu lista de compras al mejor precio.
         </p>
 
         {itemCount > 0 && (

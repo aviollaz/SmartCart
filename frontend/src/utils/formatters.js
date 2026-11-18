@@ -57,6 +57,12 @@ export function storeName(storeId) {
   return STORE_NAMES[storeId] || storeLabel(storeId);
 }
 
+// "Coto, Día, Carrefour y Vea", de STORES: los textos fijos con la lista de
+// cadenas se quedaron sin Vea cuando se sumó (la home y la FAQ).
+export const STORE_NAMES_LIST = STORES.map((store) => store.name)
+  .join(", ")
+  .replace(/, ([^,]*)$/, " y $1");
+
 const SHORT_ADDRESS_MAX = 30;
 
 /**

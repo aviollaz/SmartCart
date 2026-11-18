@@ -1,5 +1,6 @@
 import { ChevronDown, MessageSquare } from "lucide-react";
 import { FEEDBACK_FORM_URL } from "../utils/constants";
+import { STORE_NAMES_LIST } from "../utils/formatters";
 
 /**
  * Preguntas frecuentes. El contenido es texto estático y vive acá: no hay
@@ -16,7 +17,7 @@ const FAQ = [
     preguntas: [
       {
         q: "¿Qué hace SmartCart?",
-        a: "Compara los precios de Coto, Día y Carrefour y reparte tu compra entre ellos para que pagues lo menos posible. Vos armás el carrito una sola vez; SmartCart te dice qué conviene comprar en cada súper.",
+        a: `Compara los precios de ${STORE_NAMES_LIST} y reparte tu compra entre ellos para que pagues lo menos posible. Vos armás el carrito una sola vez; SmartCart te dice qué conviene comprar en cada súper.`,
       },
       {
         q: "¿Cómo decide dónde comprar cada cosa?",
@@ -28,11 +29,15 @@ const FAQ = [
       },
       {
         q: "¿Qué significa «Ahorrás $X»?",
-        a: "Es la diferencia, producto por producto, entre lo que cuesta en promedio en los otros súper que lo tienen y el que te recomendamos. No incluye envíos ni descuentos bancarios, así que no es la resta de dos totales. En «Ver de dónde sale» está el detalle.",
+        a: "Suma dos cosas: lo que ahorrás en cada producto frente a lo que cuesta en promedio en los otros súper que lo tienen, y los descuentos bancarios de tus tarjetas. No resta los envíos. En «Ver de dónde sale» está el detalle, producto por producto.",
+      },
+      {
+        q: "¿Por qué el total no coincide con el subtotal estimado?",
+        a: "El subtotal estimado es la suma de los precios que ves, por unidad y sin envíos. Al optimizar, el total suma los envíos, puede mover algún producto para llegar al mínimo de compra de un súper, y aplica las promos por cantidad y tus descuentos bancarios. Por eso puede salir más alto o más bajo que el estimado.",
       },
       {
         q: "¿Qué supermercados y zonas cubre?",
-        a: "Coto, Día y Carrefour, con envío a domicilio en CABA y el Gran Buenos Aires. Si Coto no entrega en tu dirección, lo sacamos de la comparación y te avisamos.",
+        a: `${STORE_NAMES_LIST}, con envío a domicilio en CABA y el Gran Buenos Aires. Si un súper nos dice que no entrega en tu dirección, lo sacamos de la comparación.`,
       },
     ],
   },
@@ -41,11 +46,15 @@ const FAQ = [
     preguntas: [
       {
         q: "¿Cómo agrego productos?",
-        a: "Buscándolos en la barra de arriba, tocando una de las secciones de arriba (Almacén, Bebidas…), o repitiendo una compra anterior. En la página principal hay un video que muestra el recorrido.",
+        a: "Buscándolos en la barra de arriba, tocando una sección (Almacén, Bebidas…) de la fila de abajo del buscador, o repitiendo una compra anterior. En la página principal hay un video que muestra el recorrido.",
       },
       {
-        q: "¿Por qué no aparecen productos de Coto?",
-        a: "Porque Coto no entrega en la dirección que cargaste. Podés cambiarla desde «Envío a…», arriba de todo.",
+        q: "¿Cómo compro frutas, verduras y carne?",
+        a: "Los que se venden por peso van por kilo: cada unidad que agregás al carrito es 1 kg. Los que se venden por pieza (un mango, un atado de rúcula) van por unidad.",
+      },
+      {
+        q: "¿Por qué no aparecen productos de un súper?",
+        a: "Puede ser que ese súper no entregue en tu dirección (la cambiás desde «Envío a…», arriba de todo), que lo hayas desmarcado en «Supermercados», en el carrito, o simplemente que no venda ese producto.",
       },
     ],
   },
@@ -54,11 +63,19 @@ const FAQ = [
     preguntas: [
       {
         q: "¿Compro en SmartCart?",
-        a: "No. SmartCart no vende nada ni cobra. Al optimizar, el botón «Comprar en…» te lleva al sitio de cada súper: en Día y Carrefour con el carrito ya cargado, y en Coto con los productos abiertos para agregarlos. Pagás ahí, como siempre, y SmartCart nunca ve tus datos de pago.",
+        a: "No. SmartCart no vende nada ni cobra. Al optimizar, el botón «Comprar en…» te lleva al sitio de cada súper: en Día, Carrefour y Vea con el carrito ya cargado, y en Coto con una lista de los productos para agregarlos. Pagás ahí, como siempre, y SmartCart nunca ve tus datos de pago.",
       },
       {
         q: "¿Cómo uso mis descuentos bancarios?",
         a: "Marcá tus tarjetas y billeteras en «Medios de pago», en el carrito. SmartCart las tiene en cuenta para elegir el reparto; después tenés que pagar con esa tarjeta en el sitio del súper para que el descuento se aplique.",
+      },
+      {
+        q: "¿Conviene esperar a otro día para comprar?",
+        a: "A veces: los descuentos bancarios cambian según el día de la semana. En «Compro», en el carrito, elegí hasta cuándo podés esperar y SmartCart te dice qué día conviene comprar en cada súper.",
+      },
+      {
+        q: "¿Puedo comprar en menos supermercados?",
+        a: "Sí. En «Supermercados», en el carrito, podés desmarcar los que no quieras o elegir comprar en como máximo una cantidad. Después de optimizar también te mostramos cuánto más pagarías sacando un súper del reparto, para que decidas si te ahorra un envío que no vale la pena.",
       },
       {
         q: "¿Y las membresías (Club Día, Mi Carrefour…)?",
