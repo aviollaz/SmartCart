@@ -1,10 +1,13 @@
 import { formatPrice } from "../../utils/formatters";
 
 /**
- * El subtotal es una ESTIMACIÓN y el texto lo dice, porque el número que
- * importa lo calcula /optimize: acá se suman los precios que muestran las
- * líneas, sin envío. Es un piso (ver `CartProductsContext`): el total final
- * sale igual o algo mayor.
+ * El subtotal es una ESTIMACIÓN, porque el número que importa lo calcula
+ * /optimize: acá se suman los precios que muestran las líneas, sin envío. No es
+ * un piso ni un techo (ver `CartProductsContext`).
+ *
+ * Sólo la etiqueta, sin párrafo explicativo: los usuarios no leen, y un
+ * párrafo al lado le quitaba peso al botón de optimizar. "Estimado" alcanza; el
+ * porqué de la diferencia con el total está en la FAQ.
  *
  * Se muestra tanto en `CartPage` como en `CartDrawer` (ver
  * `CartProductsContext`): es exactamente el mismo número en los dos lugares,
@@ -15,12 +18,7 @@ export function EstimatedSubtotal({ subtotalEstimado, className = "" }) {
 
   return (
     <div className={`flex items-baseline justify-between border-t border-line pt-3 ${className}`}>
-      <div>
-        <p className="text-sm font-semibold text-ink">Subtotal estimado</p>
-        <p className="text-xs text-ink-muted">
-          La suma de los precios que ves, sin envío. El total final puede ser algo mayor; lo calcula “Optimizar compra”.
-        </p>
-      </div>
+      <p className="text-sm font-semibold text-ink">Subtotal estimado</p>
       <p className="font-display text-lg font-bold text-brand-violet-700">
         {formatPrice(subtotalEstimado)}
       </p>

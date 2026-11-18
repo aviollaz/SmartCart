@@ -350,11 +350,11 @@ Adds only operations concerns around `run_scrapers.py`. Details and commands in 
 
 **Cart:**
 - **Line prices** come from `POST /products/by-ids` in `CartProductsContext`, shared by `CartPage` and `CartDrawer` to avoid a double fetch. It sits between `ProfileProvider` and `HistoryProvider`. It fails open: names and quantities still draw.
-- **The estimated subtotal is a labelled floor** (sum of displayed prices, no shipping; `/optimize` may move lines to clear minimums). A ceiling read as a bug. It renders only when every line has a price. The header shows "~$X".
+- **The estimated subtotal is the sum of displayed prices** (q=1, no shipping, no bank discounts) and its label promises no direction: `/optimize` adds shipping and minimums but also quantity promos and bank discounts, so the total lands above or below. Adding anchor-store shipping was rejected (ignores minimums, drifts further with cards, needs client-side logic). A ceiling read as a bug. It renders only when every line has a price. The header shows "~$X". Label only, no explanatory paragraph (the FAQ has it).
 - **Coverage warning** (`useUnavailableCartItems`): reuses `/price-preview` only when `unavailableStores` is non-empty, never mutates the cart, and doesn't flag ids absent from the response (absent = out of stock everywhere).
 
 **Optimize results** (`components/optimize/`):
-- `SavingsPanel` shows the total; the saving only when `> 0`.
+- `SavingsPanel` shows the total; when the saving is `> 0`, a shelf-tag layout above it: the baseline struck through (`total_spent_net + saving`, same shipping) and a highlighted `%` badge, so the % checks on screen. Without the baseline users compared the % against the estimated subtotal. The saving in pesos and what it compares against live in "Ver de dónde sale": users don't read loose text.
 - `MoreOptions` is a closed `<details>` with signed effects: `StrategicSwapCard` (−$X), `FewerStoresCard` (+$X; choosing it sets `profile.maxStores` and re-optimizes) and `SuggestionsList` (`applySwaps` with quantity). The sign keeps "sacá Coto" and "comprá solo en Coto" from reading as contradictory.
 - `StoreBreakdownCard` per store. Coto's buy button is a checklist of links: a loop of `window.open` gets blocked from the second window. Coto's shipping reads "Envío (estimado)" on `source == "fallback"`.
 - `LogisticsNotice` renders only when Coto was excluded by coverage.

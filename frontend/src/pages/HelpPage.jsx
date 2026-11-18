@@ -28,8 +28,8 @@ const FAQ = [
         a: "Porque cada súper suma su propio envío y tiene un mínimo de compra. Si lo que ahorrás repartiendo no alcanza a cubrir un segundo envío, o no llegás al mínimo de otra cadena, lo más barato es comprar todo junto.",
       },
       {
-        q: "¿Qué significa «Ahorrás $X»?",
-        a: "Suma dos cosas: lo que ahorrás en cada producto frente a lo que cuesta en promedio en los otros súper que lo tienen, y los descuentos bancarios de tus tarjetas. No resta los envíos. En «Ver de dónde sale» está el detalle, producto por producto.",
+        q: "¿Qué es el precio tachado del resultado?",
+        a: "Es lo que pagarías comprando cada producto al precio promedio de los otros súper que lo tienen, sin tus descuentos bancarios, con los mismos envíos. El porcentaje es cuánto menos pagás con el reparto de SmartCart. En «Ver de dónde sale» está el ahorro en pesos y el detalle, producto por producto.",
       },
       {
         q: "¿Por qué el total no coincide con el subtotal estimado?",
