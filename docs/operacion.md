@@ -118,7 +118,7 @@ gcloud scheduler jobs create http smartcart-warm --location=us-east1 --schedule=
 ```
 
 **Nunca apuntarlo a un endpoint que consulte la base** (`/search`,
-`/category/…`, `/demo-cart`): `GET /` no la toca, así que Neon sigue
+`/category/…`): `GET /` no la toca, así que Neon sigue
 durmiendo. Despertarla cada 10 minutos gasta el mes de Neon en una semana. El
 cron de Actions no sirve para esto porque llega con 15-35 minutos de demora.
 

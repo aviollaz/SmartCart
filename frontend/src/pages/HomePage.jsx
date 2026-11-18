@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
-import { Link, useNavigate } from "react-router-dom";
-import { ArrowRight, Search, ShoppingCart, Sparkles, Tag, Wand2 } from "lucide-react";
-import { getDeals, getDemoCart } from "../api/products";
+import { Link } from "react-router-dom";
+import { ArrowRight, Tag } from "lucide-react";
+import { getDeals } from "../api/products";
 import { useShelves } from "../hooks/useShelves";
 import { useCart } from "../context/CartContext";
 import { useProfile } from "../context/ProfileContext";
@@ -15,72 +15,39 @@ import { PurchaseHistorySection } from "../components/history/PurchaseHistorySec
 // las flechas. El backend topea en DEALS_MAX_LIMIT (src/api.py).
 const DEALS_LIMIT = 50;
 
-// El recorrido en tres pasos, con el mínimo de palabras. La home tenía antes un
-// párrafo por paso y las 49 góndolas debajo, que ya están en el mega-menú: a
-// alguien que abre el link sin que nadie se lo explique, eso no le dice qué
-// hace la app. Esto sí, de un vistazo.
-const PASOS = [
-  { Icon: Search, titulo: "Buscá", texto: "lo que comprás siempre" },
-  { Icon: ShoppingCart, titulo: "Armá tu changuito", texto: "con las cantidades reales" },
-  { Icon: Sparkles, titulo: "Te decimos dónde", texto: "conviene comprar cada cosa" },
-];
+// "Coto, Día, Carrefour y Vea", de la misma lista que el resto de la app: el
+// texto fijo anterior se quedó sin Vea cuando se sumó.
+const NOMBRES_TIENDAS = STORES.map((store) => store.name)
+  .join(", ")
+  .replace(/, ([^,]*)$/, " y $1");
 
 export function HomePage() {
-  const { items, mergeItems } = useCart();
-  const navigate = useNavigate();
-  const [cargandoDemo, setCargandoDemo] = useState(false);
+  const { items } = useCart();
   const itemCount = Object.keys(items).length;
 
-  // El atajo del arranque en frío. Es `mergeItems` y no `restoreItems` por la
-  // misma razón que el "Repetir" del historial: la home puede visitarse con el
-  // carrito lleno, y un botón que borra lo que había sería una trampa.
-  async function probarCarritoDeEjemplo() {
-    setCargandoDemo(true);
-    try {
-      const demo = await getDemoCart();
-      if (!demo?.length) return;
-      mergeItems(
-        Object.fromEntries(demo.map((item) => [item.unified_id, { name: item.name, quantity: item.quantity }]))
-      );
-      navigate("/carrito");
-    } catch {
-      // Falla en silencio y el usuario sigue armando el carrito a mano: es un
-      // atajo, no un camino obligatorio.
-    } finally {
-      setCargandoDemo(false);
-    }
-  }
-
+  // Ya no hay botón de "carrito de ejemplo": era lo más llamativo de la home,
+  // los usuarios lo tocaban sin leer (varias veces, sumando cantidades) y
+  // después no sabían cómo vaciarlo. Para empezar está la barra de secciones
+  // del header; el video muestra el recorrido sin tocar el carrito de nadie.
   return (
     <div className="mx-auto w-full max-w-6xl px-4 py-10 sm:py-12">
       <section className="text-center">
         <h1 className="mb-3 font-display text-3xl font-bold text-brand-violet-700 sm:text-4xl">
           Tu changuito, al menor precio
         </h1>
-        <p className="mx-auto mb-8 max-w-3xl text-balance text-lg text-ink/80">
-          Comparamos Coto, Día y Carrefour y armamos tu lista de compras al mejor precio.
+        <p className="mx-auto max-w-3xl text-balance text-lg text-ink/80">
+          Comparamos {NOMBRES_TIENDAS} y armamos tu lista de compras al mejor precio.
         </p>
 
-        <div className="flex flex-wrap items-center justify-center gap-3">
-          <button
-            type="button"
-            onClick={probarCarritoDeEjemplo}
-            disabled={cargandoDemo}
-            className="flex items-center gap-2 rounded-full bg-brand-accent px-5 py-3 text-sm font-semibold text-white transition-colors hover:bg-brand-accent-dark disabled:opacity-60"
+        {itemCount > 0 && (
+          <Link
+            to="/carrito"
+            className="mx-auto mt-8 flex w-fit items-center gap-2 rounded-full border border-brand-violet-700 px-5 py-3 text-sm font-semibold text-brand-violet-700 hover:bg-brand-violet-100"
           >
-            <Wand2 size={18} aria-hidden="true" />
-            {cargandoDemo ? "Armando el carrito…" : "Probar con un carrito de ejemplo"}
-          </button>
-          {itemCount > 0 && (
-            <Link
-              to="/carrito"
-              className="flex items-center gap-2 rounded-full border border-brand-violet-700 px-5 py-3 text-sm font-semibold text-brand-violet-700 hover:bg-brand-violet-100"
-            >
-              Ir a mi carrito ({itemCount})
-              <ArrowRight size={16} aria-hidden="true" />
-            </Link>
-          )}
-        </div>
+            Ir a mi carrito ({itemCount})
+            <ArrowRight size={16} aria-hidden="true" />
+          </Link>
+        )}
       </section>
 
       <HowItWorks />
@@ -93,58 +60,28 @@ export function HomePage() {
   );
 }
 
+// El recorrido grabado en la app real: agregar productos → optimizar → dónde
+// comprar cada cosa. Mudo, en loop y sin controles, se ve como un GIF pero pesa
+// una fracción. Grabado aparte (frontend/public/como-funciona.mp4): si la UI
+// cambia mucho, hay que regrabarlo.
 function HowItWorks() {
   return (
     <section aria-label="Cómo funciona" className="mt-12">
-      <ol className="flex flex-col items-center gap-3 sm:flex-row sm:items-stretch sm:justify-center">
-        {PASOS.map(({ Icon, titulo, texto }, indice) => (
-          <li key={titulo} className="flex items-center">
-            <div className="flex h-full w-56 flex-col items-center rounded-xl border border-line bg-surface px-4 py-5 text-center">
-              <span className="mb-3 flex h-14 w-14 items-center justify-center rounded-full bg-brand-violet-100 text-brand-violet-700">
-                <Icon size={26} aria-hidden="true" />
-              </span>
-              <p className="font-display text-base font-bold text-ink">
-                <span className="text-brand-accent">{indice + 1}.</span> {titulo}
-              </p>
-              <p className="text-sm text-ink/75">{texto}</p>
-              {indice === PASOS.length - 1 && <SplitDiagram />}
-            </div>
-            {indice < PASOS.length - 1 && (
-              <ArrowRight
-                size={24}
-                aria-hidden="true"
-                className="ml-3 hidden shrink-0 text-brand-violet-500 sm:block"
-              />
-            )}
-          </li>
-        ))}
-      </ol>
+      <p className="mb-3 text-center font-display text-base font-bold text-ink">Así funciona</p>
+      <video
+        src="/como-funciona.mp4"
+        autoPlay
+        muted
+        loop
+        playsInline
+        className="mx-auto w-full max-w-3xl rounded-xl border border-line"
+      />
       <p className="mt-4 text-center text-sm">
         <Link to="/ayuda" className="font-semibold text-brand-violet-700 hover:underline">
           ¿Dudas? Mirá las preguntas frecuentes
         </Link>
       </p>
     </section>
-  );
-}
-
-// El paso 3 dibujado: un carrito que se reparte en las tres cadenas. Es lo
-// único de SmartCart que no hace ninguna otra app, así que es lo que tiene
-// que verse sin leer.
-function SplitDiagram() {
-  return (
-    <div className="mt-3 flex items-center gap-2" aria-hidden="true">
-      <ShoppingCart size={18} className="text-brand-violet-700" />
-      <ArrowRight size={14} className="text-ink-muted" />
-      <div className="flex flex-col gap-1">
-        {STORES.map((store) => (
-          <span key={store.id} className="flex items-center gap-1.5 text-xs font-semibold text-ink">
-            <span className={`h-2 w-2 rounded-full ${store.color}`} />
-            {store.name}
-          </span>
-        ))}
-      </div>
-    </div>
   );
 }
 

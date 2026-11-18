@@ -1,15 +1,13 @@
-import { useState } from "react";
 import { Link } from "react-router-dom";
-import { BadgePercent, CircleHelp, Menu, MapPin, ShoppingCart } from "lucide-react";
+import { BadgePercent, CircleHelp, MapPin, ShoppingCart } from "lucide-react";
 import { SearchBar } from "./SearchBar";
-import { MegaMenu } from "../megamenu/MegaMenu";
+import { SectionBar } from "../megamenu/SectionBar";
 import { useCart } from "../../context/CartContext";
 import { useProfile } from "../../context/ProfileContext";
 import { useCartProductsContext } from "../../context/CartProductsContext";
 import { formatPrice, formatShortAddress } from "../../utils/formatters";
 
 export function Header({ onOpenCart, onOpenLocation, onOpenMemberships }) {
-  const [isMegaMenuOpen, setMegaMenuOpen] = useState(false);
   const { itemCount } = useCart();
   const { subtotalEstimado } = useCartProductsContext();
   const { location, memberships } = useProfile();
@@ -67,16 +65,6 @@ export function Header({ onOpenCart, onOpenLocation, onOpenMemberships }) {
             SmartCart
           </Link>
 
-          <button
-            type="button"
-            onClick={() => setMegaMenuOpen(true)}
-            aria-label="Categorías"
-            className="flex shrink-0 items-center gap-1.5 rounded-md border border-line px-3 py-2 text-sm font-medium text-ink hover:bg-surface-muted"
-          >
-            <Menu size={18} aria-hidden="true" />
-            <span className="hidden sm:inline">Categorías</span>
-          </button>
-
           <SearchBar className="order-last w-full md:order-none md:mx-auto md:w-auto" />
 
           <button
@@ -100,7 +88,7 @@ export function Header({ onOpenCart, onOpenLocation, onOpenMemberships }) {
         </div>
       </div>
 
-      <MegaMenu open={isMegaMenuOpen} onClose={() => setMegaMenuOpen(false)} />
+      <SectionBar />
     </header>
   );
 }

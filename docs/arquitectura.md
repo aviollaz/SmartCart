@@ -194,7 +194,6 @@ FastAPI. Carga el modelo de embeddings una vez, al arrancar.
 | `GET /category/{slug}` | slug + página y filtros | los productos de la góndola; 404 si no existe |
 | `POST /products/by-ids` | hasta 100 `unified_id` | esos productos, en el mismo orden; un id ausente es un producto podado |
 | `GET /deals` | límite, membresías, sección | los mayores descuentos del día |
-| `GET /demo-cart` | — | un carrito de ejemplo con el catálogo del día |
 | `GET /logistics/{tienda}/coverage` | coordenadas | si esa tienda llega |
 | `POST /price-preview` | ítems + membresías | precio por tienda a esa cantidad |
 | `POST /optimize` | carrito, dirección, tarjetas, membresías, tiendas deshabilitadas, días para comprar, tope de tiendas | el reparto óptimo, o 400 con el motivo |

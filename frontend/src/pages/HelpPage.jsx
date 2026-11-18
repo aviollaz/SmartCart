@@ -41,7 +41,7 @@ const FAQ = [
     preguntas: [
       {
         q: "¿Cómo agrego productos?",
-        a: "Buscándolos en la barra de arriba, navegando las categorías, o repitiendo una compra anterior. Si querés ver cómo funciona sin armar nada, usá «Probar con un carrito de ejemplo» en la página principal.",
+        a: "Buscándolos en la barra de arriba, tocando una de las secciones de arriba (Almacén, Bebidas…), o repitiendo una compra anterior. En la página principal hay un video que muestra el recorrido.",
       },
       {
         q: "¿Por qué no aparecen productos de Coto?",

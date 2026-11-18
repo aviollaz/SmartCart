@@ -218,7 +218,6 @@ Loads the sentence-transformers model once in `lifespan` (`ml_models`).
   - It takes no dietary filters.
   - Order follows the request, deduped.
   - It **does not fail open to `[]`**: an empty answer would claim every usual product was delisted.
-- **`GET /demo-cart`**: picked by the backend from today's catalog, because fixed ids rot under the pruner. One product per shelf of `DEMO_CART_SHELVES`, `store_count >= 3`, **median**-priced (the most expensive gave a $384.000 liquor cabinet), quantity 2 so conditional promos fire. ~$90.000, above every minimum: a cheap cart would come back infeasible as the first screen. `[]` on an empty DB.
 - **`GET /logistics/{coto,dia,carrefour,vea}/coverage`**: thin wrappers for the address onboarding.
 
 **`POST /optimize`:** logistics → flatten (`flatten_cart_prices`: cheapest net cost per line per store at that quantity) → `optimize_cart` (CP-SAT: a bool per (product, store), an active var per store, min spend as a hard constraint, minimizing subtotal + delivery − capped bank discount) → enrichment. An infeasible cart is a 400 with a human `detail`.
@@ -361,8 +360,8 @@ Adds only operations concerns around `run_scrapers.py`. Details and commands in 
 - `LogisticsNotice` renders only when Coto was excluded by coverage.
 
 **Pages:**
-- **Mega-menu:** section → shelf from `GET /categories`; every click goes to `/categoria/:shelf`. `sectionIcons.js` maps section names exactly, with a fallback icon.
-- **Home:** demo-cart button (merges, never replaces); a three-step "how it works"; "Mejores descuentos de hoy" in a `ProductCarousel` with a section dropdown fed by `GET /categories`. With a filter chosen the section shows an empty message instead of hiding, or the dropdown would vanish.
+- **Mega-menu** (`SectionBar`, in the header on every page): a row of rectangular section buttons from `GET /categories`; hover (mouse) or tap (touch) drops `MegaMenuPanel` with that section's shelves; every click goes to `/categoria/:shelf`. It replaced a "Categorías" button + modal that users didn't find. `sectionIcons.js` maps section names exactly, with a fallback icon.
+- **Home:** no demo-cart button (users tapped it repeatedly without reading, then couldn't empty the cart; `/demo-cart` is gone); a muted looping recording of the real app (`frontend/public/como-funciona.mp4`, re-record when the UI changes a lot) as "how it works"; "Mejores descuentos de hoy" in a `ProductCarousel` with a section dropdown fed by `GET /categories`. With a filter chosen the section shows an empty message instead of hiding, or the dropdown would vanish.
 - **Product:** `ProductCard` and `ProductPage` share `useProductPricing`, so they never disagree. `ProductPage` uses `/products/by-ids` (absent = "ya no está en el catálogo"), and its description is attributed ("Según Día").
 - **FAQ** (`/ayuda`): **no numbers that live elsewhere** (minimums, shipping, percentages). The feedback block hides while `FEEDBACK_FORM_URL` is empty.
 - **Routes:** `/`, `/buscar?q=`, `/categoria/:shelf`, `/producto/:unifiedId`, `/ayuda`, `/carrito`.
