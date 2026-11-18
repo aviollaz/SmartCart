@@ -117,16 +117,58 @@ def test_una_tienda_sin_descuentos_hoy_no_aparece(tmp_path):
 def test_ordena_de_mayor_a_menor_descuento(tmp_path):
     """
     `optimize_cart` elige con `next(p for p in promos if p["card"] in user_cards)`:
-    se queda con el PRIMERO que matchea, no con el mejor. Con datos reales hay
-    tres promos de Naranja X en Coto (30/25/20), así que el orden ES la selección.
+    se queda con el PRIMERO que matchea, no con el mejor. Con varias tarjetas
+    tildadas, el orden ES la selección.
     """
     ruta = _escribir(tmp_path, {"coto_online": [
-        _registro(entidad="naranja_x", pct=20, dias=("martes",)),
-        _registro(entidad="naranja_x", pct=30, dias=("martes",)),
-        _registro(entidad="naranja_x", pct=25, dias=("martes",)),
+        _registro(entidad="credicoop", pct=20, dias=("martes",)),
+        _registro(entidad="supervielle", pct=30, dias=("martes",)),
+        _registro(entidad="comafi", pct=25, dias=("martes",)),
     ]})
     pcts = [p["discount_pct"] for p in load_bank_promos(today=MARTES, path=ruta)["coto_online"]]
     assert pcts == [30, 25, 20]
+
+
+# --------------------------------------------------- planes de una misma entidad
+#
+# Naranja X publica un descuento por plan (20% tope $3.000, 25% tope $9.500, 30%
+# tope $12.000) y el usuario sólo tilda "Naranja X", sin decir su plan. Tomar el
+# mayor le prometía 30% a quien tiene el plan inicial: un ahorro que en la caja
+# no aparece. Se cotiza el plan más bajo, que todos los planes cubren.
+
+def test_entidad_con_varios_planes_el_mismo_dia_cotiza_el_menor(tmp_path):
+    ruta = _escribir(tmp_path, {"coto_online": [
+        _registro(entidad="naranja_x", pct=30, dias=("martes",), tope=12000),
+        _registro(entidad="naranja_x", pct=20, dias=("martes",), tope=3000),
+        _registro(entidad="naranja_x", pct=25, dias=("martes",), tope=9500),
+    ]})
+
+    promos = load_bank_promos(today=MARTES, path=ruta)["coto_online"]
+
+    assert [(p["card"], p["discount_pct"], p["cap"]) for p in promos] == [("naranja_x", 20, 3000)]
+
+
+def test_a_igual_porcentaje_cotiza_el_tope_mas_bajo(tmp_path):
+    ruta = _escribir(tmp_path, {"coto_online": [
+        _registro(entidad="icbc", pct=20, dias=("lunes",), tope=None),
+        _registro(entidad="icbc", pct=20, dias=("lunes",), tope=15000),
+    ]})
+
+    promos = load_bank_promos(today=LUNES, path=ruta)["coto_online"]
+
+    assert [p["cap"] for p in promos] == [15000]
+
+
+def test_los_planes_de_otra_tienda_no_se_mezclan(tmp_path):
+    ruta = _escribir(tmp_path, {
+        "coto_online": [_registro(entidad="naranja_x", pct=30, dias=("martes",))],
+        "dia_online": [_registro(entidad="naranja_x", pct=20, dias=("martes",))],
+    })
+
+    promos = load_bank_promos(today=MARTES, path=ruta)
+
+    assert promos["coto_online"][0]["discount_pct"] == 30
+    assert promos["dia_online"][0]["discount_pct"] == 20
 
 
 def test_discount_pct_es_entero(tmp_path):

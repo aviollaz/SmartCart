@@ -67,7 +67,9 @@ def load_bank_promos(today: date | None = None, path: str = BANK_PROMOS_PATH) ->
     vigentes = 0
 
     for store_id, registros in (documento.get("promos") or {}).items():
-        del_dia = [r for r in registros if dia_de_hoy in (r.get("dias_validos") or ())]
+        del_dia = _plan_mas_bajo(
+            [r for r in registros if dia_de_hoy in (r.get("dias_validos") or ())]
+        )
         if not del_dia:
             continue
 
@@ -94,6 +96,28 @@ def load_bank_promos(today: date | None = None, path: str = BANK_PROMOS_PATH) ->
 
     logger.debug("bank_promos: %d descuentos vigentes el %s", vigentes, dia_de_hoy)
     return promos
+
+
+def _plan_mas_bajo(registros: list[dict]) -> list[dict]:
+    """
+    Una promo por entidad: la de menor porcentaje (y, a igual porcentaje, menor
+    tope).
+
+    Una entidad con varias promos el mismo día en la misma tienda son planes o
+    segmentos (Naranja X 20/25/30% según el plan, Patagonia 15 a 35%, ICBC 30 o
+    20%), y el perfil sólo dice "tengo Naranja X". Cotizar el mayor le prometía
+    30% a quien tiene el plan de 20%: un ahorro que en la caja no aparece. El
+    más bajo lo cubren todos los planes; quien tiene uno mejor ahorra de más.
+    """
+    elegidos: dict[str, dict] = {}
+    for registro in registros:
+        clave = (registro.get("porcentaje_descuento") or 0,
+                 registro.get("tope_reintegro") or SIN_TOPE_CAP)
+        actual = elegidos.get(registro["entidad"])
+        if actual is None or clave < (actual.get("porcentaje_descuento") or 0,
+                                      actual.get("tope_reintegro") or SIN_TOPE_CAP):
+            elegidos[registro["entidad"]] = registro
+    return list(elegidos.values())
 
 
 def _read(path: str) -> dict | None:
