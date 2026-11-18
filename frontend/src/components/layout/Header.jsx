@@ -71,7 +71,7 @@ export function Header({ onOpenCart, onOpenLocation, onOpenMemberships }) {
             type="button"
             onClick={onOpenCart}
             aria-label="Carrito"
-            className="relative ml-auto flex shrink-0 items-center gap-2 rounded-full border border-brand-violet-700 px-3 py-2 text-sm font-medium text-brand-violet-700 hover:bg-brand-violet-100 sm:px-4 md:ml-0"
+            className="relative ml-auto flex shrink-0 items-center gap-2 rounded-md bg-brand-violet-700 px-3 py-2 text-sm font-semibold text-white hover:bg-brand-violet-900 sm:px-4 md:ml-0"
           >
             <ShoppingCart size={18} aria-hidden="true" />
             {/* El mismo subtotal estimado del carrito (CartProductsContext),

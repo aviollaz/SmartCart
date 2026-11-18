@@ -1,9 +1,8 @@
 import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
-import { ArrowRight, Tag } from "lucide-react";
+import { Tag } from "lucide-react";
 import { getDeals } from "../api/products";
 import { useShelves } from "../hooks/useShelves";
-import { useCart } from "../context/CartContext";
 import { useProfile } from "../context/ProfileContext";
 import { STORE_NAMES_LIST } from "../utils/formatters";
 import { stripUnavailableStores } from "../utils/storeAvailability";
@@ -16,13 +15,12 @@ import { PurchaseHistorySection } from "../components/history/PurchaseHistorySec
 const DEALS_LIMIT = 50;
 
 export function HomePage() {
-  const { items } = useCart();
-  const itemCount = Object.keys(items).length;
-
   // Ya no hay botón de "carrito de ejemplo": era lo más llamativo de la home,
   // los usuarios lo tocaban sin leer (varias veces, sumando cantidades) y
   // después no sabían cómo vaciarlo. Para empezar está la barra de secciones
   // del header; el video muestra el recorrido sin tocar el carrito de nadie.
+  // Tampoco hay "Ir a mi carrito": duplicaba el botón del header, que es el
+  // que se destaca.
   return (
     <div className="mx-auto w-full max-w-6xl px-4 py-10 sm:py-12">
       <section className="text-center">
@@ -32,16 +30,6 @@ export function HomePage() {
         <p className="mx-auto max-w-3xl text-balance text-lg text-ink/80">
           Comparamos {STORE_NAMES_LIST} y armamos tu lista de compras al mejor precio.
         </p>
-
-        {itemCount > 0 && (
-          <Link
-            to="/carrito"
-            className="mx-auto mt-8 flex w-fit items-center gap-2 rounded-full border border-brand-violet-700 px-5 py-3 text-sm font-semibold text-brand-violet-700 hover:bg-brand-violet-100"
-          >
-            Ir a mi carrito ({itemCount})
-            <ArrowRight size={16} aria-hidden="true" />
-          </Link>
-        )}
       </section>
 
       <HowItWorks />
