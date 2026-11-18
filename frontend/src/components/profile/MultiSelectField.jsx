@@ -1,3 +1,8 @@
+// Grilla de casillas en dos columnas, como la lista de «Supermercados» del
+// mismo panel. Antes eran pills con flex-wrap: el ancho de cada nombre decidía
+// cuántas entraban por fila (3 en unas, 4 en otras) y la lista no se podía
+// recorrer de un vistazo.
+//
 // `options` son `{value, label}`: el `value` es lo que viaja a /optimize y lo
 // que el optimizador compara por igualdad exacta contra los slugs de
 // src/promotions/banks.py; el `label` es lo único que se dibuja.
@@ -10,25 +15,20 @@ export function MultiSelectField({ label, options, selected, onChange }) {
   return (
     <fieldset>
       <legend className="mb-2 text-sm font-semibold text-ink">{label}</legend>
-      <div className="flex flex-wrap gap-2">
-        {options.map((option) => {
-          const isSelected = selected.includes(option.value);
-          return (
-            <button
-              key={option.value}
-              type="button"
-              onClick={() => toggle(option.value)}
-              aria-pressed={isSelected}
-              className={`rounded-full border px-3 py-1 text-xs font-medium transition-colors ${
-                isSelected
-                  ? "border-brand-violet-700 bg-brand-violet-700 text-white"
-                  : "border-line bg-surface text-ink hover:bg-surface-muted"
-              }`}
-            >
+      <div className="grid grid-cols-2 gap-x-3 gap-y-1.5">
+        {options.map((option) => (
+          <label key={option.value} className="flex min-w-0 items-center gap-2 text-sm text-ink">
+            <input
+              type="checkbox"
+              checked={selected.includes(option.value)}
+              onChange={() => toggle(option.value)}
+              className="shrink-0 accent-brand-accent"
+            />
+            <span className="truncate" title={option.label}>
               {option.label}
-            </button>
-          );
-        })}
+            </span>
+          </label>
+        ))}
       </div>
     </fieldset>
   );
