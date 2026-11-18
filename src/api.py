@@ -8,6 +8,7 @@ from fastapi import FastAPI, Depends, Query, HTTPException, BackgroundTasks
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field, field_validator
+from concurrent.futures import ThreadPoolExecutor
 import psycopg
 from sentence_transformers import SentenceTransformer
 from src.bank_promos import load_bank_promos
@@ -1052,13 +1053,25 @@ def _resolve_logistics_stage(request):
     excluded_stores = []
     logistics = {}
 
-    for key, store_id, resolve in (
+    tiendas = (
         ("coto", "coto_online", resolve_coto_logistics),
         ("dia", "dia_online", resolve_dia_logistics),
         ("carrefour", "carrefour_online", resolve_carrefour_logistics),
         ("vea", "vea_online", resolve_vea_logistics),
-    ):
-        info = resolve(request.lat, request.lng, fallback_delivery_cost=delivery_costs.get(store_id))
+    )
+
+    def resolve(tienda):
+        _, store_id, resolve_logistics = tienda
+        return resolve_logistics(request.lat, request.lng, fallback_delivery_cost=delivery_costs.get(store_id))
+
+    # Las cuatro consultas son HTTP a sitios distintos: en paralelo la etapa
+    # tarda lo que la tienda más lenta y no la suma. `map` devuelve en el orden
+    # de `tiendas`, no en el de llegada, así que `excluded_stores` sale igual
+    # que antes.
+    with ThreadPoolExecutor(max_workers=len(tiendas)) as ex:
+        resultados = list(ex.map(resolve, tiendas))
+
+    for (key, store_id, _), info in zip(tiendas, resultados):
         logistics[key] = info
 
         if not info["covered"]:
@@ -1212,7 +1225,8 @@ def _compute_fewer_stores_options(result: dict, request, cart_data: list, flat_p
 
 def _enrich_successful_result(result: dict, request, cart_data: list,
                               delivery_costs: dict, excluded_stores: list,
-                              bank_promos: dict | None = None) -> None:
+                              bank_promos: dict | None = None,
+                              flat_prices: dict | None = None) -> None:
     """
     Cuelga del resultado óptimo todo lo que es explicación y no cálculo: cuánto
     se ahorró por elegir bien la tienda, qué alternativas hay, si conviene
@@ -1224,7 +1238,8 @@ def _enrich_successful_result(result: dict, request, cart_data: list,
     Muta `result` in-place.
     """
     db = SmartCartDB()
-    flat_prices = flatten_cart_prices(cart_data, request.user_memberships)
+    if flat_prices is None:
+        flat_prices = flatten_cart_prices(cart_data, request.user_memberships)
 
     result["price_savings"] = _optional_feature(
         "el ahorro contra el peor precio", None,
@@ -1249,6 +1264,7 @@ def _enrich_successful_result(result: dict, request, cart_data: list,
                 cart_data,
                 target_stores=[s for s in DEFAULT_MIN_SPEND_LIMITS if s not in excluded_stores],
                 user_memberships=request.user_memberships,
+                cart_prices=flat_prices,
             )
 
             result["strategic_swaps"] = _optional_feature(
@@ -1297,7 +1313,8 @@ def _today_ar() -> date:
 
 
 def _optimize_purchase_window(request, cart_data: list, delivery_costs: dict,
-                              excluded_stores: list, user_excluded: list) -> tuple[dict, dict]:
+                              excluded_stores: list, user_excluded: list,
+                              flat_prices: dict | None = None) -> tuple[dict, dict]:
     """
     Optimiza el carrito dejando que cada tienda se compre en su mejor día del
     rango. Devuelve (resultado, descuentos con que se resolvió).
@@ -1314,7 +1331,8 @@ def _optimize_purchase_window(request, cart_data: list, delivery_costs: dict,
     se mide sobre el subtotal, antes del descuento— y se devuelve sin más.
     """
     today = _today_ar()
-    flat_prices = flatten_cart_prices(cart_data, request.user_memberships)
+    if flat_prices is None:
+        flat_prices = flatten_cart_prices(cart_data, request.user_memberships)
 
     def run(promos):
         return optimize_cart(
@@ -1386,7 +1404,7 @@ def _quote_dia_split(request, sucursal: str, products: list) -> float | None:
 
 def _requote_dia_shipping(request, cart_data: list, delivery_costs: dict, excluded_stores: list,
                           user_excluded: list, logistics: dict, result: dict,
-                          bank_promos: dict) -> tuple[dict, dict]:
+                          bank_promos: dict, flat_prices: dict | None = None) -> tuple[dict, dict]:
     """
     Cotiza el envío de Día sobre el carrito que el solver le asignó y, si sale
     más caro que el usado, vuelve a optimizar con ese costo (issue #15).
@@ -1423,7 +1441,7 @@ def _requote_dia_shipping(request, cart_data: list, delivery_costs: dict, exclud
         delivery_costs["dia_online"] = quote
         dia["delivery_cost"] = quote
         result, bank_promos = _optimize_purchase_window(
-            request, cart_data, delivery_costs, excluded_stores, user_excluded,
+            request, cart_data, delivery_costs, excluded_stores, user_excluded, flat_prices,
         )
     return result, bank_promos
 
@@ -1466,7 +1484,13 @@ def optimize_shopping_cart(request: OptimizationRequest, background_tasks: Backg
     try:
         cart_data = [item.model_dump() for item in request.cart]
 
-        delivery_costs, coverage_excluded, logistics = _resolve_logistics_stage(request)
+        # Los precios del carrito no dependen de la logística: se piden a la base
+        # en otro hilo mientras se consulta a los supermercados, así la consulta
+        # (y el despertar de Neon, si dormía) queda tapada por la tienda más lenta.
+        with ThreadPoolExecutor(max_workers=1) as ex:
+            precios = ex.submit(flatten_cart_prices, cart_data, request.user_memberships)
+            delivery_costs, coverage_excluded, logistics = _resolve_logistics_stage(request)
+            flat_prices = precios.result()
 
         # El solver, el ahorro y el cierre de tienda ven las dos exclusiones
         # juntas: para ellos una tienda que no llega y una que el usuario sacó son
@@ -1476,11 +1500,11 @@ def optimize_shopping_cart(request: OptimizationRequest, background_tasks: Backg
         excluded_stores = list(dict.fromkeys(coverage_excluded + user_excluded))
 
         result, bank_promos = _optimize_purchase_window(
-            request, cart_data, delivery_costs, excluded_stores, user_excluded,
+            request, cart_data, delivery_costs, excluded_stores, user_excluded, flat_prices,
         )
         result, bank_promos = _requote_dia_shipping(
             request, cart_data, delivery_costs, excluded_stores, user_excluded,
-            logistics, result, bank_promos,
+            logistics, result, bank_promos, flat_prices,
         )
         # `excluded_stores` conserva su semántica de siempre —sólo cobertura—
         # porque la leen LogisticsNotice ("Coto no llega a tu dirección") y el
@@ -1500,6 +1524,7 @@ def optimize_shopping_cart(request: OptimizationRequest, background_tasks: Backg
                 "el enriquecimiento del resultado", None,
                 _enrich_successful_result,
                 result, request, cart_data, delivery_costs, excluded_stores, bank_promos,
+                flat_prices,
             )
             _ensure_optional_keys(result)
 

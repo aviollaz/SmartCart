@@ -10,6 +10,7 @@ No tocan la base ni el modelo: el cursor es un doble y la logística de Coto se
 monkeypatchea.
 """
 import pytest
+import time  # agregalo arriba, junto a "import pytest"
 
 from src import api
 
@@ -502,3 +503,66 @@ def test_requote_ignora_un_split_sin_dia(monkeypatch):
     logistics = {"dia": {"source": "live", "sucursal": "s", "delivery_cost": 4999.0}}
     result, _ = api._requote_dia_shipping(request, [], {DIA: 4999.0}, [], [], logistics, sin_dia, {})
     assert result is sin_dia
+
+
+def _tienda_lenta(segundos, cubre=True):
+    """Arma un resolve_*_logistics falso que tarda `segundos` en contestar."""
+    def resolve(lat, lng, fallback_delivery_cost):
+        time.sleep(segundos)
+        return {"covered": cubre, "delivery_cost": None if not cubre else fallback_delivery_cost}
+    return resolve
+
+
+def test_la_logistica_tarda_lo_que_la_tienda_mas_lenta(monkeypatch):
+    # preparar: cuatro tiendas que tardan medio segundo cada una
+    for nombre in ("resolve_coto_logistics", "resolve_dia_logistics",
+                   "resolve_carrefour_logistics", "resolve_vea_logistics"):
+        monkeypatch.setattr(api, nombre, _tienda_lenta(0.5))
+
+    # ejecutar
+    inicio = time.perf_counter()
+    api._resolve_logistics_stage(_Req(None, -34.6, -58.4))
+    duracion = time.perf_counter() - inicio
+
+    # verificar: en serie serían 2 s; en paralelo, ~0,5 s
+    assert duracion < 1.0
+
+
+def test_la_logistica_excluye_en_el_orden_de_siempre(monkeypatch):
+    # preparar: Coto y Vea no llegan, y Coto contesta DESPUÉS que Vea
+    monkeypatch.setattr(api, "resolve_coto_logistics", _tienda_lenta(0.3, cubre=False))
+    monkeypatch.setattr(api, "resolve_dia_logistics", _tienda_lenta(0))
+    monkeypatch.setattr(api, "resolve_carrefour_logistics", _tienda_lenta(0))
+    monkeypatch.setattr(api, "resolve_vea_logistics", _tienda_lenta(0, cubre=False))
+
+    # ejecutar
+    _, excluded, _ = api._resolve_logistics_stage(_Req(None, -34.6, -58.4))
+
+    # verificar: el orden es el de la lista de tiendas, no el de quién contestó primero
+    assert excluded == [COTO, "vea_online"]
+
+def test_los_precios_del_carrito_se_calculan_mientras_se_resuelve_la_logistica(monkeypatch):
+    from fastapi import BackgroundTasks
+
+    # preparar: la logística tarda medio segundo y los precios otro medio
+    for nombre in ("resolve_coto_logistics", "resolve_dia_logistics",
+                   "resolve_carrefour_logistics", "resolve_vea_logistics"):
+        monkeypatch.setattr(api, nombre, _tienda_lenta(0.5))
+
+    def precios_lentos(*a, **k):
+        time.sleep(0.5)
+        return {}
+
+    monkeypatch.setattr(api, "flatten_cart_prices", precios_lentos)
+    monkeypatch.setattr(api, "optimize_cart",
+                        lambda **k: {"status": "infeasible", "message": "x", "excluded_stores": []})
+    req = api.OptimizationRequest(cart=[api.CartItem(unified_id="prod_a", quantity=1)],
+                                  lat=-34.6, lng=-58.4)
+
+    # ejecutar
+    inicio = time.perf_counter()
+    api.optimize_shopping_cart(req, BackgroundTasks())
+    duracion = time.perf_counter() - inicio
+
+    # verificar: en fila sería 1 s; en paralelo, ~0,5 s
+    assert duracion < 0.8

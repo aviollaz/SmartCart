@@ -11,6 +11,8 @@ prorrateaban el precio por el peso del nombre. Sobre el catálogo real eso emit�
 36 sugerencias que invitaban a cambiar un pack de seis por una unidad suelta
 anunciando hasta un 83% de ahorro.
 """
+import time
+
 import pytest
 
 from src.substitutions import (
@@ -49,9 +51,13 @@ class FakeCursor:
     def execute(self, sql, params):
         self.queries.append(sql)
         if "JOIN store_products" in sql:
-            anchor_uid = params[2]
-            limit = params[4]
-            self._result = list(self.neighbors_by_uid.get(anchor_uid, []))[:limit]
+            # Una sola query para todas las anclas: (tiendas, limit, anclas).
+            _, limit, anchor_uids = params
+            self._result = [
+                {**row, "anchor_id": uid}
+                for uid in anchor_uids
+                for row in self.neighbors_by_uid.get(uid, [])[:limit]
+            ]
         else:
             self._result = [self.products[uid] for uid in params[0] if uid in self.products]
 
@@ -160,7 +166,7 @@ def test_pack_incompatible_se_descarta():
     suelto = _row("prod_suelto", "Alfajor Milka Simple Mousse 42 Gr.", 42.0, "g")
 
     cur = FakeCursor({}, {"prod_display": [suelto]})
-    assert comparable_candidates(cur, ancla, STORES) == []
+    assert comparable_candidates(cur, {ancla["id"]: ancla}, STORES) == {}
 
 
 def test_pack_igual_se_acepta():
@@ -168,7 +174,7 @@ def test_pack_igual_se_acepta():
     otro = _row("prod_b", "Alfajor Guaymallen x6 250 g", 250.0, "g")
 
     cur = FakeCursor({}, {"prod_a": [otro]})
-    [cand] = comparable_candidates(cur, ancla, STORES)
+    [cand] = comparable_candidates(cur, {ancla["id"]: ancla}, STORES)[ancla["id"]]
     assert cand["uid"] == "prod_b"
 
 
@@ -177,7 +183,7 @@ def test_tamano_fuera_de_banda_se_descarta():
     gigante = _row("prod_b", "Leche La Serenísima 3 Lt", 3000.0, "ml")
 
     cur = FakeCursor({}, {"prod_a": [gigante]})
-    assert comparable_candidates(cur, ancla, STORES) == []
+    assert comparable_candidates(cur, {ancla["id"]: ancla}, STORES) == {}
 
 
 def test_candidato_ya_en_el_carrito_se_descarta():
@@ -189,7 +195,7 @@ def test_candidato_ya_en_el_carrito_se_descarta():
     vecino = _row("prod_b", "Leche Descremada 1 Lt", 1000.0, "ml")
 
     cur = FakeCursor({}, {"prod_a": [vecino]})
-    assert comparable_candidates(cur, ancla, STORES, exclude_uids={"prod_b"}) == []
+    assert comparable_candidates(cur, {ancla["id"]: ancla}, STORES, exclude_uids={"prod_b"}) == {}
 
 
 def test_la_query_de_vecinos_filtra_por_stock_y_tienda():
@@ -200,7 +206,7 @@ def test_la_query_de_vecinos_filtra_por_stock_y_tienda():
     """
     ancla = _row("prod_a", "Leche Entera 1 Lt", 1000.0, "ml")
     cur = FakeCursor({}, {"prod_a": []})
-    comparable_candidates(cur, ancla, STORES)
+    comparable_candidates(cur, {ancla["id"]: ancla}, STORES)
 
     [sql] = cur.queries
     assert "sp.in_stock = TRUE" in sql
@@ -388,3 +394,29 @@ def test_producto_sin_embedding_se_saltea():
 
     cur = FakeCursor({"prod_a": sin_emb}, {})
     assert build_semantic_suggestions(cur, _cart(("prod_a", 1)), target_stores=STORES) == []
+
+
+def test_los_precios_de_cada_cantidad_se_piden_a_la_vez():
+    # preparar: dos productos cuyas alternativas se cotizan a cantidades distintas
+    # (1 x 950 ml -> 1 x 1 L, y 3 x 1 L -> 2 x 1,5 L), así que hay dos consultas de precios
+    aceite = _row("prod_a", "Aceite Girasol Marca A 950 Ml", 950.0, "ml")
+    aceite_barato = _row("prod_b", "Aceite Girasol Marca B 1 Lt", 1000.0, "ml")
+    gaseosa = _row("prod_c", "Gaseosa Cola 1 Lt", 1000.0, "ml")
+    gaseosa_grande = _row("prod_d", "Gaseosa Cola 1.5 Lt", 1500.0, "ml")
+    cur = FakeCursor({"prod_a": aceite, "prod_c": gaseosa},
+                     {"prod_a": [aceite_barato], "prod_c": [gaseosa_grande]})
+    precios = _flatten_from({"prod_a": 900.0, "prod_b": 500.0, "prod_c": 2000.0, "prod_d": 1000.0})
+    carrito = _cart(("prod_a", 1), ("prod_c", 3))
+
+    def precios_lentos(items, memberships=None):
+        time.sleep(0.3)
+        return precios(items, memberships)
+
+    # ejecutar
+    inicio = time.perf_counter()
+    build_semantic_suggestions(cur, carrito, target_stores=STORES, flatten=precios_lentos,
+                               cart_prices=precios(carrito))
+    duracion = time.perf_counter() - inicio
+
+    # verificar: en fila serían 0,6 s; a la vez, ~0,3 s
+    assert duracion < 0.5

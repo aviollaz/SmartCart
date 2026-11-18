@@ -49,8 +49,13 @@ class FakeCursor:
         self.queries.append(sql)
 
         if "JOIN store_products" in sql:
-            anchor_uid = params[2]
-            self._result = list(self.neighbors_by_uid.get(anchor_uid, []))
+            # Una sola query para todas las anclas: (tiendas, limit, anclas).
+            _, _, anchor_uids = params
+            self._result = [
+                {**row, "anchor_id": uid}
+                for uid in anchor_uids
+                for row in self.neighbors_by_uid.get(uid, [])
+            ]
         else:
             self._result = [self.products[uid] for uid in params[0] if uid in self.products]
 

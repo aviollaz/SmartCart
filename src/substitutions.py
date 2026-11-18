@@ -30,6 +30,7 @@ substitutions -> {flattener, size_parser}, y tanto strategic_swaps como api
 importan de acá.
 """
 import logging
+from concurrent.futures import ThreadPoolExecutor
 
 from src.flattener import flatten_cart_prices
 from src.size_parser import extract_pack_count
@@ -183,13 +184,21 @@ def fetch_product_rows(cur, uids) -> dict:
     return {row["id"]: row for row in cur.fetchall()}
 
 
-def fetch_candidates(cur, anchor_row, target_stores, limit: int = CANDIDATES_PER_ANCHOR):
+def fetch_candidates(cur, anchor_rows: dict, target_stores,
+                     limit: int = CANDIDATES_PER_ANCHOR) -> dict:
     """
-    Vecinos semánticos del producto, en la MISMA góndola y con stock en alguna de
-    `target_stores`.
+    Vecinos semánticos de cada producto de `anchor_rows`, en su MISMA góndola y
+    con stock en alguna de `target_stores`: `{uid ancla: [filas]}`, cada lista
+    ordenada por distancia y cortada en `limit`.
 
-    Lee el `name_embedding` ya guardado y lo manda como parámetro: no toca el
-    SentenceTransformer, así que esto no carga ni usa el modelo.
+    Una sola query para todas las anclas (`CROSS JOIN LATERAL`): antes era una
+    por ancla, y con Neon a ~100 ms por viaje un carrito de 12 productos pagaba
+    12 viajes (medido: 0,6 s contra 0,13 s, mismos candidatos). La LATERAL corre
+    la misma subconsulta de siempre una vez por ancla, así que el LIMIT sigue
+    siendo por producto y no sobre el total.
+
+    Usa el `name_embedding` ya guardado: no toca el SentenceTransformer, así que
+    esto no carga ni usa el modelo.
 
     La góndola se compara por igualdad sobre `unified_products.shelf`. Antes esto
     era un solapamiento (`&&`) sobre los tags de taxonomía con fallback a la
@@ -212,68 +221,78 @@ def fetch_candidates(cur, anchor_row, target_stores, limit: int = CANDIDATES_PER
     El DISTINCT ON evita que un producto vendido por dos tiendas ocupe dos
     lugares por el mismo motivo.
     """
-    shelf = anchor_row.get("shelf")
-    if not shelf:
-        return []
+    anchors = [uid for uid, row in anchor_rows.items()
+               if row.get("shelf") and row.get("name_embedding")]
+    if not anchors:
+        return {}
 
     cur.execute(
         """
-        SELECT * FROM (
-            SELECT DISTINCT ON (u.id)
-                   u.id, u.name, u.total_volume_weight, u.unit_type,
-                   u.name_embedding <=> %s AS distance
-            FROM unified_products u
-            JOIN store_products sp ON u.id = sp.unified_product_id
-            WHERE sp.store_id = ANY(%s)
-              AND sp.in_stock = TRUE
-              AND u.name_embedding IS NOT NULL
-              AND u.id != %s
-              AND u.shelf = %s
-            ORDER BY u.id, distance ASC
-        ) AS vecinos
-        ORDER BY distance ASC
-        LIMIT %s
+        SELECT a.id AS anchor_id, v.*
+        FROM unified_products a
+        CROSS JOIN LATERAL (
+            SELECT * FROM (
+                SELECT DISTINCT ON (u.id)
+                       u.id, u.name, u.total_volume_weight, u.unit_type,
+                       u.name_embedding <=> a.name_embedding AS distance
+                FROM unified_products u
+                JOIN store_products sp ON u.id = sp.unified_product_id
+                WHERE sp.store_id = ANY(%s)
+                  AND sp.in_stock = TRUE
+                  AND u.name_embedding IS NOT NULL
+                  AND u.id != a.id
+                  AND u.shelf = a.shelf
+                ORDER BY u.id, distance ASC
+            ) AS vecinos
+            ORDER BY distance ASC
+            LIMIT %s
+        ) AS v
+        WHERE a.id = ANY(%s)
+        ORDER BY a.id, v.distance ASC
         """,
-        (
-            anchor_row["name_embedding"],
-            list(target_stores),
-            anchor_row["id"],
-            shelf,
-            limit,
-        ),
+        (list(target_stores), limit, anchors),
     )
-    return cur.fetchall()
+    by_anchor = {}
+    for row in cur.fetchall():
+        by_anchor.setdefault(row["anchor_id"], []).append(row)
+    return by_anchor
 
 
-def comparable_candidates(cur, anchor_row, target_stores, *, exclude_uids=(),
-                          limit: int = CANDIDATES_PER_ANCHOR) -> list:
+def comparable_candidates(cur, anchor_rows: dict, target_stores, *, exclude_uids=(),
+                          limit: int = CANDIDATES_PER_ANCHOR) -> dict:
     """
-    Los vecinos de `anchor_row` que además son sustituciones honestas: misma
+    Los vecinos de cada ancla que además son sustituciones honestas: misma
     góndola (vía la query), mismo formato de pack, unidad compatible y tamaño
     dentro de la banda.
 
-    Devuelve dicts `{uid, name, weight, unit}`.
+    Devuelve `{uid ancla: [{uid, name, weight, unit}]}`, sólo con las anclas que
+    tienen al menos uno, en el orden de `anchor_rows`.
     """
-    anchor_size = weight_of(anchor_row)
     excluded = set(exclude_uids)
-    viables = []
+    neighbors = fetch_candidates(cur, anchor_rows, target_stores, limit=limit)
+    by_anchor = {}
 
-    for cand in fetch_candidates(cur, anchor_row, target_stores, limit=limit):
-        if cand["id"] in excluded:
-            continue
-        if not same_pack_format(anchor_row["name"], cand["name"]):
-            continue
-        cand_size = weight_of(cand)
-        if not is_comparable(anchor_size, cand_size):
-            continue
-        viables.append({
-            "uid": cand["id"],
-            "name": cand["name"],
-            "weight": cand_size[0],
-            "unit": cand_size[1],
-        })
+    for uid, anchor_row in anchor_rows.items():
+        anchor_size = weight_of(anchor_row)
+        viables = []
+        for cand in neighbors.get(uid, []):
+            if cand["id"] in excluded:
+                continue
+            if not same_pack_format(anchor_row["name"], cand["name"]):
+                continue
+            cand_size = weight_of(cand)
+            if not is_comparable(anchor_size, cand_size):
+                continue
+            viables.append({
+                "uid": cand["id"],
+                "name": cand["name"],
+                "weight": cand_size[0],
+                "unit": cand_size[1],
+            })
+        if viables:
+            by_anchor[uid] = viables
 
-    return viables
+    return by_anchor
 
 
 # ---------------------------------------------------------------------------
@@ -281,7 +300,7 @@ def comparable_candidates(cur, anchor_row, target_stores, *, exclude_uids=(),
 # ---------------------------------------------------------------------------
 
 def build_semantic_suggestions(cur, cart_items, *, target_stores, user_memberships=None,
-                               flatten=flatten_cart_prices) -> list:
+                               flatten=flatten_cart_prices, cart_prices=None) -> list:
     """
     Alternativas más baratas para los productos del carrito, llevando la misma
     cantidad.
@@ -314,12 +333,11 @@ def build_semantic_suggestions(cur, cart_items, *, target_stores, user_membershi
     # corresponde a ningún carrito real. Mismo motivo por el que lo descarta
     # strategic_swaps.
     candidates_by_uid = {}
-    for uid, row in anchor_rows.items():
-        if not row.get("name_embedding"):
-            continue
-        anchor_size = weight_of(row)
+    comparables = comparable_candidates(cur, anchor_rows, target_stores, exclude_uids=cart_uids)
+    for uid, cands in comparables.items():
+        anchor_size = weight_of(anchor_rows[uid])
         viables = []
-        for cand in comparable_candidates(cur, row, target_stores, exclude_uids=cart_uids):
+        for cand in cands:
             n = equivalent_quantity(anchor_size, quantities[uid], (cand["weight"], cand["unit"]))
             if n is not None:
                 viables.append({**cand, "quantity": n})
@@ -338,11 +356,17 @@ def build_semantic_suggestions(cur, cart_items, *, target_stores, user_membershi
         for cand in viables:
             by_quantity.setdefault(cand["quantity"], {})[cand["uid"]] = cand["quantity"]
 
-    cart_prices = flatten(list(cart_items), user_memberships or [])
-    prices_by_quantity = {
-        q: flatten([{"unified_id": u, "quantity": q} for u in uids], user_memberships or [])
-        for q, uids in by_quantity.items()
-    }
+    if cart_prices is None:
+        cart_prices = flatten(list(cart_items), user_memberships or [])
+    # Cada cantidad es una consulta a la base y no dependen entre sí: van a la
+    # vez. Cuatro hilos como tope porque cada `flatten` toma una conexión del
+    # pool (src/db_pool.py), que comparten todos los requests de la instancia.
+    with ThreadPoolExecutor(max_workers=4) as ex:
+        futures = {
+            q: ex.submit(flatten, [{"unified_id": u, "quantity": q} for u in uids], user_memberships or [])
+            for q, uids in by_quantity.items()
+        }
+    prices_by_quantity = {q: f.result() for q, f in futures.items()}
 
     groups = {}
     for uid, viables in candidates_by_uid.items():

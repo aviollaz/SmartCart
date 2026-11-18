@@ -119,17 +119,7 @@ def _collect_candidates(cur, anchor_rows, target_stores, cart_uids):
     con el último que ve y `optimize_cart` resuelve la cantidad con el primero,
     así que el costo simulado no correspondería a ningún carrito real.
     """
-    per_anchor = {}
-
-    for uid, anchor_row in anchor_rows.items():
-        if not anchor_row.get("name_embedding"):
-            continue
-
-        viables = comparable_candidates(cur, anchor_row, target_stores, exclude_uids=cart_uids)
-        if viables:
-            per_anchor[uid] = viables
-
-    return per_anchor
+    return comparable_candidates(cur, anchor_rows, target_stores, exclude_uids=cart_uids)
 
 
 def _best_offer(price_row, target_stores, prefer_availability=False):
@@ -358,7 +348,7 @@ def _find_strategic_swaps(*, result, cart_items, flat_prices, user_memberships, 
     if not anchors_by_store:
         return []
 
-    # Paso 2: candidatos a reemplazo, con una query por ancla.
+    # Paso 2: candidatos a reemplazo, con una query por tienda a cerrar.
     cart_uids = set(quantities)
     all_anchor_uids = {uid for anchors in anchors_by_store.values() for uid in anchors}
     anchor_rows = fetch_product_rows(cur, all_anchor_uids)
