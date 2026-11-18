@@ -29,10 +29,6 @@ purchase.
 4. **Optimization.** CP-SAT minimizes subtotal + delivery − bank discount, with
    each store's minimum purchase as a hard constraint.
 
-In October 2026 Vea's product descriptions carried a payment-card skimmer, which I
-reported. SmartCart stores descriptions as plain text, so the HTML never reaches
-the page.
-
 ## Tech stack
 
 - **Backend:** Python, FastAPI, PostgreSQL + pgvector, OR-Tools, sentence-transformers
