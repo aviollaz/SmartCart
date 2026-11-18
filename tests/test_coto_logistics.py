@@ -255,6 +255,47 @@ def test_una_coordenada_distinta_no_usa_el_cache():
     assert len(llamadas) == 2
 
 
+def test_una_respuesta_valida_sin_tarifa_se_cachea():
+    """
+    Desde nov-2026 Coto no publica ENTREGA_RAPIDA_COSTO. Eso es una respuesta
+    válida, no un fallo: sin caché, cada /optimize volvía a bajar los ~380
+    parámetros para enterarse de lo mismo.
+    """
+    # preparar
+    llamadas = []
+    sin_tarifa = {"codigoError": "0", "productoDetalle": [{"nombre": "MINIMOGENERAL", "valor": "30000"}]}
+
+    def handler(request):
+        llamadas.append(request.url)
+        return httpx.Response(200, json=sin_tarifa)
+
+    # ejecutar
+    with make_client(handler) as client:
+        primera = get_shipping_cost(client=client)
+        segunda = get_shipping_cost(client=client)
+
+    # verificar
+    assert primera is None and segunda is None
+    assert len(llamadas) == 1
+
+
+def test_un_fallo_al_pedir_la_tarifa_no_se_cachea():
+    # preparar: el SPA contesta su HTML con 200, que no es un veredicto
+    llamadas = []
+
+    def handler(request):
+        llamadas.append(request.url)
+        return httpx.Response(200, text=SPA_HTML, headers={"content-type": "text/html"})
+
+    # ejecutar
+    with make_client(handler) as client:
+        get_shipping_cost(client=client)
+        get_shipping_cost(client=client)
+
+    # verificar
+    assert len(llamadas) == 2
+
+
 def test_las_respuestas_indeterminadas_no_se_cachean():
     """Un timeout no debe dejar clavado el fallback durante 30 minutos."""
     llamadas = []

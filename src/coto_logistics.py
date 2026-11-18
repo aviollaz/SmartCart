@@ -64,6 +64,10 @@ _HEADERS = {
 # contra coto.com.ar. Se limpia con reset_cache() en los tests.
 _cache: dict = {}
 
+# Lo que se cachea cuando Coto contestó bien pero sin tarifa: `None` no sirve,
+# porque `_cache_get` devuelve `None` también cuando no hay nada guardado.
+_SIN_TARIFA = object()
+
 
 def reset_cache() -> None:
     """Vacía el caché en memoria. Existe para los tests."""
@@ -193,6 +197,8 @@ def get_shipping_cost(client: httpx.Client | None = None) -> int | None:
     """
     key = ("shipping_cost",)
     cached = _cache_get(key)
+    if cached is _SIN_TARIFA:
+        return None
     if cached is not None:
         return cached
 
@@ -215,6 +221,11 @@ def get_shipping_cost(client: httpx.Client | None = None) -> int | None:
             _cache_put(key, costo)
             return costo
 
+    # Coto contestó bien pero sin la tarifa (no la publica desde nov-2026). Es
+    # una respuesta válida, así que se cachea como cualquier otra: sin esto cada
+    # /optimize volvía a bajar los ~380 parámetros. Un fallo de red o un HTML
+    # salen antes, por los `return None` de arriba, y siguen sin cachearse.
+    _cache_put(key, _SIN_TARIFA)
     return None
 
 
