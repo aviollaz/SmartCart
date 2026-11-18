@@ -329,6 +329,23 @@ def test_ocr_sin_tesseract_instalado_devuelve_none(monkeypatch):
     assert card_ocr.ocr_png(b"cualquier cosa") is None
 
 
+def test_la_api_carga_las_promos_sin_pillow_instalado():
+    """
+    La API importa src.bank_promos → src.promotions → el scraper de Día. Con
+    `from PIL import Image` arriba de card_ocr.py, la imagen de Cloud Run (sin
+    Pillow) no arrancaba: el deploy del 18-nov-2026 cayó con ModuleNotFoundError.
+    Mismo criterio que Playwright: el import va adentro de la función.
+    """
+    import subprocess
+    import sys
+
+    codigo = "import sys; sys.modules['PIL'] = None; import src.bank_promos"
+
+    resultado = subprocess.run([sys.executable, "-c", codigo], capture_output=True, text=True)
+
+    assert resultado.returncode == 0, resultado.stderr
+
+
 def test_dia_limpia_el_prefijo_del_alt():
     assert DiaScraper()._clean_alt("Promoción bancaria: Banco Columbia") == "Banco Columbia"
     assert DiaScraper()._clean_alt("") == ""

@@ -19,7 +19,6 @@ import logging
 import subprocess
 
 import httpx
-from PIL import Image
 
 logger = logging.getLogger(__name__)
 
@@ -31,6 +30,11 @@ UMBRAL = 128
 
 def read_card(url: str) -> str | None:
     """Baja la imagen de la tarjeta y devuelve su texto, o None."""
+    # Import diferido, como Playwright: la API importa este módulo (vía
+    # src.promotions) y su imagen no trae Pillow. Arriba del archivo, el deploy
+    # del 18-nov-2026 no arrancaba.
+    from PIL import Image
+
     try:
         respuesta = httpx.get(url, timeout=TIMEOUT_S, follow_redirects=True)
         respuesta.raise_for_status()
