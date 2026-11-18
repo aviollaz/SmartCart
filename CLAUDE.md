@@ -43,7 +43,7 @@ cp .env.example .env                              # ANALYTICS_*: without it /opt
 uvicorn src.api:app --reload                      # API on :8000, docs at /docs
 python -m src.scripts.run_scrapers [--store <key>|all] [--skip-embeddings]   # interactive sweep + embeddings
 python -m src.scripts.orchestrator                # unattended sweep (logs + telemetry); production runs it on GitHub Actions
-python -m playwright install chromium             # one-off, only for the bank-promo scrapers
+python -m playwright install chromium             # one-off, only for the bank-promo scrapers (Día also needs the `tesseract` binary on PATH)
 python -m src.scrapers.get_bank_promos [--store coto|dia|carrefour|all] [--dry-run]   # regenerate src/scrapers/bank_promos.json
 python -m src.scrapers.get_vtex_categories --store dia   # regenerate a VTEX store's taxonomy dump
 python -m src.scripts.medir_busqueda [--modo hibrido]    # /search relevance baseline (same SQL as the API)
@@ -258,7 +258,7 @@ Offline pipeline writing `src/scrapers/bank_promos.json`: store-wide card/wallet
   - Vea: Master Data `JN/bankDiscount`, a JSON *string* shared with Jumbo/Disco. Day `"6"` is Saturday **and** Sunday. The bank comes from `banks[].name` only. Promos with a minimum spend are discarded (unrepresentable).
   - Día, Carrefour: `PlaywrightScraper`, importing playwright lazily so the API runs without Chromium.
 - **Coto's bank identity comes from the logo filename** (`logo_naranjax2.png`), so `banks.py`'s alias boundary blocks letters but allows digits.
-- **Día:** days come from clicking the day tabs. Its "Ver Legales" modal must be open → read → close.
+- **Día:** days come from clicking the day tabs. Its "Ver Legales" modal must be open → read → close. **The card face is an image** (the DOM only says "ONLINE / TIENDAS / Ver Legales"), so `card_ocr.py` reads it with Tesseract (green channel + threshold; 12/12 cards in Nov 2026). Percentage and cap come from the card first, the legal is the fallback: some legals never state the % (MODO, BNA+), and Naranja X publishes one card per plan sharing one legal that lists all three, which used to yield 30% with the 20% plan's cap. Without Tesseract it logs and falls back to the legal; **an entity missing from the JSON may be unreadable, not discount-less** — check the discards before dropping its option.
 - **Carrefour:** the big number on financing cards is the installment count, so financing is filtered before reading it. Only `logoOnline` cards apply online.
 - **`legal_parser.py` rules**, each learned from a real text:
   - a cap is read only after a tope word;
@@ -267,7 +267,7 @@ Offline pipeline writing `src/scrapers/bank_promos.json`: store-wide card/wallet
   - `parse_money_ars` reads `.` as a thousands separator, the opposite of `coto_logistics.parse_amount`;
   - `strict` percentages, so "CFT 0%" isn't a discount.
 - **`load_bank_promos(day)` filters by weekday** (CP-SAT has no calendar) and **sorts by descending %**, because `optimize_cart` takes the first match. A missing or corrupt file gives `FALLBACK_BANK_PROMOS`, which is **empty**: never invent a discount. An empty day returns `{}`.
-- **Adding an entity is a two-file change** that `tests/test_promos.py` enforces: `banks.py` slugs must exist in `frontend/src/utils/paymentOptions.js` (`CARD_OPTIONS`/`MEMBERSHIP_OPTIONS`, `{value, label}`), because the optimizer compares slugs by equality, and labels must equal `display_name(value)`. `MEMBERSHIP_ENTITIES` decides `is_membership` (it travels in `user_memberships`, not `user_cards`).
+- **The UI offers exactly the entities with a discount in `bank_promos.json`, plus `mi_carrefour`** (its member price moves product prices), enforced both ways by `tests/test_promos.py`. Half the banks (Galicia, Santander, BBVA, MODO…) only had installments: ticking them changed nothing. `banks.py` still recognizes them, so **regenerating the JSON can make that test fail**: add or remove the option in `frontend/src/utils/paymentOptions.js` (`CARD_OPTIONS`/`MEMBERSHIP_OPTIONS`, `{value, label}`) in the same commit. The optimizer compares slugs by equality, and labels must equal `display_name(value)`. `ProfileContext` drops saved cards/memberships that are no longer offered. `MEMBERSHIP_ENTITIES` decides `is_membership` (it travels in `user_memberships`, not `user_cards`).
 
 ### 9. Analytics emitter (`src/analytics.py`)
 

@@ -7,7 +7,6 @@ import { MEMBERSHIP_OPTIONS } from "../../utils/paymentOptions";
 // saber de memoria qué es "TCI". Club La Nación no es de ninguna cadena: da
 // descuentos en varias, y así se lo dice.
 const MEMBERSHIP_STORE = {
-  club_dia: "Día",
   coto_tci: "Coto",
   comunidad_coto: "Coto",
   mi_carrefour: "Carrefour",

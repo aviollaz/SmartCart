@@ -28,7 +28,8 @@ banco ("card_detail Modo") pero se repiten entre promos distintas del mismo banc
 import logging
 
 from src.promotions.banks import display_name, normalize_entity
-from src.promotions.legal_parser import extract_cap, extract_days, extract_percentage
+from src.promotions.card_ocr import read_card
+from src.promotions.legal_parser import extract_cap, extract_days, extract_percentage, says_no_cap
 from src.promotions.models import CANONICAL_DAYS, BankDiscount
 from src.promotions.playwright_base import PlaywrightScraper
 from src.text_utils import normalize_label
@@ -114,6 +115,7 @@ class DiaScraper(PlaywrightScraper):
                 "alt": alt,
                 "dias": dias_por_tarjeta.get(src, []),
                 "legal": self._read_legal(page, card, indice),
+                "tarjeta": read_card(src) if src else None,
                 "indice": indice,
             })
 
@@ -157,10 +159,15 @@ class DiaScraper(PlaywrightScraper):
         if not legal:
             self._discard("sin texto legal")
             return None
+        # La cara de la tarjeta leída con OCR (card_ocr.py), o "" si no se pudo.
+        tarjeta = raw_promo.get("tarjeta") or ""
 
-        # `strict=True` porque acá la entrada es el legal completo, donde el
-        # descuento convive con las tasas de financiación ("CFT 0% TEA 0%").
-        porcentaje = extract_percentage(legal, strict=True)
+        # Primero la tarjeta: es lo que Día publica para ESA promo. El legal a
+        # veces no dice el porcentaje (MODO) o lista los de varios planes que
+        # comparten texto (Naranja X 20/25/30%), y de ahí salía el mayor.
+        # `strict=True` porque en el legal el descuento convive con las tasas de
+        # financiación ("CFT 0% TEA 0%").
+        porcentaje = extract_percentage(tarjeta, strict=True) or extract_percentage(legal, strict=True)
         if porcentaje is None:
             # Cubre dos casos: los planes de cuotas, y los legales que sólo
             # expresan el beneficio con un ejemplo ("EN UN CONSUMO DE $60.000
@@ -185,7 +192,7 @@ class DiaScraper(PlaywrightScraper):
             self._discard("sin dias")
             return None
 
-        tope, periodo = extract_cap(legal)
+        tope, periodo = self._cap(tarjeta, legal)
 
         return BankDiscount(
             store=self.STORE_ID,
@@ -199,6 +206,27 @@ class DiaScraper(PlaywrightScraper):
             texto_legal=legal,
             scraped_at=self._now_iso(),
         )
+
+    @staticmethod
+    def _cap(tarjeta: str, legal: str) -> tuple[int | None, str | None]:
+        """
+        El tope de la tarjeta si lo dice, si no el del legal.
+
+        En la tarjeta se lee sólo desde la palabra "tope": antes viene "DE
+        REINTEGRO", y extract_cap tomaría el monto siguiente aunque fuera el
+        mínimo de compra ("15% DE REINTEGRO. Mínimo de compra: $20.000").
+        """
+        if says_no_cap(tarjeta):
+            return None, None
+        inicio = tarjeta.lower().find("tope")
+        tope_legal, periodo_legal = extract_cap(legal)
+        if inicio >= 0:
+            tope, periodo = extract_cap(tarjeta[inicio:])
+            if tope is not None:
+                # El OCR a veces erra un acento ("transaccién") y el período no
+                # se reconoce; el monto sí, porque son dígitos.
+                return tope, periodo or periodo_legal
+        return tope_legal, periodo_legal
 
     @staticmethod
     def _clean_alt(alt: str | None) -> str:

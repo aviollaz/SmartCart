@@ -3,6 +3,7 @@ import { useLocalStorage } from "../hooks/useLocalStorage";
 import { getDeliveryCostsForZone } from "../utils/deliveryCosts";
 import { STORES } from "../utils/constants";
 import { checkCoverage } from "../api/logistics";
+import { CARD_OPTIONS, MEMBERSHIP_OPTIONS } from "../utils/paymentOptions";
 
 // Las tiendas que arrancan deshabilitadas por un aviso de seguridad.
 const WARNED_STORE_IDS = STORES.filter((store) => store.warning).map((store) => store.id);
@@ -60,7 +61,7 @@ const DEFAULT_PROFILE = {
   storeCoverage: {},
   // Si el usuario ya pasó por el paso de membresías del onboarding (eligiera
   // alguna o no). Las membresías se preguntan ahí y no al optimizar porque
-  // cambian el precio que muestra la grilla (Mi Carrefour, Club Día): pedirlas
+  // cambian el precio que muestra la grilla (Mi Carrefour): pedirlas
   // al final dejaba al usuario armando el carrito con precios que no eran los
   // suyos. Mismo criterio de migración que `location`: los perfiles viejos lo
   // tienen undefined y ven el paso una vez, con lo que ya hubieran elegido
@@ -181,6 +182,19 @@ export function ProfileProvider({ children }) {
     return { lat: location.lat, lng: location.lng };
   }, [profile.location]);
 
+  // Filtradas contra las opciones vigentes: un perfil guardado puede tener
+  // tildada una entidad que se sacó por no tener descuentos (Galicia, Club
+  // Día…, nov-2026). No cambiaría ningún precio, pero contaría en "4 tarjetas"
+  // sin aparecer en la lista para destildarla.
+  const cards = useMemo(
+    () => (profile.cards || []).filter((value) => CARD_OPTIONS.some((option) => option.value === value)),
+    [profile.cards]
+  );
+  const memberships = useMemo(
+    () => (profile.memberships || []).filter((value) => MEMBERSHIP_OPTIONS.some((option) => option.value === value)),
+    [profile.memberships]
+  );
+
   // Tiendas que hay que sacar del catálogo. Solo entra un `covered === false`
   // explícito: un `ok:false` del backend significa "no pudimos preguntar", y
   // tratarlo como "no entregan" borraría media góndola por un timeout ajeno.
@@ -254,6 +268,8 @@ export function ProfileProvider({ children }) {
   const value = useMemo(
     () => ({
       ...profile,
+      cards,
+      memberships,
       maxStores,
       deliveryCosts,
       coordinates,
@@ -270,7 +286,7 @@ export function ProfileProvider({ children }) {
       skipLocation,
     }),
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [profile, maxStores, deliveryCosts, coordinates, unavailableStores, excludedStores, hiddenStores]
+    [profile, cards, memberships, maxStores, deliveryCosts, coordinates, unavailableStores, excludedStores, hiddenStores]
   );
 
   return <ProfileContext.Provider value={value}>{children}</ProfileContext.Provider>;

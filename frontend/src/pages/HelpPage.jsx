@@ -78,7 +78,7 @@ const FAQ = [
         a: "Sí. En «Supermercados», en el carrito, podés desmarcar los que no quieras o elegir comprar en como máximo una cantidad. Después de optimizar también te mostramos cuánto más pagarías sacando un súper del reparto, para que decidas si te ahorra un envío que no vale la pena.",
       },
       {
-        q: "¿Y las membresías (Club Día, Mi Carrefour…)?",
+        q: "¿Y las membresías (Comunidad Coto, Mi Carrefour…)?",
         a: "Si declarás una, los precios que ves ya incluyen sus descuentos. Para que el súper te los respete, tenés que estar logueado como socio al pagar. Las podés cambiar desde «Mis clubes», arriba de todo en cualquier página, o en «Medios de pago» del carrito.",
       },
     ],

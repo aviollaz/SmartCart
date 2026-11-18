@@ -224,6 +224,111 @@ def test_dia_descarta_los_planes_de_cuotas():
     assert scraper.discards["sin porcentaje de descuento"] == 1
 
 
+# La cara de cada tarjeta de Día es una imagen: el porcentaje, los días y el tope
+# no están en el DOM. `tarjeta` es lo que devuelve el OCR (src/promotions/
+# card_ocr.py); los textos de abajo son salidas reales, con su ruido.
+TARJETA_MODO = (
+    "MOvDO 20% DE REINTEGRO | L||M||M|/3|[v sj] Tope mensual de $20.000 por banco. "
+    "Minimo de compra de $35.000. Del 1 de Agosto al 30 de Noviembre."
+)
+LEGAL_MODO = (
+    "*ESTE BENEFICIO ES ACUMULABLE CON OTRAS PROMOCIONES QUE APLIQUEN PAGANDO CON MODO. "
+    "TOPE DE REINTEGRO $20.000 POR BANCO, POR MES PARA COMPRAS MAYORES O IGUALES A $35.000. "
+    "VÁLIDO LOS DÍAS VIERNES Y SÁBADO DEL 01/11/2026 AL 31/12/2026."
+)
+LEGAL_NARANJA = (
+    "EL BENEFICIO CONSISTE EN UN REINTEGRO PARA LAS COMPRAS REALIZADAS CON TARJETA NARANJAX, "
+    "APLICANDO EL SIGUIENTE DESCUENTO Y TOPE SEGÚN EL PLAN DEL USUARIO: PLAN INICIAL 20% DE "
+    "REINTEGRO, TOPE $3.000; PLAN X 25% DE REINTEGRO, TOPE $9.500; PLAN XL 30% DE REINTEGRO, "
+    "TOPE $12.000 POR SEMANA."
+)
+
+
+def test_dia_lee_el_porcentaje_de_la_tarjeta_si_el_legal_no_lo_dice():
+    """MODO 20%: el legal sólo habla del tope y del mínimo, el 20% está en la imagen."""
+    tarjeta = _tarjeta_dia(alt="Promoción bancaria: Modo, Modo", dias=["viernes", "sabado"],
+                           legal=LEGAL_MODO, tarjeta=TARJETA_MODO)
+
+    descuento = DiaScraper()._to_discount(tarjeta)
+
+    assert descuento.entidad == "modo"
+    assert descuento.porcentaje_descuento == 20.0
+    assert descuento.tope_reintegro == 20000
+
+
+def test_dia_el_porcentaje_de_la_tarjeta_gana_al_del_legal():
+    """
+    Naranja X publica una tarjeta por plan con el mismo legal, que lista los tres.
+    Del legal salía 30% para las tres: un descuento mayor que el de la tarjeta.
+    """
+    tarjeta = _tarjeta_dia(alt="Promoción bancaria: Naranja, Naranja", dias=["martes"],
+                           legal=LEGAL_NARANJA,
+                           tarjeta="Naranja> 20% DE REINTEGRO M) Tope de $3.000 por semana.")
+
+    descuento = DiaScraper()._to_discount(tarjeta)
+
+    assert descuento.porcentaje_descuento == 20.0
+
+
+def test_dia_el_tope_de_la_tarjeta_gana_al_del_legal():
+    """Del legal salía el menor de los tres topes ($3.000) para el plan de 30%."""
+    tarjeta = _tarjeta_dia(alt="Promoción bancaria: Naranja, Naranja", dias=["martes"],
+                           legal=LEGAL_NARANJA,
+                           tarjeta="Naranja> 30% DE REINTEGRO M) Tope de $12.000 por semana.")
+
+    descuento = DiaScraper()._to_discount(tarjeta)
+
+    assert descuento.porcentaje_descuento == 30.0
+    assert descuento.tope_reintegro == 12000
+    assert descuento.tope_periodo == "semanal"
+
+
+def test_dia_periodo_mal_leido_por_el_ocr_sale_del_legal():
+    """Salida real: el OCR leyó "transacción" como "transaccién"."""
+    tarjeta = _tarjeta_dia(tarjeta="20% DE REINTEGRO Tope de: $10.000 por transaccién Del 1 de Octubre")
+
+    descuento = DiaScraper()._to_discount(tarjeta)
+
+    assert descuento.tope_reintegro == 10000
+    assert descuento.tope_periodo == "transaccion"
+
+
+def test_dia_tarjeta_sin_tope_no_toma_el_minimo_de_compra_como_tope():
+    tarjeta = _tarjeta_dia(
+        alt="Promoción bancaria: Personal Pay, Personal Pay", dias=["jueves"],
+        legal="LA PROMOCIÓN CONSISTE EN UN 15% DE REINTEGRO, SIN TOPE DE REINTEGRO.",
+        tarjeta="G personal pay 15% DE REINTEGRO a Sin tope de reintegro. Minimo de compra: $20.000",
+    )
+
+    descuento = DiaScraper()._to_discount(tarjeta)
+
+    assert descuento.porcentaje_descuento == 15.0
+    assert descuento.tope_reintegro is None
+
+
+def test_dia_tarjeta_de_cuotas_se_descarta():
+    scraper = DiaScraper()
+    tarjeta = _tarjeta_dia(
+        legal="PLAN 3 CUOTAS SIN INTERÉS. COSTO FINANCIERO TOTAL (CFT) 0% TASA EFECTIVA ANUAL (TEA) 0%.",
+        tarjeta="VISA @ CUOTAS SIN INTERES 5 Del 1 de Enero al 30 de Noviembre.",
+    )
+
+    assert scraper._to_discount(tarjeta) is None
+    assert scraper.discards["sin porcentaje de descuento"] == 1
+
+
+def test_ocr_sin_tesseract_instalado_devuelve_none(monkeypatch):
+    """Sin el binario, el scraper sigue con el legal (como antes) en vez de romperse."""
+    from src.promotions import card_ocr
+
+    def sin_tesseract(*args, **kwargs):
+        raise FileNotFoundError("tesseract")
+
+    monkeypatch.setattr(card_ocr.subprocess, "run", sin_tesseract)
+
+    assert card_ocr.ocr_png(b"cualquier cosa") is None
+
+
 def test_dia_limpia_el_prefijo_del_alt():
     assert DiaScraper()._clean_alt("Promoción bancaria: Banco Columbia") == "Banco Columbia"
     assert DiaScraper()._clean_alt("") == ""

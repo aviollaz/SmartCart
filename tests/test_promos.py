@@ -110,14 +110,44 @@ def test_todo_slug_del_frontend_existe_en_banks():
     assert not desconocidos, f"La UI ofrece entidades que el scraper no emite: {desconocidos}"
 
 
-def test_toda_entidad_scrapeable_se_puede_activar():
-    from src.promotions.banks import BANK_ALIASES
+# La UI ofrece exactamente las entidades que hoy tienen algún descuento en
+# bank_promos.json, más las membresías que cambian precios de productos (Mi
+# Carrefour: el precio de socio de Carrefour, ver promotion_parser). Antes se
+# ofrecía toda entidad que el scraper reconoce, y la mitad de las tarjetas
+# (Galicia, Santander, BBVA…) sólo tenían cuotas: tildarlas no cambiaba nada.
+# banks.py sigue reconociéndolas, así que si al regenerar el JSON aparece una
+# promo de una de ellas, el primer test falla y obliga a volver a ofrecerla.
+MEMBRESIAS_CON_PRECIO_DE_PRODUCTO = {"mi_carrefour"}
 
+
+def _entidades_con_descuento():
+    import json
+    import pathlib
+
+    ruta = pathlib.Path(__file__).parent.parent / "src/scrapers/bank_promos.json"
+    datos = json.loads(ruta.read_text(encoding="utf-8"))
+    return {promo["entidad"] for promos in datos["promos"].values() for promo in promos}
+
+
+def _ofrecidas():
     opciones = _opciones_del_frontend("CARD_OPTIONS") + _opciones_del_frontend("MEMBERSHIP_OPTIONS")
-    ofrecidos = {value for value, _ in opciones}
+    return {value for value, _ in opciones}
 
-    faltantes = sorted(set(BANK_ALIASES.values()) - ofrecidos)
-    assert not faltantes, f"El scraper emite entidades que nadie puede activar: {faltantes}"
+
+def test_se_ofrece_toda_entidad_con_descuento():
+    con_descuento = _entidades_con_descuento()
+
+    faltantes = sorted(con_descuento - _ofrecidas())
+
+    assert not faltantes, f"Hay descuentos que nadie puede activar: {faltantes}"
+
+
+def test_no_se_ofrece_entidad_sin_descuento():
+    utiles = _entidades_con_descuento() | MEMBRESIAS_CON_PRECIO_DE_PRODUCTO
+
+    sobrantes = sorted(_ofrecidas() - utiles)
+
+    assert not sobrantes, f"La UI ofrece entidades que no cambian ningún precio: {sobrantes}"
 
 
 def test_membresias_y_tarjetas_no_se_mezclan():
@@ -131,7 +161,7 @@ def test_membresias_y_tarjetas_no_se_mezclan():
     membresias = {value for value, _ in _opciones_del_frontend("MEMBERSHIP_OPTIONS")}
 
     assert not (tarjetas & set(MEMBERSHIP_ENTITIES))
-    assert membresias == set(MEMBERSHIP_ENTITIES)
+    assert membresias <= set(MEMBERSHIP_ENTITIES)
 
 
 def test_las_etiquetas_coinciden_con_las_del_backend():

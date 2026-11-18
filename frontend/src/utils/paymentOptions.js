@@ -11,20 +11,17 @@
 // mostraba el slug crudo — "banco_del_sol", "naranja_x", "personal_pay" —
 // y los nombres legibles ya estaban escritos del lado del backend
 // (DISPLAY_NAMES en src/promotions/banks.py), sin nadie que los sirviera.
-// Se copian y no se exponen por un endpoint: son 27 strings que cambian
-// cuando cambia la lista de entidades, o sea en el mismo commit que ya
-// obliga a tocar los dos archivos.
+// Se copian y no se exponen por un endpoint: cambian cuando cambia la lista
+// de entidades, o sea en el mismo commit que ya obliga a tocar los dos
+// archivos.
+//
+// Sólo las que hoy tienen algún descuento en src/scrapers/bank_promos.json
+// (nov-2026): Galicia, Santander, BBVA y otras sólo ofrecían cuotas, y
+// tildarlas no cambiaba ningún precio. tests/test_promos.py lo verifica en los
+// dos sentidos, así que regenerar el JSON puede obligar a sumar o sacar una.
 export const CARD_OPTIONS = [
-  { value: "galicia", label: "Galicia" },
-  { value: "macro", label: "Macro" },
-  { value: "nacion", label: "Nación" },
-  { value: "bbva", label: "BBVA" },
-  { value: "santander", label: "Santander" },
   { value: "icbc", label: "ICBC" },
-  { value: "hsbc", label: "HSBC" },
-  { value: "itau", label: "Itaú" },
-  { value: "provincia", label: "Provincia" },
-  { value: "hipotecario", label: "Hipotecario" },
+  { value: "nacion", label: "Nación" },
   { value: "ciudad", label: "Ciudad" },
   { value: "comafi", label: "Comafi" },
   { value: "credicoop", label: "Credicoop" },
@@ -35,12 +32,8 @@ export const CARD_OPTIONS = [
   { value: "carrefour_banco", label: "Carrefour Banco" },
   { value: "cencopay", label: "CencoPay" },
   { value: "naranja_x", label: "Naranja X" },
-  { value: "amex", label: "American Express" },
-  { value: "cabal", label: "Cabal" },
   { value: "mercado_pago", label: "Mercado Pago" },
   { value: "modo", label: "MODO" },
-  { value: "uala", label: "Ualá" },
-  { value: "prex", label: "Prex" },
   { value: "personal_pay", label: "Personal Pay" },
 ];
 // "mi_carrefour" no es decorativo: en Carrefour el precio rebajado suele ser el
@@ -50,11 +43,13 @@ export const CARD_OPTIONS = [
 // estas entidades con `is_membership` y el optimizador las busca en
 // user_memberships (ver MEMBERSHIP_ENTITIES en src/promotions/banks.py).
 //
+// "club_dia" se fue en nov-2026: no tenía descuento bancario ni cambia el
+// precio de ningún producto (el precio de socio sólo se lee en Carrefour).
+//
 // "jumbo_mas" se fue: Jumbo no es una de las tres cadenas del proyecto, así
 // que era una opción que no podía aplicar a ningún precio — ruido que invita
 // a preguntar por una tienda que no existe acá.
 export const MEMBERSHIP_OPTIONS = [
-  { value: "club_dia", label: "Club Día" },
   { value: "coto_tci", label: "Coto TCI" },
   { value: "comunidad_coto", label: "Comunidad Coto" },
   { value: "mi_carrefour", label: "Mi Carrefour" },
