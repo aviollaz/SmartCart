@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { ChevronDown } from "lucide-react";
+import { ChevronDown, ChevronLeft, ChevronRight } from "lucide-react";
 import { useShelves } from "../../hooks/useShelves";
 import { getSectionIcon } from "./sectionIcons";
 import { MegaMenuPanel } from "./MegaMenuPanel";
@@ -14,11 +14,18 @@ import { MegaMenuPanel } from "./MegaMenuPanel";
  * Con mouse, pasar por encima despliega las góndolas; en un touchscreen no hay
  * hover, así que el tap hace lo mismo. Se cierra al salir con el mouse, al
  * tocar afuera, con Escape o al elegir una góndola.
+ *
+ * Siempre una sola fila. Envolver en dos filas rompía el hover: bajar hacia las
+ * góndolas de una sección de arriba pasaba por encima de la fila de abajo y
+ * cambiaba el panel. Lo que no entra se scrollea de costado; con mouse, las
+ * flechas de los bordes (sólo aparecen si hay algo de ese lado).
  */
 export function SectionBar() {
   const { sections } = useShelves();
   const [activeSection, setActiveSection] = useState(null);
+  const [canScroll, setCanScroll] = useState({ left: false, right: false });
   const navRef = useRef(null);
+  const listRef = useRef(null);
 
   useEffect(() => {
     if (!activeSection) return;
@@ -36,6 +43,29 @@ export function SectionBar() {
     };
   }, [activeSection]);
 
+  function updateScroll() {
+    const list = listRef.current;
+    if (!list) return;
+    setCanScroll({
+      left: list.scrollLeft > 0,
+      right: list.scrollLeft + list.clientWidth < list.scrollWidth - 1,
+    });
+  }
+
+  useEffect(() => {
+    const list = listRef.current;
+    if (!list) return;
+    updateScroll();
+    const observer = new ResizeObserver(updateScroll);
+    observer.observe(list);
+    return () => observer.disconnect();
+  }, [sections.length]);
+
+  function scrollList(direction) {
+    const list = listRef.current;
+    list.scrollBy({ left: direction * list.clientWidth * 0.6, behavior: "smooth" });
+  }
+
   if (sections.length === 0) return null;
 
   const activeNode = sections.find((node) => node.section === activeSection) || null;
@@ -47,36 +77,68 @@ export function SectionBar() {
       onMouseLeave={() => setActiveSection(null)}
       className="relative border-b border-line bg-surface"
     >
-      {/* Las secciones vienen en el orden de src/shelves.py, que es deliberado.
-          En el celular la fila scrollea de costado; desde `md` envuelve en vez
-          de cortar las últimas sin pista de scroll. La fila usa todo el ancho
-          de la ventana y no el `max-w-7xl` del resto del header: con ese tope,
-          en 1920 px con zoom, "Perfumería" quedaba sola en una segunda fila. */}
-      <ul className="flex gap-1.5 overflow-x-auto px-4 py-2 [scrollbar-width:none] md:flex-wrap md:justify-center">
-        {sections.map((node) => {
-          const Icon = getSectionIcon(node.section);
-          const isActive = node.section === activeSection;
-          return (
-            <li key={node.section} className="shrink-0">
-              <button
-                type="button"
-                aria-expanded={isActive}
-                onMouseEnter={() => setActiveSection(node.section)}
-                onClick={() => setActiveSection(node.section)}
-                className={`flex items-center gap-1.5 whitespace-nowrap rounded-md border px-2.5 py-2 text-sm font-medium transition-colors ${
-                  isActive
-                    ? "border-brand-violet-500 bg-brand-violet-100 text-brand-violet-700"
-                    : "border-line text-ink"
-                }`}
-              >
-                <Icon size={16} className="shrink-0" aria-hidden="true" />
-                {node.section}
-                <ChevronDown size={14} className="shrink-0" aria-hidden="true" />
-              </button>
-            </li>
-          );
-        })}
-      </ul>
+      <div className="relative">
+        {/* Las secciones vienen en el orden de src/shelves.py, que es
+            deliberado. `justify-center-safe` centra cuando entran y, cuando no,
+            alinea al principio: con `justify-center` las primeras quedarían
+            cortadas fuera del alcance del scroll. */}
+        <ul
+          ref={listRef}
+          onScroll={updateScroll}
+          className="flex justify-center-safe gap-1.5 overflow-x-auto px-4 py-2 [scrollbar-width:none]"
+        >
+          {sections.map((node) => {
+            const Icon = getSectionIcon(node.section);
+            const isActive = node.section === activeSection;
+            return (
+              <li key={node.section} className="shrink-0">
+                <button
+                  type="button"
+                  aria-expanded={isActive}
+                  onMouseEnter={() => setActiveSection(node.section)}
+                  onClick={() => setActiveSection(node.section)}
+                  className={`flex items-center gap-1.5 whitespace-nowrap rounded-md border px-2.5 py-2 text-sm font-medium transition-colors ${
+                    isActive
+                      ? "border-brand-violet-500 bg-brand-violet-100 text-brand-violet-700"
+                      : "border-line text-ink"
+                  }`}
+                >
+                  <Icon size={16} className="shrink-0" aria-hidden="true" />
+                  {node.section}
+                  <ChevronDown size={14} className="shrink-0" aria-hidden="true" />
+                </button>
+              </li>
+            );
+          })}
+        </ul>
+
+        {/* Sólo con mouse (`pointer-fine`): en un touchscreen la fila se
+            desliza con el dedo y las flechas taparían botones. */}
+        {canScroll.left && (
+          <div className="pointer-events-none absolute inset-y-0 left-0 hidden items-center bg-linear-to-r from-surface from-60% to-transparent pl-2 pr-8 pointer-fine:flex">
+            <button
+              type="button"
+              onClick={() => scrollList(-1)}
+              aria-label="Ver secciones anteriores"
+              className="pointer-events-auto rounded-md border border-line bg-surface p-2 text-ink hover:bg-surface-muted"
+            >
+              <ChevronLeft size={16} aria-hidden="true" />
+            </button>
+          </div>
+        )}
+        {canScroll.right && (
+          <div className="pointer-events-none absolute inset-y-0 right-0 hidden items-center bg-linear-to-l from-surface from-60% to-transparent pl-8 pr-2 pointer-fine:flex">
+            <button
+              type="button"
+              onClick={() => scrollList(1)}
+              aria-label="Ver más secciones"
+              className="pointer-events-auto rounded-md border border-line bg-surface p-2 text-ink hover:bg-surface-muted"
+            >
+              <ChevronRight size={16} aria-hidden="true" />
+            </button>
+          </div>
+        )}
+      </div>
 
       {activeNode && (
         <div className="absolute inset-x-0 top-full px-4">
