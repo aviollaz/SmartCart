@@ -368,6 +368,25 @@ def test_carrefour_descarta_las_promos_de_local_fisico():
     assert scraper.discards["solo local fisico"] == 1
 
 
+def test_carrefour_descarta_las_promos_solo_para_jubilados_o_anses():
+    """
+    Caso real (nov-2026): "VÁLIDO CON MI CARREFOUR PARA MAYORES DE 60 AÑOS O
+    ANSES" se cargaba como 10% para cualquier socio de Mi Carrefour. El perfil no
+    sabe la edad del usuario, y prometerle ese 10% a todos es un ahorro que en la
+    caja no aparece.
+    """
+    scraper = CarrefourScraper()
+    tarjeta = _tarjeta_carrefour(
+        fecha="Lunes, Martes y Miércoles", porcentaje="10",
+        titulo="Si sos beneficiario de Anses o mayor de 60 años.",
+        legal="VÁLIDO DE LUNES A MIÉRCOLES. VÁLIDO CON MI CARREFOUR PARA MAYORES DE 60 AÑOS O ANSES.",
+        imagenes=["anses.webp"],
+    )
+
+    assert scraper._to_discount(tarjeta) is None
+    assert scraper.discards["solo jubilados o anses"] == 1
+
+
 def test_carrefour_no_confunde_cuotas_con_porcentaje():
     """
     La trampa principal de esta página: el bloque grande dice "6" tanto en

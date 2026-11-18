@@ -22,6 +22,7 @@ Dos trampas que el relevamiento dejó a la vista:
    entrarían promos de Carrefour Maxi que no se pueden usar comprando por web.
 """
 import logging
+import re
 
 from src.promotions.banks import display_name, normalize_entity
 from src.promotions.legal_parser import extract_cap, extract_days, extract_percentage
@@ -30,6 +31,9 @@ from src.promotions.playwright_base import PlaywrightScraper
 from src.text_utils import normalize_label
 
 logger = logging.getLogger(__name__)
+
+# Sobre texto normalizado (normalize_label: minúsculas, sin acentos).
+_SOLO_JUBILADOS_RE = re.compile(r"\banses\b|mayores? de 60|jubilad|pensionad")
 
 NS = "valtech-carrefourar-bank-promotions-0-x-"
 
@@ -104,6 +108,13 @@ class CarrefourScraper(PlaywrightScraper):
 
         titulo = raw_promo.get("titulo") or ""
         rotulo = raw_promo.get("rotulo") or ""
+
+        # "VÁLIDO CON MI CARREFOUR PARA MAYORES DE 60 AÑOS O ANSES" se cargaba
+        # como descuento de cualquier socio de Mi Carrefour. El perfil no sabe la
+        # edad del usuario, así que prometerlo a todos es un ahorro falso.
+        if _SOLO_JUBILADOS_RE.search(normalize_label(f"{titulo} {raw_promo.get('legal') or ''}")):
+            self._discard("solo jubilados o anses")
+            return None
 
         # Antes que nada: si es financiación, el número de al lado son cuotas.
         if self._es_financiacion(rotulo, titulo):
