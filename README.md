@@ -8,7 +8,7 @@ and a constraint solver (OR-Tools CP-SAT) splits the cart across the chains,
 counting promotions, bank discounts, delivery costs and each store's minimum
 purchase.
 
-**While scraping, it uncovered a card skimmer in Jumbo, Disco and Vea's online stores. You can read about it [here](https://www.brodersendarknews.com/p/disco-jumbo-y-vea-un-estudiante-de)**
+**⚠️⚠️While scraping, it uncovered a card skimmer in Jumbo, Disco and Vea's online stores. You can read about it [here](https://www.brodersendarknews.com/p/disco-jumbo-y-vea-un-estudiante-de)**
 
 | | |
 |---|---|
