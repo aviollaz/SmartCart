@@ -5,7 +5,6 @@ httpx[http2]
 # es un handshake TCP + TLS y /optimize abre varias por request.
 psycopg[binary,pool]
 pydantic
-pandas
 sentence-transformers
 fastapi
 uvicorn[standard]
