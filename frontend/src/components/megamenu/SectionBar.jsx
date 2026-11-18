@@ -48,10 +48,11 @@ export function SectionBar() {
       className="relative border-b border-line bg-surface"
     >
       {/* Las secciones vienen en el orden de src/shelves.py, que es deliberado.
-          En el celular la fila scrollea de costado; desde `md` envuelve en filas
-          centradas, porque en una sola fila las últimas quedaban cortadas (a
-          1920 px con zoom 110% ya no se veía "Perfumería") sin pista de scroll. */}
-      <ul className="mx-auto flex max-w-7xl gap-2 overflow-x-auto px-4 py-2 [scrollbar-width:none] md:flex-wrap md:justify-center">
+          En el celular la fila scrollea de costado; desde `md` envuelve en vez
+          de cortar las últimas sin pista de scroll. La fila usa todo el ancho
+          de la ventana y no el `max-w-7xl` del resto del header: con ese tope,
+          en 1920 px con zoom, "Perfumería" quedaba sola en una segunda fila. */}
+      <ul className="flex gap-1.5 overflow-x-auto px-4 py-2 [scrollbar-width:none] md:flex-wrap md:justify-center">
         {sections.map((node) => {
           const Icon = getSectionIcon(node.section);
           const isActive = node.section === activeSection;
@@ -62,7 +63,7 @@ export function SectionBar() {
                 aria-expanded={isActive}
                 onMouseEnter={() => setActiveSection(node.section)}
                 onClick={() => setActiveSection(node.section)}
-                className={`flex items-center gap-1.5 whitespace-nowrap rounded-md border px-3 py-2 text-sm font-medium transition-colors ${
+                className={`flex items-center gap-1.5 whitespace-nowrap rounded-md border px-2.5 py-2 text-sm font-medium transition-colors ${
                   isActive
                     ? "border-brand-violet-500 bg-brand-violet-100 text-brand-violet-700"
                     : "border-line text-ink"
