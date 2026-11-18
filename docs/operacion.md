@@ -53,6 +53,20 @@ nunca se pisan (`concurrency`).
 - **torch se instala del índice CPU de PyTorch.** El de PyPI trae CUDA y llenó
   el disco del runner el 26 y 27-sep-2026.
 
+**Promos bancarias (`bank-promos.yml`).** Los lunes 07:41 regenera
+`src/scrapers/bank_promos.json` (Chromium + Tesseract en el runner) y, si
+cambió alguna promo, abre o actualiza el PR `promos-bancarias-semanal` con una
+tabla de lo que entró y salió y el resultado de los tests de promos. No commitea
+a main: alguien mira el diff y los descartes del log antes de mergear.
+
+- **Requisito:** *Settings → Actions → General → Allow GitHub Actions to create
+  and approve pull requests*. Sin eso el último paso falla.
+- **Mergear no alcanza:** el JSON va dentro de la imagen de la API, así que
+  después hay que redesplegar Cloud Run.
+- **Si fallan los tests de `test_promos.py`**, una entidad ganó o perdió
+  descuentos: se suma o se saca de `paymentOptions.js` en ese mismo PR.
+- **A mano:** `gh workflow run bank-promos.yml`.
+
 Cómo leer una corrida:
 
 ```sql

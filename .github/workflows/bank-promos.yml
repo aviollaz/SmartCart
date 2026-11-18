@@ -1,0 +1,128 @@
+# Regenera las promociones bancarias una vez por semana y abre un PR.
+#
+# Antes el archivo (src/scrapers/bank_promos.json) se regeneraba sólo cuando
+# alguien se acordaba: el 18-nov-2026 llevaba 5 semanas, con promos que ya no
+# existían. Las de productos se renuevan solas en el barrido nocturno; éstas no.
+#
+# Abre un PR y no commitea a main porque el scraper puede leer mal una página que
+# cambió, y una promo inventada es un ahorro que en la caja no aparece. Alguien
+# mira el diff (y los descartes del log) antes de mergear. Mergear tampoco llega
+# al sitio: el JSON viaja dentro de la imagen de la API, así que después hay que
+# redesplegar Cloud Run (docs/operacion.md).
+#
+# Requisitos del repo: Settings → Actions → General → "Allow GitHub Actions to
+# create and approve pull requests". Un PR abierto con GITHUB_TOKEN no dispara
+# ci.yml, por eso los tests de promos corren acá y su resultado va en el PR.
+
+name: Promos bancarias semanales
+
+on:
+  schedule:
+    # Lunes 10:41 UTC = 07:41 en Argentina, fuera de la hora en punto (ver
+    # scrape.yml). Lunes para que el PR esté antes de los descuentos de la semana.
+    - cron: "41 10 * * 1"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  pull-requests: write
+
+concurrency:
+  group: promos-bancarias
+  cancel-in-progress: false
+
+jobs:
+  regenerar:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      RAMA: promos-bancarias-semanal
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: |
+            requirements.txt
+            .github/workflows/bank-promos.yml
+
+      # Sólo lo que usan los scrapers de promos y sus tests: sin torch ni base.
+      # `-c requirements.txt` fija las versiones a las del proyecto.
+      - name: Dependencias
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y tesseract-ocr
+          pip install -c requirements.txt "httpx[http2]" playwright pillow pytest python-dotenv
+          python -m playwright install --with-deps chromium
+
+      # Una tienda que falla conserva su bloque anterior (get_bank_promos), así
+      # que un sitio caído no vacía sus descuentos.
+      # `shell: bash` explícito activa pipefail: sin él, `| tee` se traga el
+      # código de salida y estos pasos saldrían verdes siempre.
+      - name: Regenerar
+        shell: bash
+        run: python -m src.scrapers.get_bank_promos --store all 2>&1 | tee relevamiento.log
+
+      - name: Tests de promos
+        id: tests
+        continue-on-error: true
+        shell: bash
+        run: python -m pytest tests/test_promos.py tests/test_bank_promos_scrapers.py tests/test_bank_promos_loader.py -q 2>&1 | tee tests.log
+
+      - name: Resumen
+        id: resumen
+        env:
+          TESTS: ${{ steps.tests.outcome }}
+        run: |
+          git show HEAD:src/scrapers/bank_promos.json > anterior.json
+          python - <<'EOF'
+          import json, os
+
+          def promos(ruta):
+              datos = json.load(open(ruta, encoding="utf-8"))["promos"]
+              return {
+                  (tienda, p["entidad"], p["porcentaje_descuento"], tuple(p["dias_validos"]), p["tope_reintegro"])
+                  for tienda, lista in datos.items() for p in lista
+              }
+
+          antes, ahora = promos("anterior.json"), promos("src/scrapers/bank_promos.json")
+          cambio = antes != ahora
+
+          def fila(p):
+              tienda, entidad, pct, dias, tope = p
+              return f"| {tienda.replace('_online', '')} | {entidad} | {pct:g}% | {', '.join(dias)} | {tope or 'sin tope'} |"
+
+          lineas = []
+          if os.environ["TESTS"] != "success":
+              lineas += ["> [!WARNING]", "> Fallan los tests de promos. Si es `test_promos.py`, una entidad ganó o perdió descuentos: sumarla o sacarla de `frontend/src/utils/paymentOptions.js` en este PR.", ""]
+          for titulo, conjunto in (("Nuevas", ahora - antes), ("Ya no están", antes - ahora)):
+              if conjunto:
+                  lineas += [f"### {titulo}", "", "| Tienda | Entidad | % | Días | Tope |", "|---|---|---|---|---|"]
+                  lineas += [fila(p) for p in sorted(conjunto, key=str)] + [""]
+          lineas += ["Antes de mergear, mirar los descartes de cada tienda en el log del workflow (una entidad que desaparece puede ser una promo que el scraper no pudo leer).",
+                     "", "Después de mergear: redesplegar la API (docs/operacion.md)."]
+
+          open("resumen.md", "w", encoding="utf-8").write("\n".join(lineas))
+          with open(os.environ["GITHUB_OUTPUT"], "a") as salida:
+              salida.write(f"cambio={'si' if cambio else 'no'}\n")
+          print("\n".join(lineas))
+          EOF
+
+      - name: Abrir o actualizar el PR
+        if: steps.resumen.outputs.cambio == 'si'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git checkout -B "$RAMA"
+          git add src/scrapers/bank_promos.json
+          git commit -m "chore(promos): promociones bancarias al $(date -u +%F)"
+          git push --force origin "$RAMA"
+          if gh pr view "$RAMA" --json state -q .state | grep -q OPEN; then
+            gh pr edit "$RAMA" --body-file resumen.md
+          else
+            gh pr create --head "$RAMA" --base main --title "Promociones bancarias al $(date -u +%F)" --body-file resumen.md
+          fi

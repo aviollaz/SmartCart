@@ -20,3 +20,7 @@ python-dotenv
 # El resto del proyecto no lo necesita: el import es lazy, así que CotoScraper y
 # la API siguen funcionando sin Chromium instalado.
 playwright
+# Lo usa src/promotions/card_ocr.py para preparar la imagen de cada tarjeta de
+# Día antes del OCR. Venía de arrastre (sentence-transformers), y de eso no se
+# puede depender. El OCR en sí es el binario `tesseract`, que va aparte.
+pillow

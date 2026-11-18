@@ -296,6 +296,7 @@ Adds only operations concerns around `run_scrapers.py`. Details and commands in 
 - **Torch from PyTorch's CPU index**, here and in the `Dockerfile`: PyPI's wheel brings CUDA, which filled the runner's disk (26-27 Sep 2026: red job, no telemetry) and made the image 10,3 GB instead of 2,78. The workflow file is part of the pip cache key.
 - **The sweep takes ~1 h 15 min** (Día/Vea ~45 min, Coto/Carrefour ~1 h 10 min, parallel matrix). **The schedule is not the start time**: on `0 6` runs were on time until 20 Oct 2026, then GitHub's delay grew to ~9 h. On 18 Nov the cron moved off the hour (`23 5`). If it stays late, trigger `workflow_dispatch` from Cloud Scheduler.
 - **`keepalive.yml`**: GitHub disables schedules after 60 days without commits, and scheduled runs don't count.
+- **`bank-promos.yml`** (Mondays) regenerates `bank_promos.json` and opens/updates the PR `promos-bancarias-semanal` only when a promo changed (ignoring `scraped_at`), with an in/out table and the promo tests' result (a `GITHUB_TOKEN` PR doesn't trigger `ci.yml`). It never commits to main: a misread page would be an invented discount. Merging still needs a Cloud Run redeploy; the repo must allow Actions to create PRs.
 - **`ops/probe_endpoints.py` is the gate for every new place the sweep runs**: JSON content type and expected shape, never just 200. It imports nothing from `src/`.
 
 **Hosting and limits:**
