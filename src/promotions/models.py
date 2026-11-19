@@ -48,6 +48,9 @@ class BankDiscount:
     promo_id: str
     texto_legal: str
     scraped_at: str
+    # Subtotal desde el que rige ("en compras iguales o superiores a $100.000"),
+    # o None si no tiene. El optimizador lo modela: no hace falta descartarla.
+    compra_minima: int | None = None
 
     def __post_init__(self):
         """
@@ -83,6 +86,12 @@ class BankDiscount:
             if self.tope_reintegro <= 0:
                 raise InvalidDiscount(f"tope no positivo: {self.tope_reintegro!r}")
 
+        if self.compra_minima is not None:
+            if isinstance(self.compra_minima, bool) or not isinstance(self.compra_minima, int):
+                raise InvalidDiscount(f"compra mínima no entera: {self.compra_minima!r}")
+            if self.compra_minima <= 0:
+                raise InvalidDiscount(f"compra mínima no positiva: {self.compra_minima!r}")
+
         if self.tope_periodo is not None and self.tope_periodo not in CAP_PERIODS:
             raise InvalidDiscount(f"período de tope desconocido: {self.tope_periodo!r}")
 
@@ -111,6 +120,7 @@ class BankDiscount:
             "promo_id": self.promo_id,
             "texto_legal": self.texto_legal,
             "scraped_at": self.scraped_at,
+            "compra_minima": self.compra_minima,
         }
 
     @classmethod
@@ -131,6 +141,7 @@ class BankDiscount:
             promo_id=data.get("promo_id", ""),
             texto_legal=data.get("texto_legal", ""),
             scraped_at=data.get("scraped_at", ""),
+            compra_minima=data.get("compra_minima"),
         )
 
     def with_fields(self, **cambios) -> "BankDiscount":

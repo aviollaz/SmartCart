@@ -25,7 +25,6 @@ locales, con monto mínimo (MODO: "Mínimo de compra: $75.000"), o con una lista
 de rubros excluidos (la de MasClub del 27-oct sacaba aceites, harinas, leches y
 bebidas). Aplicarlas a todo el carrito cotizaría de menos.
 """
-import re
 import time
 from datetime import datetime
 
@@ -33,7 +32,7 @@ import httpx
 
 from src.promotions.base import DiscountScraper
 from src.promotions.banks import display_name, normalize_entity
-from src.promotions.legal_parser import extract_cap
+from src.promotions.legal_parser import extract_cap, extract_min_purchase, mentions_min_purchase
 from src.promotions.models import CANONICAL_DAYS, BankDiscount
 from src.text_utils import normalize_label
 
@@ -52,7 +51,6 @@ _HEADERS = {
 
 _DIAS = ("monday", "tuesday", "wednesday", "thursday", "friday", "saturday", "sunday")
 # "minmo" no es un error de tipeo nuestro: así viene en una de MODO.
-_MINIMO_RE = re.compile(r"(superior|mayor)es? a \$|minimo de compra|minmo de compra|a partir de \$")
 
 
 def _epoch(iso: str | None) -> float:
@@ -114,8 +112,10 @@ class ChangomasScraper(DiscountScraper):
         sub_title = raw_promo.get("sub_title") or ""
         legal = raw_promo.get("legal") or ""
         texto = normalize_label(f"{sub_title} {legal}")
-        if _MINIMO_RE.search(texto):
-            self._discard("monto minimo")
+        minimo = extract_min_purchase(f"{sub_title}. {legal}")
+        if minimo is None and mentions_min_purchase(f"{sub_title}. {legal}"):
+            # Dice que hay mínimo pero no cuánto: aplicarla sin él cotizaría de menos.
+            self._discard("monto minimo ilegible")
             return None
         if "no incluye" in texto:
             self._discard("productos excluidos")
@@ -150,6 +150,7 @@ class ChangomasScraper(DiscountScraper):
             promo_id=f"changomas_{raw_promo.get('id')}",
             texto_legal=legal.strip() or sub_title.strip(),
             scraped_at=self._now_iso(),
+            compra_minima=minimo,
         )
 
     @staticmethod

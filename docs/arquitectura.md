@@ -231,7 +231,10 @@ Reciprocal Rank Fusion) apagado hasta medirlo (issue #24).
 2. **Optimizar** (`optimize_cart`): CP-SAT, una variable por (producto, tienda)
    y una por tienda activa. Minimiza `subtotal + envío − descuento bancario`
    sujeto a que cada producto se compre en una tienda que lo vende y a que cada
-   tienda activa supere su mínimo de compra.
+   tienda activa supere su mínimo de compra. Por tienda usa a lo sumo una de
+   las promos bancarias del usuario, la que más ahorra; una con monto mínimo
+   ("20% con MODO en compras de $100.000 o más") sólo rige si los productos de
+   esa tienda llegan, y el solver puede mover productos para destrabarla.
 
 Con el reparto vienen: el ahorro contra el promedio de las otras tiendas
 (`price_savings`, informativo, no comparable con el total), el costo de comprar
@@ -265,6 +268,11 @@ día".
 `load_bank_promos(día)` filtra por día de la semana antes del solver, que no
 conoce el calendario. Si el archivo falta, no hay descuentos: inventar uno es
 peor que omitirlo.
+
+El monto mínimo de compra se lee del legal (`compra_minima`) y lo resuelve el
+solver. Lo que no se puede representar se descarta: promos sólo en locales, en
+productos seleccionados o con productos excluidos ("NO INCLUYE CARNES,
+LECHES…"), porque aplicarlas al carrito entero cotizaría de menos.
 
 ### 3.9 Analítica (`src/analytics.py`)
 

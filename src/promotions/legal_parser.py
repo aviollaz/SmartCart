@@ -53,6 +53,13 @@ _ORACION_RE = re.compile(r"(?<=\.)\s+")
 # ("no hay tope"), distinto de no haber encontrado nada.
 _SIN_TOPE_RE = re.compile(r"sin\s+(?:tope|limite)")
 
+# El monto mínimo de compra. Redacciones reales: "iguales o superiores a
+# $100.000" (Vea/Jumbo), "mayores o iguales a $35.000" (Día), "Mínimo de compra:
+# $75.000" (ChangoMás; "minmo", con la errata, también), "a partir de $50.000".
+_MINIMO_FRASE = r"(?:(?:superior|mayor)(?:es)?(?:\s+o\s+iguales?)?\s+a|mini?mo\s+de\s+compra[^$]{0,20}|a\s+partir\s+de)"
+_MINIMO_RE = re.compile(_MINIMO_FRASE + r"\s*\$")
+_MINIMO_MONTO_RE = re.compile(_MINIMO_FRASE + r"\s*\$\s*(\d[\d.,]*)")
+
 _PERIODOS = (
     ("transaccion", (r"por\s+transaccion", r"por\s+compra", r"por\s+operacion", r"por\s+ticket")),
     ("semanal", (r"por\s+semana", r"semanal")),
@@ -236,6 +243,26 @@ def extract_cap(texto: str | None) -> tuple[int | None, str | None]:
         return None, None
 
     return min(montos), _extract_period(normalizado)
+
+
+def mentions_min_purchase(texto: str | None) -> bool:
+    """¿El texto pone un monto mínimo de compra, se pueda leer el número o no?"""
+    return bool(_MINIMO_RE.search(_strip_examples(_normalizar(texto))))
+
+
+def extract_min_purchase(texto: str | None) -> int | None:
+    """
+    El monto mínimo de compra, o None si no hay o no se puede leer.
+
+    Con varios montos se queda con el MAYOR: el criterio inverso al del tope,
+    por la misma razón (asumir el mínimo más bajo prometería un descuento en un
+    carrito que no lo alcanza). Los ejemplos se sacan antes, como en extract_cap.
+    Quien necesite distinguir "no hay" de "no se pudo leer" usa
+    `mentions_min_purchase()`.
+    """
+    montos = [parse_money_ars(crudo) for crudo in _MINIMO_MONTO_RE.findall(_strip_examples(_normalizar(texto)))]
+    montos = [m for m in montos if m]
+    return max(montos) if montos else None
 
 
 def says_no_cap(texto: str | None) -> bool:

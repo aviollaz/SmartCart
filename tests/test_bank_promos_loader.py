@@ -190,7 +190,21 @@ def test_sin_tope_se_traduce_a_un_tope_alto_y_no_a_cero(tmp_path):
 def test_las_claves_son_las_que_espera_el_optimizador(tmp_path):
     ruta = _escribir(tmp_path, {"coto_online": [_registro()]})
     promo = load_bank_promos(today=LUNES, path=ruta)["coto_online"][0]
-    assert set(promo) == {"card", "discount_pct", "cap", "description", "is_membership"}
+    assert set(promo) == {"card", "discount_pct", "cap", "description", "is_membership", "min_purchase"}
+
+
+def test_load_bank_promos_pasa_el_minimo_al_optimizador(tmp_path):
+    # preparar
+    con_minimo = {**_registro(entidad="modo"), "compra_minima": 100000}
+    ruta = _escribir(tmp_path, {"coto_online": [con_minimo, _registro(entidad="galicia", pct=10.0)]})
+
+    # ejecutar
+    modo, galicia = load_bank_promos(today=LUNES, path=ruta)["coto_online"]
+
+    # verificar
+    assert modo["min_purchase"] == 100000
+    assert "compra mínima $100.000" in modo["description"]
+    assert galicia["min_purchase"] == 0
 
 
 @pytest.mark.parametrize("entidad, es_membresia", [

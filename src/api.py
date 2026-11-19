@@ -1314,11 +1314,11 @@ def _optimize_purchase_window(request, cart_data: list, delivery_costs: dict,
     juntan las promos de todos los días del rango y el solver le da a cada
     tienda la mejor. La fecha viaja en la promo y vuelve en `bank_discount`.
 
-    Se compara contra comprar todo hoy y gana sólo si es más barato, porque
-    `optimize_cart` toma la PRIMERA promo que matchea la tarjeta (mayor %), no
-    la que más rinde: un 30% con tope chico de otro día puede ahorrar menos que
-    el 20% sin tope de hoy. Si hoy es inviable lo es todos los días —el mínimo
-    se mide sobre el subtotal, antes del descuento— y se devuelve sin más.
+    Se compara contra comprar todo hoy y gana sólo si es más barato: el
+    solver elige la promo que más rinde, así que con más promos no debería
+    salir peor, pero un empate deja hoy y no un día que obligue a esperar. Si
+    hoy es inviable lo es todos los días —el mínimo de la tienda se mide sobre
+    el subtotal, antes del descuento— y se devuelve sin más.
     """
     today = _today_ar()
     if flat_prices is None:

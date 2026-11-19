@@ -19,11 +19,10 @@ Esto es, además, lo que destraba Carrefour. Estaba deliberadamente afuera de la
 tabla hardcodeada porque sus descuentos son de fin de semana y el modelo no podía
 expresarlo; con el filtro por día deja de ser un caso especial.
 
-**Ordena por conveniencia.** `optimize_cart` elige con
-`next(p for p in promos if p["card"] in user_cards)`: el PRIMERO que matchea, no
-el mejor. Con dos entradas escritas a mano nunca se notó, pero los datos reales
-traen tres promos de Naranja X en Coto (30%, 25% y 20%) y varias de Banco
-Patagonia en Carrefour. Ordenar acá corrige la elección sin tocar el solver.
+**Ordena de mayor a menor descuento.** Ya no decide nada: `optimize_cart`
+deja competir a todas las promos del usuario en cada tienda y usa la que más
+ahorra, porque con topes y montos mínimos eso depende del subtotal. El orden
+sólo hace estable la salida.
 """
 import json
 import logging
@@ -73,12 +72,8 @@ def load_bank_promos(today: date | None = None, path: str = BANK_PROMOS_PATH) ->
         if not del_dia:
             continue
 
-        # De mayor a menor descuento: optimize_cart se queda con el primero que
-        # matchee la tarjeta del usuario, así que el orden ES la selección.
-        #
-        # El tope desempata, porque los empates son reales: Coto publica el mismo
-        # 30% para ICBC (tope $20.000) y para Credicoop (tope $15.000). A igual
-        # porcentaje, el de tope más alto nunca ahorra menos.
+        # De mayor a menor descuento, y el tope desempata. Es sólo para que la
+        # salida sea estable: la elección la hace optimize_cart.
         del_dia.sort(
             key=lambda r: (r.get("porcentaje_descuento") or 0,
                            r.get("tope_reintegro") or SIN_TOPE_CAP),
@@ -143,6 +138,11 @@ def _read(path: str) -> dict | None:
 def _to_optimizer_promo(registro: dict) -> dict:
     """Traduce un BankDiscount serializado al dict que consume optimize_cart."""
     tope = registro.get("tope_reintegro")
+    minimo = registro.get("compra_minima") or 0
+    descripcion = registro.get("descripcion") or ""
+    if minimo:
+        # Acá y no en cada scraper: es la única puerta hacia la UI.
+        descripcion = f"{descripcion}, compra mínima " + f"${minimo:,.0f}".replace(",", ".")
     return {
         "card": registro["entidad"],
         # Entero obligatorio: optimize_cart lo usa como coeficiente de una
@@ -151,7 +151,9 @@ def _to_optimizer_promo(registro: dict) -> dict:
         # son enteros, así que no se pierde nada.
         "discount_pct": int(round(registro["porcentaje_descuento"])),
         "cap": SIN_TOPE_CAP if tope is None else tope,
-        "description": registro.get("descripcion") or "",
+        "description": descripcion,
+        # Subtotal de productos desde el que rige; 0 si no tiene.
+        "min_purchase": minimo,
         # El optimizador compara `card` contra user_cards. Las entidades que en
         # realidad son programas de fidelidad se declaran en el otro eje del
         # perfil (user_memberships), y sin esta marca no habría forma de saber
