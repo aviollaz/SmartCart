@@ -24,6 +24,7 @@ function appendMemberships(params, memberships) {
 function listingParams(listing, dietary, memberships) {
   const params = new URLSearchParams({ page: String(listing.page) });
   for (const brand of listing.brands) params.append("brands", brand);
+  for (const type of listing.types) params.append("types", type);
   for (const store of listing.stores) params.append("stores", store);
   for (const store of listing.hiddenStores) params.append("hidden_stores", store);
   if (listing.priceRange) {

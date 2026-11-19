@@ -42,7 +42,12 @@ export function SearchResultsPage() {
 }
 
 function ResultsView({ mode, shelf, query, dietary, onToggleDietary }) {
-  const { labelBySlug } = useShelves();
+  const { labelBySlug, shelves } = useShelves();
+  // Las góndolas donde los filtros dietarios no dicen nada (src/shelves.py). Ahí
+  // tampoco se mandan: el estado dietario viene de arriba y sobrevive al cambio
+  // de góndola, y un "sin TACC" tildado en Almacén vaciaría Carnes sin verse.
+  const showDietary = mode !== "shelf" || shelves.find((s) => s.slug === shelf)?.dietary_filters !== false;
+  const activeDietary = showDietary ? dietary : NO_DIETARY_FILTERS;
   const [results, setResults] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
@@ -74,8 +79,8 @@ function ResultsView({ mode, shelf, query, dietary, onToggleDietary }) {
     const membershipList = membershipsKey.split(",").filter(Boolean);
     const request =
       mode === "shelf"
-        ? getProductsByShelf(term, listing, dietary, membershipList)
-        : searchProducts(term, listing, dietary, membershipList);
+        ? getProductsByShelf(term, listing, activeDietary, membershipList)
+        : searchProducts(term, listing, activeDietary, membershipList);
     request
       .then((data) => {
         if (!cancelled) setResults(data);
@@ -90,7 +95,7 @@ function ResultsView({ mode, shelf, query, dietary, onToggleDietary }) {
     return () => {
       cancelled = true;
     };
-  }, [mode, term, dietary, membershipsKey, listingKey]);
+  }, [mode, term, activeDietary, membershipsKey, listingKey]);
 
   function goToPage(page) {
     filters.setPage(page);
@@ -110,7 +115,7 @@ function ResultsView({ mode, shelf, query, dietary, onToggleDietary }) {
   const isWarned = (id) => STORES.some((store) => store.id === id && store.warning);
   const disabledLabel = disabledIds.filter((id) => !isWarned(id)).map(storeLabel).join(" y ");
   const warnedLabel = disabledIds.filter(isWarned).map(storeLabel).join(" y ");
-  const anyDietaryActive = dietary.glutenFree || dietary.vegan;
+  const anyDietaryActive = activeDietary.glutenFree || activeDietary.vegan;
   const emptyMessage = anyDietaryActive
     ? `No encontramos productos en ${title} con los filtros de dieta aplicados.`
     : `No encontramos productos para "${term}" todavía.`;
@@ -144,7 +149,12 @@ function ResultsView({ mode, shelf, query, dietary, onToggleDietary }) {
         // La sidebar se mantiene montada durante el loading: si se desmontara,
         // tildar un filtro dietario haría desaparecer el checkbox recién tocado.
         <div className="flex flex-col gap-6 lg:flex-row">
-          <FiltersSidebar filters={filters} dietary={dietary} onToggleDietary={onToggleDietary} />
+          <FiltersSidebar
+            filters={filters}
+            dietary={dietary}
+            onToggleDietary={onToggleDietary}
+            showDietary={showDietary}
+          />
           <div className="flex-1">
             <div className="mb-4 flex items-center justify-between">
               <p className="text-sm text-ink-muted">

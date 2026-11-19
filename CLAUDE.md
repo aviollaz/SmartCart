@@ -211,6 +211,8 @@ Loads the sentence-transformers model once in `lifespan` (`ml_models`).
 - The universe (the whole shelf, or the search pool) is built in Python because the filter/sort price, `_display_price`, comes from the promo evaluator.
 - `hidden_stores` (coverage ∪ user-disabled) strips offers before `_build_product_response`, so prices come out computed over what's left.
 - Facets count before the brand/price/store filters, so picking a brand doesn't erase the others.
+- **Cut type in `carnes`** (`src/meat_cuts.py`): no chain splits meat by cut (Coto has one leaf for beef and pork), so the cut is read from the product name with an explicit table, **first match wins** (specific before general: "tapa de asado" before "asado", "milanesa de nalga" is milanesa). Pork gets "… de cerdo"; pork-only cuts carry it in the label so they don't split. Unmatched is "Otros" (9 of 260, Nov 2026). `types` is a facet like `brands` (counted before filters), sorted alphabetically. Substitutions still use the whole shelf, so a peceto can be offered for an asado: next step.
+- `SECTIONS_WITHOUT_DIETARY_FILTERS` (Carnes, Frutas y verduras) travels as `dietary_filters` in `/categories`; there the grid neither shows nor **sends** the dietary filters, which live above the page and would otherwise empty the shelf invisibly.
 
 **Product payloads:**
 - **All product endpoints use `_build_product_response()` and `_build_store_offer()`**; only `distance` differs (raw for `/search`, `0.0` elsewhere). `min_price` is the minimum *list* price, a fallback only.

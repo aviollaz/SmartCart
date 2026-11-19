@@ -49,6 +49,10 @@ STORES = tuple(STORE_IDS)
 SECTIONS = ("Almacén", "Frescos", "Frutas y verduras", "Carnes", "Desayuno y merienda",
             "Bebidas", "Congelados", "Limpieza", "Perfumería")
 
+# Secciones donde "sin TACC" y "vegano" no dicen nada (un corte de carne, una
+# fruta): ahí la grilla no ofrece esos filtros.
+SECTIONS_WITHOUT_DIETARY_FILTERS = frozenset({"Carnes", "Frutas y verduras"})
+
 
 @dataclass(frozen=True)
 class Shelf:
@@ -1107,7 +1111,9 @@ def sections() -> list[dict]:
         {
             "section": name,
             "shelves": [
-                {"slug": s.slug, "label": s.label} for s in por_seccion[name]
+                {"slug": s.slug, "label": s.label,
+                 "dietary_filters": name not in SECTIONS_WITHOUT_DIETARY_FILTERS}
+                for s in por_seccion[name]
             ],
         }
         for name in por_seccion

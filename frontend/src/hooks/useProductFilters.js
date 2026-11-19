@@ -29,6 +29,7 @@ function emptyStoreFilter() {
 export function useProductFilters(page) {
   const { unavailableStores, excludedStores, hiddenStores } = useProfile();
   const [selectedBrands, setSelectedBrands] = useState(() => new Set());
+  const [selectedTypes, setSelectedTypes] = useState(() => new Set());
   // null = sin filtro de precio (el usuario no tocó el slider).
   const [priceRange, setPriceRangeState] = useState(null);
   const [storeFilter, setStoreFilter] = useState(emptyStoreFilter);
@@ -55,6 +56,16 @@ export function useProductFilters(page) {
     setPageNumber(1);
   }
 
+  function toggleType(type) {
+    setSelectedTypes((prev) => {
+      const next = new Set(prev);
+      if (next.has(type)) next.delete(type);
+      else next.add(type);
+      return next;
+    });
+    setPageNumber(1);
+  }
+
   function toggleStore(storeId) {
     setStoreFilter((prev) => ({ ...prev, [storeId]: !prev[storeId] }));
     setPageNumber(1);
@@ -75,6 +86,7 @@ export function useProductFilters(page) {
   const query = {
     page: pageNumber,
     brands: [...selectedBrands].sort(),
+    types: [...selectedTypes].sort(),
     stores: Object.keys(storeFilter).filter((id) => storeFilter[id]).sort(),
     priceRange,
     sort: sortBy,
@@ -94,6 +106,9 @@ export function useProductFilters(page) {
     brandOptions: page?.brands || [],
     selectedBrands,
     toggleBrand,
+    typeOptions: page?.types || [],
+    selectedTypes,
+    toggleType,
     priceBounds,
     priceRange: effectivePriceRange,
     setPriceRange,

@@ -30,6 +30,7 @@ from src.vea_logistics import check_coverage as check_vea_coverage, resolve_vea_
 from src.changomas_logistics import check_coverage as check_changomas_coverage, resolve_changomas_logistics
 from src.jumbo_logistics import check_coverage as check_jumbo_coverage, resolve_jumbo_logistics
 from src.schema import ensure_schema
+from src.meat_cuts import OTROS, product_type
 from src.shelves import SECTIONS, SHELVES, sections as shelf_sections, shelf_label
 from src.stores import STORES
 from src.strategic_swaps import find_strategic_swaps
@@ -165,6 +166,10 @@ class BrandCount(BaseModel):
     brand: str = Field(..., example="Taragüi")
     count: int = Field(..., example=12)
 
+class TypeCount(BaseModel):
+    type: str = Field(..., example="Asado")
+    count: int = Field(..., example=11)
+
 class ProductPage(BaseModel):
     # Una página de /search o /category. Las facetas (`brands`, `price_bounds`)
     # describen el universo ENTERO de la consulta, no la página: el cliente sólo
@@ -175,10 +180,13 @@ class ProductPage(BaseModel):
     page: int
     page_size: int
     brands: List[BrandCount] = []
+    # El tipo de corte en la góndola de carnes (src/meat_cuts.py); vacío en el resto.
+    types: List[TypeCount] = []
     price_bounds: List[float] = Field([0.0, 0.0], description="[mínimo, máximo] del precio que muestra la card")
 
 class ShelfResponse(BaseModel):
     slug: str = Field(..., example="yerba-mate")
+    dietary_filters: bool = Field(True, description="Si la grilla ofrece los filtros sin TACC / vegano")
     label: str = Field(..., example="Yerba y mate")
 
 class SectionResponse(BaseModel):
@@ -693,6 +701,7 @@ def _listing_params(
     page: int = Query(1, ge=1),
     page_size: int = Query(DEFAULT_PAGE_SIZE, ge=1, le=MAX_PAGE_SIZE),
     brands: List[str] = Query([], description="Marcas a mostrar (vacío = todas)"),
+    types: List[str] = Query([], description="Tipos de corte a mostrar, en carnes (vacío = todos)"),
     stores: List[str] = Query([], description="Sólo productos con stock en alguna de estas tiendas"),
     price_min: Optional[float] = Query(None, ge=0),
     price_max: Optional[float] = Query(None, ge=0),
@@ -700,7 +709,7 @@ def _listing_params(
     hidden_stores: List[str] = Query([], description="Tiendas que no entregan o que el usuario deshabilitó"),
 ) -> dict:
     return {
-        "page": page, "page_size": page_size, "brands": brands, "stores": stores,
+        "page": page, "page_size": page_size, "brands": brands, "types": types, "stores": stores,
         "price_min": price_min, "price_max": price_max, "sort": sort,
         "hidden_stores": hidden_stores,
     }
@@ -728,6 +737,7 @@ def _paginate_listing(rows: list, offers_by_product: dict, params: dict) -> dict
     """
     hidden = set(params["hidden_stores"])
     universe = []
+    types_by_id: Dict[str, str | None] = {}
     for row in rows:
         offers = offers_by_product.get(row["id"], [])
         if hidden:
@@ -736,19 +746,27 @@ def _paginate_listing(rows: list, offers_by_product: dict, params: dict) -> dict
                 continue
             row = {**row, "store_count": len({o["store_id"] for o in offers if o["in_stock"]})}
         universe.append(_build_product_response(row, offers, distance=float(row["distance"])))
+        types_by_id[row["id"]] = product_type(row.get("shelf"), row["name"])
 
     brand_counts: Dict[str, int] = {}
+    type_counts: Dict[str, int] = {}
     for product in universe:
         brand = product["brand"] or NO_BRAND
         brand_counts[brand] = brand_counts.get(brand, 0) + 1
+        kind = types_by_id[product["unified_id"]]
+        if kind:
+            type_counts[kind] = type_counts.get(kind, 0) + 1
     prices = [p for p in (_display_price(x["available_at_stores"]) for x in universe) if p]
 
     selected_brands = set(params["brands"])
+    selected_types = set(params["types"])
     selected_stores = set(params["stores"])
     price_min, price_max = params["price_min"], params["price_max"]
 
     def keep(product: dict) -> bool:
         if selected_brands and (product["brand"] or NO_BRAND) not in selected_brands:
+            return False
+        if selected_types and types_by_id[product["unified_id"]] not in selected_types:
             return False
         if selected_stores and not any(
             o["in_stock"] and o["store_id"] in selected_stores for o in product["available_at_stores"]
@@ -781,6 +799,12 @@ def _paginate_listing(rows: list, offers_by_product: dict, params: dict) -> dict
         "brands": [
             {"brand": brand, "count": count}
             for brand, count in sorted(brand_counts.items(), key=lambda kv: (-kv[1], kv[0]))
+        ],
+        # Alfabético y no por cantidad: son muchos, y así "Asado" queda junto a
+        # "Asado de cerdo". "Otros" al final.
+        "types": [
+            {"type": kind, "count": count}
+            for kind, count in sorted(type_counts.items(), key=lambda kv: (kv[0] == OTROS, kv[0]))
         ],
         "price_bounds": [min(prices), max(prices)] if prices else [0.0, 0.0],
     }

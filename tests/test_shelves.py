@@ -188,3 +188,13 @@ def test_store_ids_cubre_las_tres_tiendas():
     misma tienda; una tienda de STORES sin id no se puede persistir."""
     assert set(STORE_IDS) == set(STORES)
 
+
+
+def test_carnes_no_ofrece_filtros_dietarios():
+    # preparar / ejecutar
+    gondolas = {s["slug"]: s for section in sections() for s in section["shelves"]}
+
+    # verificar: "sin TACC" o "vegano" no dicen nada de un corte de carne o una fruta
+    assert gondolas["carnes"]["dietary_filters"] is False
+    assert gondolas["verduras"]["dietary_filters"] is False
+    assert gondolas["yerba-mate"]["dietary_filters"] is True

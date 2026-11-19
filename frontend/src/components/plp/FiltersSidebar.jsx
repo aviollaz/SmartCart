@@ -9,11 +9,14 @@ import { StoreAvailabilityToggle } from "./StoreAvailabilityToggle";
 // los facets se resuelven en el backend (la grilla es una sola página); el
 // dietario llega en props aparte porque vive arriba, en SearchResultsPage, y
 // sobrevive al cambio de búsqueda.
-export function FiltersSidebar({ filters, dietary, onToggleDietary }) {
+export function FiltersSidebar({ filters, dietary, onToggleDietary, showDietary = true }) {
   const {
     brandOptions,
     selectedBrands,
     toggleBrand,
+    typeOptions,
+    selectedTypes,
+    toggleType,
     priceBounds,
     priceRange,
     setPriceRange,
@@ -42,7 +45,14 @@ export function FiltersSidebar({ filters, dietary, onToggleDietary }) {
       </button>
       <h2 className="mb-2 hidden font-display text-lg font-bold text-ink lg:block">Filtros</h2>
       <div className={`${open ? "mt-3" : "hidden"} lg:mt-0 lg:block`}>
-        <DietaryFacet dietary={dietary} onToggle={onToggleDietary} />
+        {/* En carnes y frutas/verduras "sin TACC" o "vegano" no dicen nada. */}
+        {showDietary && <DietaryFacet dietary={dietary} onToggle={onToggleDietary} />}
+        <BrandFacet
+          legend="Tipo de corte"
+          brandOptions={typeOptions.map(({ type, count }) => ({ brand: type, count }))}
+          selectedBrands={selectedTypes}
+          onToggle={toggleType}
+        />
         <BrandFacet brandOptions={brandOptions} selectedBrands={selectedBrands} onToggle={toggleBrand} />
         <PriceRangeSlider bounds={priceBounds} value={priceRange} onChange={setPriceRange} />
         <StoreAvailabilityToggle

@@ -27,7 +27,7 @@ def _oferta(store_id, base_price, promo=None, in_stock=True):
 def _params(**overrides):
     params = {
         "page": 1, "page_size": 48, "brands": [], "stores": [], "price_min": None,
-        "price_max": None, "sort": "relevance", "hidden_stores": [],
+        "price_max": None, "sort": "relevance", "hidden_stores": [], "types": [],
     }
     params.update(overrides)
     return params
@@ -108,3 +108,47 @@ def test_filtro_por_tienda_exige_stock():
     }
 
     assert _ids(_paginate_listing(filas, ofertas, _params(stores=["dia_online"]))) == ["p1"]
+
+
+def _carne(uid, nombre):
+    return {**_fila(uid), "shelf": "carnes", "name": nombre}
+
+
+CARNES = [
+    _carne("a1", "Asado x kg"),
+    _carne("a2", "Asado de Novillito Envasado al Vacío x 1 Kg."),
+    _carne("v1", "Vacío Envasado al Vacío x Kg."),
+]
+
+
+def test_la_categoria_carnes_devuelve_los_tipos_con_su_cantidad():
+    # preparar
+    ofertas = {f["id"]: [_oferta("coto_online", 100.0)] for f in CARNES}
+
+    # ejecutar
+    page = _paginate_listing(CARNES, ofertas, _params())
+
+    # verificar
+    assert page["types"] == [{"type": "Asado", "count": 2}, {"type": "Vacío", "count": 1}]
+
+
+def test_filtrar_por_tipo_deja_solo_ese_corte():
+    # preparar
+    ofertas = {f["id"]: [_oferta("coto_online", 100.0)] for f in CARNES}
+
+    # ejecutar
+    page = _paginate_listing(CARNES, ofertas, _params(types=["Asado"]))
+
+    # verificar: los tipos siguen contando todo, como las marcas
+    assert _ids(page) == ["a1", "a2"]
+    assert page["total"] == 2
+    assert {t["type"] for t in page["types"]} == {"Asado", "Vacío"}
+
+
+def test_una_gondola_sin_tipos_no_devuelve_tipos():
+    # preparar
+    filas = [_fila("p0")]
+    ofertas = {"p0": [_oferta("coto_online", 100.0)]}
+
+    # ejecutar / verificar
+    assert _paginate_listing(filas, ofertas, _params())["types"] == []
