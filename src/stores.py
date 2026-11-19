@@ -52,9 +52,9 @@ STORES = (
     Store("changomas", "changomas_online", "ChangoMás", 20000, 3999, "www.masonline.com.ar"),
     # Jumbo es Cencosud como Vea: mismo árbol de categorías, mismo ListPrice roto,
     # misma entidad de promos bancarias. Vende por el canal 32 (con `sc=1` el
-    # checkout contesta error). El mínimo es el `minimumOrderValue` de su
-    # simulación (0, nov 2026), sin confirmar todavía en un checkout de verdad.
-    Store("jumbo", "jumbo_online", "Jumbo", 0, 3999, "www.jumbo.com.ar", sales_channel=32),
+    # checkout contesta error). El mínimo ($20.000) sale del checkout real
+    # (nov 2026): la simulación dice `minimumOrderValue` 0, y no es cierto.
+    Store("jumbo", "jumbo_online", "Jumbo", 20000, 3999, "www.jumbo.com.ar", sales_channel=32),
 )
 
 STORE_IDS = {s.key: s.id for s in STORES}

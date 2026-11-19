@@ -106,7 +106,7 @@ Each scraper calls the store's internal API (Coto: BFF REST; VTEX stores: GraphQ
 - **Jumbo** (jumbo.com.ar) is Cencosud like Vea, and behaves like it everywhere:
   - The same tree: every Vea key exists in Jumbo, so `jumbo=` copies `vea=` row by row (its three `()` included). A key change on one is worth checking on the other.
   - The same broken `ListPrice` (`Price` × 82,645): `PromoTransformer.jumbo()` is Vea's rule. `teasers` came empty (Nov 2026).
-  - Sales channel 32 (`sc=1` errors out on checkout). The minimum is the simulation's `minimumOrderValue` (0), unconfirmed in a real checkout, like Vea's.
+  - Sales channel 32 (`sc=1` errors out on checkout). The $20.000 minimum comes from a real checkout; the simulation's `minimumOrderValue` says 0, which makes Vea's 0 (same source) suspect.
 - **The `warning` mechanism stays for next time** (no store has one today). A store with a `warning` on its `Store` row and the matching text in `constants.js` stays in the catalog and the solver, but the frontend excludes it unless the user opts in (`ProfileContext.optedInStores`), and `ProductPage` never links to it. `tests/test_stores.py` checks both sides match.
 
 ### 1b. Shelves (`src/shelves.py`)
