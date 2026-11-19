@@ -76,6 +76,19 @@ def test_vea_ignora_su_list_price():
     assert promos == []
 
 
+def test_jumbo_ignora_su_list_price():
+    # preparar: yerba Playadito 1 kg, relevada en jumbo.com.ar (nov 2026). Mismo
+    # ListPrice que Vea: Price x 82,645.
+    oferta = {"ListPrice": 430413, "Price": 5208, "teasers": [], "discountHighlights": []}
+
+    # ejecutar
+    base_price, promos = PromoTransformer.jumbo(oferta, "315800")
+
+    # verificar
+    assert base_price == 5208
+    assert promos == []
+
+
 def test_changomas_listprice_mayor_es_descuento_directo():
     # preparar: aceite Cañuelas 1,5 L, relevado en masonline.com.ar (nov 2026)
     oferta = {"ListPrice": 6989, "Price": 4999, "teasers": []}

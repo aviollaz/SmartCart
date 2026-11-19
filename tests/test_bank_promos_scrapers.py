@@ -13,7 +13,7 @@ import httpx
 import pytest
 
 from src.promotions import (
-    CarrefourScraper, ChangomasScraper, CotoScraper, DiaScraper, DiscountScrapeError, VeaScraper,
+    CarrefourScraper, ChangomasScraper, CotoScraper, DiaScraper, DiscountScrapeError, JumboScraper, VeaScraper,
 )
 from src.promotions.banks import is_membership
 from src.promotions.models import BankDiscount, InvalidDiscount
@@ -494,7 +494,7 @@ def test_un_registro_invalido_se_descarta_sin_voltear_la_corrida():
 
 
 @pytest.mark.parametrize("campo, valor", [
-    ("store", "jumbo_online"),
+    ("store", "makro_online"),
     ("porcentaje_descuento", 0),
     ("porcentaje_descuento", 101),
     ("dias_validos", ()),
@@ -598,6 +598,35 @@ def test_vea_value_es_json_adentro_de_un_string():
     scraper = VeaScraper(client=_cliente(_handler_json(payload)), now=AHORA)
 
     assert [d.entidad for d in scraper.scrape()] == ["cencopay"]
+
+
+# ------------------------------------------------------------------------ Jumbo
+#
+# Jumbo lee la misma entidad JN/bankDiscount que Vea; sólo cambia el sitio.
+
+
+def test_jumbo_toma_solo_las_promos_de_jumboargentina():
+    # preparar: la promo base de Vea lista veaargentina y discoargentina, no jumbo
+    scraper = JumboScraper(now=AHORA)
+
+    # ejecutar
+    descuento = scraper._to_discount(_promo_vea())
+
+    # verificar
+    assert descuento is None
+    assert scraper.discards["otro sitio de cencosud"] == 1
+
+
+def test_jumbo_traduce_una_promo_online():
+    # preparar
+    promo = _promo_vea(websites=["jumboargentina"])
+
+    # ejecutar
+    descuento = JumboScraper(now=AHORA)._to_discount(promo)
+
+    # verificar
+    assert (descuento.store, descuento.entidad, descuento.porcentaje_descuento) == ("jumbo_online", "cencopay", 20.0)
+    assert descuento.promo_id.startswith("jumbo_")
 
 
 # -------------------------------------------------------------------- ChangoMás

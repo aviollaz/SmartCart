@@ -39,7 +39,6 @@ from src.text_utils import normalize_label
 
 PROMOCIONES_URL = "https://www.vea.com.ar/api/dataentities/JN/documents/bankDiscount"
 PROMOCIONES_PARAMS = {"_fields": "value,id", "an": "jumboargentina"}
-WEBSITE = "veaargentina"
 
 TIMEOUT_SECONDS = 15.0
 
@@ -62,6 +61,8 @@ class VeaScraper(DiscountScraper):
     """Descuentos bancarios de Vea, vía la entidad de Master Data de Cencosud."""
 
     STORE_ID = "vea_online"
+    WEBSITE = "veaargentina"  # el sitio de Cencosud en `websites`
+    PREFIX = "vea"            # namespacea los `promo_id`
 
     def __init__(self, client: httpx.Client | None = None, now: float | None = None) -> None:
         super().__init__()
@@ -89,7 +90,7 @@ class VeaScraper(DiscountScraper):
         return raw if isinstance(raw, list) else []
 
     def _to_discount(self, raw_promo) -> BankDiscount | None:
-        if WEBSITE not in (raw_promo.get("websites") or []):
+        if self.WEBSITE not in (raw_promo.get("websites") or []):
             self._discard("otro sitio de cencosud")
             return None
 
@@ -144,7 +145,7 @@ class VeaScraper(DiscountScraper):
             tope_reintegro=tope,
             tope_periodo=periodo,
             descripcion=self._build_descripcion(porcentaje, entidad, tope),
-            promo_id=f"vea_{raw_promo.get('priority')}_{entidad}_{porcentaje:g}",
+            promo_id=f"{self.PREFIX}_{raw_promo.get('priority')}_{entidad}_{porcentaje:g}",
             texto_legal=legal.strip() or info.strip(),
             scraped_at=self._now_iso(),
         )

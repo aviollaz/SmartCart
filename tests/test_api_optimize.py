@@ -155,13 +155,14 @@ def _resolve(req):
 
 @pytest.fixture(autouse=True)
 def _dia_sin_novedad(monkeypatch):
-    """Día, Carrefour, Vea y ChangoMás no consultan la red en estos tests: responden como su fallback."""
+    """Día, Carrefour, Vea, ChangoMás y Jumbo no consultan la red en estos tests: responden como su fallback."""
     sin_novedad = lambda lat, lng, fallback_delivery_cost: {
         "covered": True, "delivery_cost": fallback_delivery_cost, "source": "fallback"}
     monkeypatch.setattr(api, "resolve_dia_logistics", sin_novedad)
     monkeypatch.setattr(api, "resolve_carrefour_logistics", sin_novedad)
     monkeypatch.setattr(api, "resolve_vea_logistics", sin_novedad)
     monkeypatch.setattr(api, "resolve_changomas_logistics", sin_novedad)
+    monkeypatch.setattr(api, "resolve_jumbo_logistics", sin_novedad)
 
 
 def test_dia_sin_cobertura_se_excluye_y_coto_live_pisa_el_costo(monkeypatch):
@@ -176,7 +177,7 @@ def test_dia_sin_cobertura_se_excluye_y_coto_live_pisa_el_costo(monkeypatch):
     assert excluded == [DIA]
     assert costs[COTO] == 3399.0
     assert costs[DIA] == 3000
-    assert set(logistics) == {"coto", "dia", "carrefour", "vea", "changomas"}
+    assert set(logistics) == {"coto", "dia", "carrefour", "vea", "changomas", "jumbo"}
 
 
 def test_dia_cubierto_pisa_su_costo(monkeypatch):
@@ -286,7 +287,7 @@ def test_ninguna_tienda_vtex_sin_item_id_rompe(store):
 
 def test_user_excluded_stores_rechaza_una_tienda_desconocida():
     with pytest.raises(ValueError, match="desconocidas"):
-        api.OptimizationRequest(cart=[], user_excluded_stores=["jumbo_online"])
+        api.OptimizationRequest(cart=[], user_excluded_stores=["makro_online"])
 
 
 def test_user_excluded_stores_no_puede_sacar_todas():
@@ -515,9 +516,10 @@ def _tienda_lenta(segundos, cubre=True):
 
 
 def test_la_logistica_tarda_lo_que_la_tienda_mas_lenta(monkeypatch):
-    # preparar: cinco tiendas que tardan medio segundo cada una
+    # preparar: seis tiendas que tardan medio segundo cada una
     for nombre in ("resolve_coto_logistics", "resolve_dia_logistics",
-                   "resolve_carrefour_logistics", "resolve_vea_logistics", "resolve_changomas_logistics"):
+                   "resolve_carrefour_logistics", "resolve_vea_logistics", "resolve_changomas_logistics",
+                   "resolve_jumbo_logistics"):
         monkeypatch.setattr(api, nombre, _tienda_lenta(0.5))
 
     # ejecutar
@@ -525,7 +527,7 @@ def test_la_logistica_tarda_lo_que_la_tienda_mas_lenta(monkeypatch):
     api._resolve_logistics_stage(_Req(None, -34.6, -58.4))
     duracion = time.perf_counter() - inicio
 
-    # verificar: en serie serían 2,5 s; en paralelo, ~0,5 s
+    # verificar: en serie serían 3 s; en paralelo, ~0,5 s
     assert duracion < 1.0
 
 
@@ -547,7 +549,8 @@ def test_los_precios_del_carrito_se_calculan_mientras_se_resuelve_la_logistica(m
 
     # preparar: la logística tarda medio segundo y los precios otro medio
     for nombre in ("resolve_coto_logistics", "resolve_dia_logistics",
-                   "resolve_carrefour_logistics", "resolve_vea_logistics", "resolve_changomas_logistics"):
+                   "resolve_carrefour_logistics", "resolve_vea_logistics", "resolve_changomas_logistics",
+                   "resolve_jumbo_logistics"):
         monkeypatch.setattr(api, nombre, _tienda_lenta(0.5))
 
     def precios_lentos(*a, **k):

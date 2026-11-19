@@ -17,6 +17,7 @@ from src.promotions.scraper_carrefour import CarrefourScraper
 from src.promotions.scraper_changomas import ChangomasScraper
 from src.promotions.scraper_coto import CotoScraper
 from src.promotions.scraper_dia import DiaScraper
+from src.promotions.scraper_jumbo import JumboScraper
 from src.promotions.scraper_vea import VeaScraper
 
 #: Los scrapers, indexados por el nombre corto que usa la CLI.
@@ -26,6 +27,7 @@ SCRAPERS = {
     "carrefour": CarrefourScraper,
     "vea": VeaScraper,
     "changomas": ChangomasScraper,
+    "jumbo": JumboScraper,
 }
 
 __all__ = [
@@ -38,6 +40,7 @@ __all__ = [
     "DiscountScrapeError",
     "DiscountScraper",
     "InvalidDiscount",
+    "JumboScraper",
     "PlaywrightScraper",
     "SCRAPERS",
     "VeaScraper",

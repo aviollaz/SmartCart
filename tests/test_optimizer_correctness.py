@@ -444,7 +444,7 @@ def test_sin_exclusiones_no_se_culpa_a_la_direccion(fake_prices):
     Un producto sin ofertas en ninguna tienda configurada no tiene nada que ver
     con la dirección de entrega; el mensaje no debe inventar esa explicación.
     """
-    fake_prices({"prod_a": {"jumbo_online": 9000}})
+    fake_prices({"prod_a": {"makro_online": 9000}})
 
     result = optimize_cart(
         _cart("prod_a"),
@@ -495,7 +495,7 @@ def test_una_tienda_desconocida_en_excluded_stores_se_ignora(fake_prices):
         _cart("prod_a"),
         min_spend_limits={COTO: 5000, DIA: 5000},
         delivery_costs={COTO: 3000, DIA: 3000},
-        excluded_stores=["jumbo_online"],
+        excluded_stores=["makro_online"],
     )
 
     assert result["status"] == "success"

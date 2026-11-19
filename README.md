@@ -3,7 +3,7 @@
 **Live demo: [smart-cart-rouge.vercel.app](https://smart-cart-rouge.vercel.app)**
 
 SmartCart finds the cheapest way to buy a grocery list in Argentina. Every night it
-scrapes **Coto, Día, Carrefour, Vea and ChangoMás**, unifies their catalogs by barcode (EAN),
+scrapes **Coto, Día, Carrefour, Vea, ChangoMás and Jumbo**, unifies their catalogs by barcode (EAN),
 and a constraint solver (OR-Tools CP-SAT) splits the cart across the chains,
 counting promotions, bank discounts, delivery costs and each store's minimum
 purchase.
@@ -12,7 +12,7 @@ purchase.
 
 | | |
 |---|---|
-| Chains | Coto, Día, Carrefour, Vea, ChangoMás — the same 75 shelves in each (72 at Vea, 70 at ChangoMás) |
+| Chains | Coto, Día, Carrefour, Vea, ChangoMás, Jumbo — the same 75 shelves in each (72 at Vea and Jumbo, 70 at ChangoMás) |
 | Refresh | Nightly, GitHub Actions |
 | Tests | 540+ (pytest) |
 | Infra | API on Cloud Run, Postgres + pgvector on Neon, frontend on Vercel — all free tiers |
@@ -41,7 +41,7 @@ purchase.
 docker-compose up -d                  # Postgres + pgvector on localhost:5432
 cp .env.example .env                  # Copy-Item in PowerShell; defaults work locally
 pip install -r requirements.txt
-python -m src.scripts.run_scrapers --store dia   # ~45 min; all five chains take ~5 h
+python -m src.scripts.run_scrapers --store dia   # ~45 min; all six chains take ~6 h
 uvicorn src.api:app --reload          # API on :8000, docs at /docs
 cd frontend && npm install && npm run dev        # app on :5173
 ```

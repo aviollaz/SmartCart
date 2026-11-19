@@ -46,9 +46,9 @@ export const CARD_OPTIONS = [
 // "club_dia" se fue en nov-2026: no tenía descuento bancario ni cambia el
 // precio de ningún producto (el precio de socio sólo se lee en Carrefour).
 //
-// "jumbo_mas" se fue: Jumbo no es una de las tres cadenas del proyecto, así
-// que era una opción que no podía aplicar a ningún precio — ruido que invita
-// a preguntar por una tienda que no existe acá.
+// "jumbo_mas" se fue: no publica ningún descuento en la entidad de promos de
+// Cencosud (nov 2026), así que era una opción que no podía aplicar a ningún
+// precio. Vuelve si aparece en bank_promos.json.
 export const MEMBERSHIP_OPTIONS = [
   { value: "coto_tci", label: "Coto TCI" },
   { value: "comunidad_coto", label: "Comunidad Coto" },
