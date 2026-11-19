@@ -2,16 +2,17 @@
 // (frontend/app.py, delivery_mock) para no perder paridad funcional.
 export const DELIVERY_ZONES = ["CABA", "GBA Norte", "GBA Sur", "GBA Oeste"];
 
-// Carrefour, Vea y ChangoMás cobran lo mismo en todas las zonas a las que
+// Carrefour, Vea, ChangoMás y Jumbo cobran lo mismo en todas las zonas a las que
 // llegan, así que su número se repite: es el dato, no un placeholder pendiente
 // de afinar (Vea: $3.499 medido en CABA, San Isidro y Córdoba;
 // src/vea_logistics.py. ChangoMás: $3.999 en las cuatro zonas, nov 2026, salvo
-// Quilmes, que su sucursal cotiza $13.000; eso lo trae la consulta en vivo).
+// Quilmes, que su sucursal cotiza $13.000; eso lo trae la consulta en vivo.
+// Jumbo: $3.999 en CABA, San Isidro, Quilmes y Morón, nov 2026).
 export const DELIVERY_COSTS_BY_ZONE = {
-  CABA: { coto_online: 2500.0, dia_online: 2000.0, carrefour_online: 3500.0, vea_online: 3499.0, changomas_online: 3999.0 },
-  "GBA Norte": { coto_online: 3500.0, dia_online: 3000.0, carrefour_online: 3500.0, vea_online: 3499.0, changomas_online: 3999.0 },
-  "GBA Sur": { coto_online: 4000.0, dia_online: 4000.0, carrefour_online: 3500.0, vea_online: 3499.0, changomas_online: 3999.0 },
-  "GBA Oeste": { coto_online: 3800.0, dia_online: 3500.0, carrefour_online: 3500.0, vea_online: 3499.0, changomas_online: 3999.0 },
+  CABA: { coto_online: 2500.0, dia_online: 2000.0, carrefour_online: 3500.0, vea_online: 3499.0, changomas_online: 3999.0, jumbo_online: 3999.0 },
+  "GBA Norte": { coto_online: 3500.0, dia_online: 3000.0, carrefour_online: 3500.0, vea_online: 3499.0, changomas_online: 3999.0, jumbo_online: 3999.0 },
+  "GBA Sur": { coto_online: 4000.0, dia_online: 4000.0, carrefour_online: 3500.0, vea_online: 3499.0, changomas_online: 3999.0, jumbo_online: 3999.0 },
+  "GBA Oeste": { coto_online: 3800.0, dia_online: 3500.0, carrefour_online: 3500.0, vea_online: 3499.0, changomas_online: 3999.0, jumbo_online: 3999.0 },
 };
 
 // Siempre devuelve el objeto completo, con todas las tiendas de STORES

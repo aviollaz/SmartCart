@@ -63,7 +63,7 @@ const FAQ = [
     preguntas: [
       {
         q: "¿Compro en SmartCart?",
-        a: "No. SmartCart no vende nada ni cobra. Al optimizar, el botón «Comprar en…» te lleva al sitio de cada súper: en Día, Carrefour, Vea y ChangoMás con el carrito ya cargado, y en Coto con una lista de los productos para agregarlos. Pagás ahí, como siempre, y SmartCart nunca ve tus datos de pago.",
+        a: "No. SmartCart no vende nada ni cobra. Al optimizar, el botón «Comprar en…» te lleva al sitio de cada súper: en Día, Carrefour, Vea, ChangoMás y Jumbo con el carrito ya cargado, y en Coto con una lista de los productos para agregarlos. Pagás ahí, como siempre, y SmartCart nunca ve tus datos de pago.",
       },
       {
         q: "¿Cómo uso mis descuentos bancarios?",

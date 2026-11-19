@@ -29,6 +29,7 @@ PROMO_TRANSFORMERS = {
     # Vea es VTEX pero su ListPrice no es un precio (ver PromoTransformer.vea).
     "vea_online": lambda prod: PromoTransformer.vea(prod['raw_promos'], prod['store_sku']),
     "changomas_online": lambda prod: PromoTransformer.changomas(prod['raw_promos'], prod['store_sku']),
+    "jumbo_online": lambda prod: PromoTransformer.jumbo(prod['raw_promos'], prod['store_sku']),
 }
 
 

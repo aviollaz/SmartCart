@@ -20,6 +20,7 @@ export const STORES = [
   { id: "carrefour_online", name: "Carrefour", key: "carrefour", label: "Disponible en Carrefour", color: "bg-blue-600" },
   { id: "vea_online", name: "Vea", key: "vea", label: "Disponible en Vea", color: "bg-amber-500" },
   { id: "changomas_online", name: "ChangoMás", key: "changomas", label: "Disponible en ChangoMás", color: "bg-green-600" },
+  { id: "jumbo_online", name: "Jumbo", key: "jumbo", label: "Disponible en Jumbo", color: "bg-emerald-700" },
 ];
 
 // Formulario de feedback para los testers de la demo, enlazado al final de la

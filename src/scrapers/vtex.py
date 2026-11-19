@@ -1,6 +1,6 @@
 # src/scrapers/vtex.py
 """
-Lo que comparten las tiendas que corren sobre VTEX (Día, Carrefour, Vea, ChangoMás).
+Lo que comparten las tiendas que corren sobre VTEX (Día, Carrefour, Vea, ChangoMás, Jumbo).
 
 Todas le pegan a la misma operación `productSearchV3` con la misma persisted
 query, así que la lectura de la respuesta, el parseo de cada producto

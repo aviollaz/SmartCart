@@ -6,9 +6,9 @@ Cómo funciona SmartCart hoy, etapa por etapa. Dónde corre está en
 
 ## 1. Qué resuelve
 
-El mismo producto cuesta distinto en Coto, Día, Carrefour, Vea y ChangoMás (la yerba puede
+El mismo producto cuesta distinto en Coto, Día, Carrefour, Vea, ChangoMás y Jumbo (la yerba puede
 diferir 20-30%), y ninguna cadena gana en todo. SmartCart toma un carrito armado
-en lenguaje natural y calcula cómo repartirlo entre las cinco para gastar lo
+en lenguaje natural y calcula cómo repartirlo entre las seis para gastar lo
 mínimo, con las restricciones reales como duras: el mínimo de compra de cada
 tienda, la cobertura de envío, y sólo los descuentos que el usuario declaró
 (tarjetas, membresías).
@@ -16,7 +16,7 @@ tienda, la cobertura de envío, y sólo los descuentos que el usuario declaró
 Son dos problemas separados:
 
 1. **Ingesta**, offline y nocturna: un catálogo unificado y al día de las
-   cinco cadenas.
+   seis cadenas.
 2. **Optimización**, online, al apretar el botón: la combinación más barata
    para un carrito puntual.
 
@@ -26,7 +26,7 @@ Son dos problemas separados:
 flowchart LR
     subgraph Offline["Offline (nocturno / bajo demanda)"]
         direction TB
-        SCR["Scrapers\nCoto / Día / Carrefour / Vea / ChangoMás"]
+        SCR["Scrapers\nCoto / Día / Carrefour / Vea / ChangoMás / Jumbo"]
         EMB["Embeddings\nsentence-transformers"]
         BANK["Descuentos bancarios\nhttpx + Playwright"]
         SCR --> EMB
@@ -58,8 +58,8 @@ flowchart LR
 |---|---|
 | Base | PostgreSQL + `pgvector` (HNSW, coseno), en Neon |
 | Backend | Python, FastAPI, `psycopg[binary,pool]`, Pydantic, `sentence-transformers` (`all-MiniLM-L6-v2`), OR-Tools CP-SAT |
-| Scraping de catálogo | `httpx` contra las APIs internas: BFF REST de Coto, GraphQL de VTEX para Día, Carrefour, Vea y ChangoMás |
-| Descuentos bancarios | `httpx` (Coto, Vea, ChangoMás) + Playwright/Chromium (Día, Carrefour) |
+| Scraping de catálogo | `httpx` contra las APIs internas: BFF REST de Coto, GraphQL de VTEX para Día, Carrefour, Vea, ChangoMás y Jumbo |
+| Descuentos bancarios | `httpx` (Coto, Vea, ChangoMás, Jumbo) + Playwright/Chromium (Día, Carrefour) |
 | Frontend | React 19, Vite, Tailwind v4, React Router, `react-leaflet` |
 | Analítica | servicio aparte con su propia base, alimenta Power BI |
 
@@ -76,7 +76,7 @@ Pide a cada sitio la misma API que usa para pintar su grilla; no hay scraping de
 HTML.
 
 - **Coto** (`scraper_coto.py`): BFF REST paginado.
-- **Día, Carrefour, Vea y ChangoMás**: VTEX, con una *persisted query* GraphQL de hash fijo
+- **Día, Carrefour, Vea, ChangoMás y Jumbo**: VTEX, con una *persisted query* GraphQL de hash fijo
   que no admite campos nuevos. Un solo barrido, `VtexCatalogScraper`
   (`vtex.py`); cada tienda es una subclase registrada en `vtex_stores.py`.
 
@@ -97,12 +97,16 @@ nunca HTML.
 $5.289 en CABA y $4.399 en Córdoba. El catálogo, sin `regionId`, trae el precio
 de CABA.
 
+**Jumbo** es Cencosud como Vea: el mismo árbol de categorías (las 104 claves
+de Vea existen en Jumbo), el mismo `ListPrice` que no es un precio y la misma
+entidad de promos bancarias. Vende por el canal 32.
+
 #### 3.1.1 Las góndolas (`src/shelves.py`)
 
 La única taxonomía del proyecto. Cada fila es un slug canónico (`yerba-mate`),
 una etiqueta, una sección del menú y las claves de esa góndola en cada tienda.
 Hoy: **75 góndolas** en nueve secciones, con 141 claves de Coto, 109 de Día, 86
-de Carrefour, 104 de Vea y 97 de ChangoMás. Una góndola puede necesitar varias claves por tienda
+de Carrefour, 104 de Vea, 97 de ChangoMás y 104 de Jumbo. Una góndola puede necesitar varias claves por tienda
 porque cada taxonomía anida a otra profundidad.
 
 Existe porque un producto sólo se compara entre cadenas si todas barrieron la
@@ -113,7 +117,7 @@ misma góndola. El slug decide, con una igualdad SQL:
 - qué puede sustituir a qué (`substitutions.py`, `strategic_swaps.py`),
 - qué dibuja el mega-menú (`GET /categories`).
 
-Vea no cubre tres góndolas de protección femenina: su taxonomía mezcla
+Vea y Jumbo no cubren tres góndolas de protección femenina: su taxonomía mezcla
 toallitas, protectores y tampones en una sola hoja. ChangoMás no cubre cinco,
 por lo mismo: una hoja de conservas mezcla atún con arvejas, la de embutidos
 mezcla salchichas con salame, y las papas congeladas comparten hoja con los
@@ -180,7 +184,7 @@ Antes de optimizar, se le pregunta a cada tienda si llega a la dirección y
 cuánto cobra el envío, por endpoints públicos sin login: `getCobertura` en
 Coto, el checkout de VTEX (`regions` + `orderForms/simulation`) en las demás.
 
-- **Las cinco se consultan en paralelo**: la etapa tarda lo que la más lenta,
+- **Las seis se consultan en paralelo**: la etapa tarda lo que la más lenta,
   que suele ser Vea (2-6 s). Las respuestas válidas se cachean 30 minutos.
 - **Coto** no expone el costo real sin sesión, y desde nov-2026 tampoco publica
   su tarifa: su envío sale del costo por zona, marcado como estimado.

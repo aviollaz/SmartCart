@@ -36,7 +36,7 @@ comparten un `run_id`, así `scraper_execution_logs` muestra una sola corrida.
 Una tienda caída no cancela a las otras (`fail-fast: false`), y dos corridas
 nunca se pisan (`concurrency`).
 
-- **Dura ~1 h 15 min:** Día y Vea ~45 min, Coto y Carrefour ~1 h 10 min (ChangoMás, sin medir todavía en Actions).
+- **Dura ~1 h 15 min:** Día y Vea ~45 min, Coto y Carrefour ~1 h 10 min (ChangoMás y Jumbo, sin medir todavía en Actions).
 - **GitHub lo demora.** Con el cron en `0 6` salía a horario hasta el
   20-oct-2026; desde el 21 la demora creció a ~9 h, sin cambios nuestros. El
   18-nov se pasó a `23 5`, porque la hora en punto es donde GitHub apila los

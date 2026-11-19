@@ -275,3 +275,13 @@ class PromoTransformer:
         veces) y la diferencia es un descuento abierto.
         """
         return PromoTransformer._vtex(raw_commertial_offer, product_id, "changomas")
+
+    @staticmethod
+    def jumbo(raw_commertial_offer: dict, product_id: str) -> tuple[float, list]:
+        """
+        Jumbo es Cencosud y trae el mismo `ListPrice` roto que Vea (yerba
+        Playadito 1 kg: `Price` 5.208, `ListPrice` 430.413, nov 2026), con
+        `teasers` vacío en todo lo relevado. Misma regla que `vea()`.
+        """
+        oferta = {**raw_commertial_offer, "ListPrice": raw_commertial_offer.get("Price", 0.0)}
+        return PromoTransformer._vtex(oferta, product_id, "jumbo")

@@ -1,5 +1,5 @@
 {
- "scraped_at": "2026-11-19T01:34:51+00:00",
+ "scraped_at": "2026-11-19T15:38:56+00:00",
  "promos": {
   "coto_online": [
    {
@@ -596,6 +596,64 @@
     "scraped_at": "2026-11-18T20:25:42+00:00"
    }
   ],
-  "changomas_online": []
+  "changomas_online": [],
+  "jumbo_online": [
+   {
+    "store": "jumbo_online",
+    "entidad": "naranja_x",
+    "porcentaje_descuento": 25.0,
+    "dias_validos": [
+     "martes"
+    ],
+    "tope_reintegro": 9500,
+    "tope_periodo": "semanal",
+    "descripcion": "25% de descuento con Naranja X (Tope $9.500)",
+    "promo_id": "jumbo_11_naranja_x_25",
+    "texto_legal": "Promoción válida los días martes del mes de Octubre y Noviembre de 2026 o hasta agotar un stock total de 80.000 reintegros, lo que ocurra primero. El beneficio consiste en un reintegro (cashback) del 25%, con tope de $9.500 por semana, para compras realizadas con Tarjeta de Crédito Naranja X y Tarjeta de Débito Visa Naranja X, en los comercios adheridos a la “Promo Supermercado NX”, para usuarios Plan Turbo. El monto del reintegro se acreditará exclusivamente en la cuenta Naranja X dentro de los 10 días posteriores a la fecha de la compra. Promoción válida únicamente en comercios adheridos. No aplica a compras realizadas con Naranja Visa, Naranja MasterCard, Naranja Amex, ni a transacciones efectuadas mediante agrupadores o billeteras virtuales distintas de Naranja X. Naranja X se reserva el derecho de suspender o modificar la promoción por causas de fuerza mayor, notificándolo a través de la app Naranja X. La Cuenta Naranja X es administrada por Naranja Digital Compañía Financiera S.A.U., CUIT 30-71663964-5, Tte. Gral. Juan D. Perón 430, Piso 19, CABA. La Tarjeta de Crédito Naranja X es emitida por Tarjeta Naranja S.A.U., CUIT 30-68537634-9, La Tablada 451, Ciudad de Córdoba.",
+    "scraped_at": "2026-11-19T15:38:56+00:00"
+   },
+   {
+    "store": "jumbo_online",
+    "entidad": "cencopay",
+    "porcentaje_descuento": 20.0,
+    "dias_validos": [
+     "miercoles"
+    ],
+    "tope_reintegro": null,
+    "tope_periodo": null,
+    "descripcion": "20% de descuento con CencoPay",
+    "promo_id": "jumbo_1_cencopay_20",
+    "texto_legal": "PARA MÁS INFORMACIÓN Y CONDICIONES O LIMITACIONES APLICABLES, CONSULTE EN CENCOPAY.AR PROMOCIONES VÁLIDAS PARA COMPRAS REALIZADAS EN LA REPÚBLICA ARGENTINA CON TARJETA DE CRÉDITO CENCOPAY. NO ACUMULABLES CON OTRAS PROMOCIONES Y/O DESCUENTOS. ESTAS PROMOCIONES NO APLICAN PARA CLIENTES EN MORA O INHABILITADOS, TAMPOCO APLICA PARA PAGOS REALIZADOS CON QR NI PARA COMPRAS EN LOS LOCALES \"VEA EXPRESS Y DISCO EXPRESS\".   (1) PROMOCIÓN VÁLIDA CON LA TARJETA DE CRÉDITO FÍSICA CENCOPAY SOLO LOS DÍAS MIÉRCOLES DESDE EL 01/10/2026 AL 30/11/2026 EN LOS SITIOS WEB OBTENIENDO UN 20% DE DESCUENTO EN TU COMPRA ONLINE. NO INCLUYE ELECTRODOMÉSTICOS, RODADOS, LIBRERÍA, CARNES, LECHES, MAYORISTAS DE FIAMBRERÍA, PRODUCTOS DE MARCAS EXCLUSIVAS (C&CO, HOME CARE, FAMILY CARE, PET FUN, JUMBO Y VEA), NI BODEGAS (LA RURAL, TRUMPETER, RUTINI, CHANDON, 33 SUR, TERRAZAS DE LOS ANDES, LATITUD 33, MERCIER Y BARON B.). EL DESCUENTO SE EFECTIVIZARÁ EN EL CHECK OUT. (2) PROMOCIÓN VÁLIDA SOLO LOS DÍAS MIÉRCOLES DESDE EL 01/10/2026 AL 31/10/2026 EN LOS SITIOS WEB, OBTENIENDO SOLO 3 CUOTAS SIN INTERÉS EN TODA LA COMPRA ONLINE. NO INCLUYE ELECTRODOMÉSTICOS. INCLUYE SOLO VENTA NO PRESENCIAL. ESTA PROMOCIÓN NO APLICA PARA CLIENTES EN MORA O INHABILITADOS. (2) PLAN 3: TASA NOMINAL ANUAL: 0,0%, TASA EFECTIVA ANUAL: 0,0%, COSTO FINANCIERO TOTAL NOMINAL ANUAL: 0,0%. SISTEMA FRANCÉS DE AMORTIZACIÓN MENSUAL EL COSTO FINANCIERO TOTAL SE EXPRESA COMO TASA NOMINAL ANUAL CORRESPONDIENTE AL FLUJO DE FONDOS CONSIDERADO. EL COSTO FINANCIERO TOTAL NOMINAL ANUAL NO INCLUYE LA COMISIÓN MENSUAL DE ADMINISTRACIÓN DE CUENTA NI COSTOS ASOCIADOS AL MANTENIMIENTO DE LA TARJETA. CONSULTE TÉRMINOS Y CONDICIONES, COMISIONES Y CARGOS VIGENTES ASOCIADOS A SU CUENTA AL 0810-9999-627 O EN CENCOPAY.AR/. EL USO INDEBIDO DE LA PROMOCIÓN PODRÁ SER SANCIONADO CON SUSPENSIÓN, INHABILITACIÓN O CESE DE LA CUENTA DIGITAL, AMPARADO EN EL APARTADO QUINTO DE LOS TÉRMINOS Y CONDICIONES. SE CONSIDERARÁ USO INDEBIDO DE LA PROMOCIÓN AQUEL USO EN EL QUE SE DETECTEN DOS O MAS CORTES TICKET DE COMPRA CON EL FIN DE SUMAR DESCUENTOS, YA HABIENDO OBTENIDO ESTE EN LA PRIMERA TRANSACCIÓN REALIZADA. SE DEJA CONSTANCIA QUE CENCOSUD S.A. SE LIMITA A OFRECER SERVICIOS DE PAGO Y NO SE ENCUENTRA AUTORIZADA A OPERAR COMO ENTIDAD FINANCIERA POR EL BANCO CENTRAL DE LA REPÚBLICA ARGENTINA. LOS FONDOS DEPOSITADOS EN CUENTAS DE PAGO NO CONSTITUYEN DEPÓSITOS EN UNA ENTIDAD FINANCIERA.  CENCOSUD S.A. CUIT 30-59036076-3, SUIPACHA 1111, PISO 18, CABA (DOM. NO COMERCIAL).",
+    "scraped_at": "2026-11-19T15:38:56+00:00"
+   },
+   {
+    "store": "jumbo_online",
+    "entidad": "naranja_x",
+    "porcentaje_descuento": 30.0,
+    "dias_validos": [
+     "martes"
+    ],
+    "tope_reintegro": 12000,
+    "tope_periodo": "semanal",
+    "descripcion": "30% de descuento con Naranja X (Tope $12.000)",
+    "promo_id": "jumbo_10_naranja_x_30",
+    "texto_legal": "Promoción válida los días martes del mes Octubre y Noviembre de 2026 o hasta agotar un stock total de 80.000 reintegros, lo que ocurra primero. El beneficio consiste en un reintegro (cashback) del 30%, con tope de $12.000 por semana, para compras realizadas con Tarjeta de Crédito Naranja X y Tarjeta de Débito Visa Naranja X, en los comercios adheridos a la “Promo Supermercado NX”, para usuarios Plan Épico. El monto del reintegro se acreditará exclusivamente en la cuenta Naranja X dentro de los 10 días posteriores a la fecha de la compra. Promoción válida únicamente en comercios adheridos. No aplica a compras realizadas con Naranja Visa, Naranja MasterCard, Naranja Amex, ni a transacciones efectuadas mediante agrupadores o billeteras virtuales distintas de Naranja X. Naranja X se reserva el derecho de suspender o modificar la promoción por causas de fuerza mayor, notificándolo a través de la app Naranja X. La Cuenta Naranja X es administrada por Naranja Digital Compañía Financiera S.A.U., CUIT 30-71663964-5, Tte. Gral. Juan D. Perón 430, Piso 19, CABA. La Tarjeta de Crédito Naranja X es emitida por Tarjeta Naranja S.A.U., CUIT 30-68537634-9, La Tablada 451, Ciudad de Córdoba.",
+    "scraped_at": "2026-11-19T15:38:56+00:00"
+   },
+   {
+    "store": "jumbo_online",
+    "entidad": "naranja_x",
+    "porcentaje_descuento": 20.0,
+    "dias_validos": [
+     "martes"
+    ],
+    "tope_reintegro": 3000,
+    "tope_periodo": "semanal",
+    "descripcion": "20% de descuento con Naranja X (Tope $3.000)",
+    "promo_id": "jumbo_12_naranja_x_20",
+    "texto_legal": "Promoción válida los días martes de mes de Octubre y Noviembre 2026, o hasta agotar un stock total de 80.000 reintegros, lo que ocurra primero. El beneficio consiste en un reintegro (cashback) para las compras realizadas con Tarjeta de Crédito NaranjaX y Tarjeta de Débito Visa NaranjaX en todos los comercios adheridos a la Promo supermercado NX, aplicando el siguiente descuento y tope según el plan del usuario: (1) PLAN INICIAL: 20% de Descuento con tope de $3.000 por semana. (2) PLAN TURBO: 25% de Descuento con tope de $9.500 por semana. (3) PLAN ÉPICO: 30% de Descuento con tope de $12.000 por semana. El monto reintegrado se acreditará únicamente en tu cuenta Naranja X dentro de los 10 días posteriores a la fecha de la compra. Esta promoción es válida solo en los comercios adheridos y no aplica para compras realizadas con Naranja Visa, Naranja MasterCard, Naranja Amex, ni para transacciones efectuadas en agrupadores y billeteras virtuales que no sean Naranja X. Naranja X se reserva el derecho de suspender o modificar la promoción por causas de fuerza mayor, notificándolo a través de la aplicación Naranja X. La Cuenta Naranja X es administrada por Naranja Digital Compañía Financiera S.A.U., CUIT 30-71663964-5, Tte. Gral. Juan D. Perón 430, Piso 19, CABA. La Tarjeta de Crédito Naranja X es emitida por Tarjeta Naranja S.A.U., CUIT 30-68537634-9, La Tablada 451, Ciudad de Córdoba.",
+    "scraped_at": "2026-11-19T15:38:56+00:00"
+   }
+  ]
  }
 }

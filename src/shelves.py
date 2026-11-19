@@ -98,6 +98,7 @@ _SHELF_LIST = (
         carrefour=("almacen/aceites-y-vinagres",
                    "almacen/sal-aderezos-y-saborizadores"),
         vea=("almacen/aceites-y-vinagres", "almacen/aderezos", "almacen/sal-pimienta-y-especias"),
+        jumbo=("almacen/aceites-y-vinagres", "almacen/aderezos", "almacen/sal-pimienta-y-especias"),
         changomas=("almacen/aceites-vinagres-y-aderezos", "almacen/condimentos-y-especias"),
     ),
     _shelf(
@@ -107,6 +108,7 @@ _SHELF_LIST = (
              "almacen/harinas-y-reposteria/harina-de-maiz-y-otras-harinas"),
         carrefour=("almacen/harinas",),
         vea=("almacen/harinas",),
+        jumbo=("almacen/harinas",),
         changomas=("almacen/harinas",),
     ),
     # Día reorganizó estas dos góndolas y las claves viejas quedaron VIVAS en el
@@ -124,6 +126,7 @@ _SHELF_LIST = (
              "almacen/pastas-y-arroces/legumbres-y-semillas"),
         carrefour=("almacen/arroz-y-legumbres",),
         vea=("almacen/arroz-y-legumbres",),
+        jumbo=("almacen/arroz-y-legumbres",),
         changomas=("almacen/arroz-legumbres-y-pastas/arroz", "almacen/arroz-legumbres-y-pastas/legumbres"),
     ),
     _shelf(
@@ -136,6 +139,10 @@ _SHELF_LIST = (
             "almacen/pastas-secas-y-salsas/pastas-secas-guiseras",
             "almacen/pastas-secas-y-salsas/pastas-secas-largas",
         ),
+        jumbo=(
+            "almacen/pastas-secas-y-salsas/pastas-secas-guiseras",
+            "almacen/pastas-secas-y-salsas/pastas-secas-largas",
+        ),
         changomas=("almacen/arroz-legumbres-y-pastas/pastas-secas",),
     ),
     _shelf(
@@ -144,6 +151,7 @@ _SHELF_LIST = (
         dia=("almacen/conservas-y-latas/tomates-y-salsas",),
         carrefour=("almacen/enlatados-y-conservas/conservas-y-salsas-de-tomate",),
         vea=("almacen/pastas-secas-y-salsas/salsas",),
+        jumbo=("almacen/pastas-secas-y-salsas/salsas",),
         changomas=("almacen/conservas-y-enlatados/tomates-y-salsas",),
     ),
     _shelf(
@@ -152,6 +160,7 @@ _SHELF_LIST = (
         dia=("almacen/conservas-y-latas/conservas-de-pescados",),
         carrefour=("almacen/enlatados-y-conservas/conservas-de-pescado",),
         vea=("almacen/conservas/conservas-de-pescado",),
+        jumbo=("almacen/conservas/conservas-de-pescado",),
         # ChangoMás: su única hoja de conservas mezcla atún, arvejas y duraznos.
         changomas=(),
     ),
@@ -171,6 +180,15 @@ _SHELF_LIST = (
             "almacen/snacks/pochoclos",
             "almacen/snacks/snacks",
         ),
+        jumbo=(
+            "almacen/snacks/mani",
+            "almacen/snacks/nachos",
+            "almacen/snacks/palitos-de-maiz",
+            "almacen/snacks/palitos-salados",
+            "almacen/snacks/papas-fritas",
+            "almacen/snacks/pochoclos",
+            "almacen/snacks/snacks",
+        ),
         changomas=("almacen/snacks",),
     ),
     _shelf(
@@ -179,6 +197,7 @@ _SHELF_LIST = (
         dia=("frescos/leches",),
         carrefour=("lacteos-y-productos-frescos/leches",),
         vea=("lacteos/leches", "almacen/desayuno-y-merienda/leches"),
+        jumbo=("lacteos/leches", "almacen/desayuno-y-merienda/leches"),
         changomas=("frescos/lacteos/leches", "desayunos-y-meriendas/leches-y-chocolatadas/leche-en-polvo"),
     ),
     _shelf(
@@ -193,6 +212,7 @@ _SHELF_LIST = (
         dia=("frescos/lacteos/yogures",),
         carrefour=("lacteos-y-productos-frescos/yogures",),
         vea=("lacteos/yogures",),
+        jumbo=("lacteos/yogures",),
         changomas=("frescos/lacteos/yogures",),
     ),
     _shelf(
@@ -205,6 +225,7 @@ _SHELF_LIST = (
         dia=("frescos/quesos",),
         carrefour=("lacteos-y-productos-frescos/quesos",),
         vea=("quesos-y-fiambres/quesos",),
+        jumbo=("quesos-y-fiambres/quesos",),
         changomas=("frescos/quesos",),
     ),
     _shelf(
@@ -213,6 +234,7 @@ _SHELF_LIST = (
         dia=("desayuno-y-merienda/dulces-y-untables/dulces-de-leche",),
         carrefour=("desayuno-y-merienda/mermeladas-y-otros-dulces/dulce-de-leche",),
         vea=("lacteos/dulce-de-leche",),
+        jumbo=("lacteos/dulce-de-leche",),
         changomas=("frescos/lacteos/dulce-de-leche",),
     ),
     _shelf(
@@ -232,6 +254,7 @@ _SHELF_LIST = (
         carrefour=("desayuno-y-merienda/mermeladas-y-otros-dulces/miel",
                    "desayuno-y-merienda/mermeladas-y-otros-dulces/mermeladas-dulces-y-jaleas"),
         vea=("almacen/desayuno-y-merienda/mermeladas-y-jaleas", "quesos-y-fiambres/dulces"),
+        jumbo=("almacen/desayuno-y-merienda/mermeladas-y-jaleas", "quesos-y-fiambres/dulces"),
         changomas=("desayunos-y-meriendas/mermeladas-y-untables/mermeladas-y-dulces",
                    "desayunos-y-meriendas/mermeladas-y-untables/miel",
                    "frescos/fiambres-y-embutidos/dulces"),
@@ -246,6 +269,10 @@ _SHELF_LIST = (
             "almacen/desayuno-y-merienda/galletitas-dulces",
             "almacen/desayuno-y-merienda/galletitas-saladas",
         ),
+        jumbo=(
+            "almacen/desayuno-y-merienda/galletitas-dulces",
+            "almacen/desayuno-y-merienda/galletitas-saladas",
+        ),
         changomas=("desayunos-y-meriendas/galletitas-dulces", "desayunos-y-meriendas/galletitas-saladas"),
     ),
     _shelf(
@@ -254,6 +281,7 @@ _SHELF_LIST = (
         dia=("almacen/golosinas-y-alfajores/alfajores",),
         carrefour=("desayuno-y-merienda/golosinas-y-chocolates/alfajores",),
         vea=("almacen/golosinas-y-chocolates/alfajores",),
+        jumbo=("almacen/golosinas-y-chocolates/alfajores",),
         changomas=("almacen/golosinas-y-chocolates/alfajores",),
     ),
     _shelf(
@@ -262,6 +290,7 @@ _SHELF_LIST = (
         dia=("almacen/golosinas-y-alfajores/chocolates",),
         carrefour=("desayuno-y-merienda/golosinas-y-chocolates/chocolates",),
         vea=("almacen/golosinas-y-chocolates/chocolates", "almacen/golosinas-y-chocolates/bombones"),
+        jumbo=("almacen/golosinas-y-chocolates/chocolates", "almacen/golosinas-y-chocolates/bombones"),
         changomas=("almacen/golosinas-y-chocolates/chocolates",),
     ),
     _shelf(
@@ -270,6 +299,7 @@ _SHELF_LIST = (
         dia=("desayuno-y-merienda/infusiones/cafe",),
         carrefour=("desayuno-y-merienda/cafe",),
         vea=("almacen/desayuno-y-merienda/cafes",),
+        jumbo=("almacen/desayuno-y-merienda/cafes",),
         changomas=("desayunos-y-meriendas/cafe/en-capsulas",
                    "desayunos-y-meriendas/cafe/en-granos",
                    "desayunos-y-meriendas/cafe/instantaneo",
@@ -281,6 +311,7 @@ _SHELF_LIST = (
         dia=("desayuno-y-merienda/infusiones/yerba-mate",),
         carrefour=("desayuno-y-merienda/yerba",),
         vea=("almacen/desayuno-y-merienda/yerbas",),
+        jumbo=("almacen/desayuno-y-merienda/yerbas",),
         changomas=("desayunos-y-meriendas/yerbas/yerba-compuesta",
                    "desayunos-y-meriendas/yerbas/yerba-comun"),
     ),
@@ -291,6 +322,7 @@ _SHELF_LIST = (
              "desayuno-y-merienda/endulzantes/edulcorantes"),
         carrefour=("desayuno-y-merienda/azucar-y-endulzantes",),
         vea=("almacen/desayuno-y-merienda/azucar-y-edulcorantes",),
+        jumbo=("almacen/desayuno-y-merienda/azucar-y-edulcorantes",),
         changomas=("desayunos-y-meriendas/endulzantes",),
     ),
     _shelf(
@@ -299,6 +331,7 @@ _SHELF_LIST = (
         dia=("bebidas/gaseosas",),
         carrefour=("bebidas/gaseosas",),
         vea=("bebidas/gaseosas",),
+        jumbo=("bebidas/gaseosas",),
         changomas=("bebidas/gaseosas",),
     ),
     _shelf(
@@ -308,6 +341,7 @@ _SHELF_LIST = (
              "bebidas/aguas-y-sodas/aguas-saborizadas"),
         carrefour=("bebidas/aguas",),
         vea=("bebidas/aguas",),
+        jumbo=("bebidas/aguas",),
         changomas=("bebidas/aguas",),
     ),
 
@@ -339,6 +373,7 @@ _SHELF_LIST = (
         dia=("almacen/conservas-y-latas/conservas-de-vegetales",),
         carrefour=("almacen/enlatados-y-conservas/conservas-de-legumbres-y-vegetales",),
         vea=("almacen/conservas/conservas-de-verduras-y-legumbres",),
+        jumbo=("almacen/conservas/conservas-de-verduras-y-legumbres",),
         # ChangoMás: su única hoja de conservas mezcla atún, arvejas y duraznos.
         changomas=(),
     ),
@@ -348,6 +383,7 @@ _SHELF_LIST = (
         dia=("almacen/picadas/aceitunas-y-encurtidos",),
         carrefour=("almacen/enlatados-y-conservas/aceitunas-y-encurtidos",),
         vea=("quesos-y-fiambres/encurtidos-aceitunas-y-pickles",),
+        jumbo=("quesos-y-fiambres/encurtidos-aceitunas-y-pickles",),
         changomas=("almacen/conservas-y-enlatados/aceitunas-y-encurtidos",),
     ),
     _shelf(
@@ -358,6 +394,11 @@ _SHELF_LIST = (
              "almacen/caldos-sopas-y-pure/pure-instantaneo"),
         carrefour=("almacen/caldos-sopas-y-pure",),
         vea=(
+            "almacen/caldos-sopas-pure-y-bolsas-para-horno/pure",
+            "almacen/caldos-sopas-pure-y-bolsas-para-horno/sopas",
+            "almacen/caldos-sopas-pure-y-bolsas-para-horno/caldos",
+        ),
+        jumbo=(
             "almacen/caldos-sopas-pure-y-bolsas-para-horno/pure",
             "almacen/caldos-sopas-pure-y-bolsas-para-horno/sopas",
             "almacen/caldos-sopas-pure-y-bolsas-para-horno/caldos",
@@ -373,6 +414,7 @@ _SHELF_LIST = (
              "almacen/harinas-y-reposteria/premezclas-y-bizcochuelos"),
         carrefour=("almacen/reposteria-y-postres",),
         vea=("almacen/para-preparar",),
+        jumbo=("almacen/para-preparar",),
         changomas=("almacen/reposteria",),
     ),
     _shelf(
@@ -387,6 +429,11 @@ _SHELF_LIST = (
                    "desayuno-y-merienda/golosinas-y-chocolates/chicles",
                    "desayuno-y-merienda/golosinas-y-chocolates/bocaditos-confites-y-turrones"),
         vea=(
+            "almacen/golosinas-y-chocolates/caramelos-y-chicles",
+            "almacen/golosinas-y-chocolates/turrones-y-grageas",
+            "almacen/golosinas-y-chocolates/bocaditos-y-postres",
+        ),
+        jumbo=(
             "almacen/golosinas-y-chocolates/caramelos-y-chicles",
             "almacen/golosinas-y-chocolates/turrones-y-grageas",
             "almacen/golosinas-y-chocolates/bocaditos-y-postres",
@@ -408,6 +455,7 @@ _SHELF_LIST = (
              "desayuno-y-merienda/cereales-y-barras/barras-de-cereal"),
         carrefour=("desayuno-y-merienda/cereales-y-barritas",),
         vea=("almacen/desayuno-y-merienda/cereales",),
+        jumbo=("almacen/desayuno-y-merienda/cereales",),
         changomas=("desayunos-y-meriendas/cereales",),
     ),
     _shelf(
@@ -417,6 +465,7 @@ _SHELF_LIST = (
         carrefour=("desayuno-y-merienda/infusiones/te",
                    "desayuno-y-merienda/infusiones/mate-cocido"),
         vea=("almacen/desayuno-y-merienda/tes",),
+        jumbo=("almacen/desayuno-y-merienda/tes",),
         changomas=("desayunos-y-meriendas/te", "desayunos-y-meriendas/yerbas/mate-cocido"),
     ),
     _shelf(
@@ -425,6 +474,7 @@ _SHELF_LIST = (
         dia=("desayuno-y-merienda/infusiones/cacao-y-polvos",),
         carrefour=("desayuno-y-merienda/infusiones/cacao",),
         vea=("almacen/desayuno-y-merienda/cacao-y-saborizantes",),
+        jumbo=("almacen/desayuno-y-merienda/cacao-y-saborizantes",),
         changomas=("desayunos-y-meriendas/cacao",),
     ),
     _shelf(
@@ -441,6 +491,11 @@ _SHELF_LIST = (
             "almacen/panificados/pan-para-hamburguesas-y-panchos",
             "almacen/panificados/integral-y-salvado",
         ),
+        jumbo=(
+            "almacen/panificados/lacteados",
+            "almacen/panificados/pan-para-hamburguesas-y-panchos",
+            "almacen/panificados/integral-y-salvado",
+        ),
         changomas=("panaderia/pan-lactal", "panaderia/pan-para-hamburguesas-y-panchos"),
     ),
     _shelf(
@@ -450,6 +505,10 @@ _SHELF_LIST = (
         carrefour=("desayuno-y-merienda/budines-y-magdalenas",
                    "panaderia/bizcochuelos-y-piononos"),
         vea=(
+            "almacen/desayuno-y-merienda/bizcochuelos-budines-y-magdalenas",
+            "almacen/desayuno-y-merienda/piononos",
+        ),
+        jumbo=(
             "almacen/desayuno-y-merienda/bizcochuelos-budines-y-magdalenas",
             "almacen/desayuno-y-merienda/piononos",
         ),
@@ -464,6 +523,7 @@ _SHELF_LIST = (
         dia=("frescos/lacteos/mantecas-y-margarinas",),
         carrefour=("lacteos-y-productos-frescos/mantecas-margarinas-y-levaduras",),
         vea=("lacteos/mantecas-y-margarinas",),
+        jumbo=("lacteos/mantecas-y-margarinas",),
         changomas=("frescos/lacteos/mantecas-y-margarinas",),
     ),
     _shelf(
@@ -472,6 +532,7 @@ _SHELF_LIST = (
         dia=("frescos/lacteos/cremas-de-leche",),
         carrefour=("lacteos-y-productos-frescos/cremas-de-leche",),
         vea=("lacteos/cremas",),
+        jumbo=("lacteos/cremas",),
         changomas=("frescos/lacteos/cremas",),
     ),
     _shelf(
@@ -480,6 +541,7 @@ _SHELF_LIST = (
         dia=("frescos/lacteos/postres-lacteos",),
         carrefour=("lacteos-y-productos-frescos/postres",),
         vea=("lacteos/postres",),
+        jumbo=("lacteos/postres",),
         changomas=("frescos/lacteos/postres-y-flanes-frescos",),
     ),
     _shelf(
@@ -489,6 +551,7 @@ _SHELF_LIST = (
         dia=("frutas-y-verduras/huevos",),
         carrefour=("lacteos-y-productos-frescos/huevos",),
         vea=("frutas-y-verduras/huevos",),
+        jumbo=("frutas-y-verduras/huevos",),
         changomas=("frescos/huevos",),
     ),
     _shelf(
@@ -498,6 +561,7 @@ _SHELF_LIST = (
              "frescos/fiambres-y-embutidos/salames-y-longanizas"),
         carrefour=("lacteos-y-productos-frescos/fiambres",),
         vea=("quesos-y-fiambres/fiambres",),
+        jumbo=("quesos-y-fiambres/fiambres",),
         changomas=("frescos/fiambres-y-embutidos/feteados",),
     ),
     _shelf(
@@ -509,6 +573,7 @@ _SHELF_LIST = (
         dia=(),
         carrefour=("lacteos-y-productos-frescos/salchichas",),
         vea=("quesos-y-fiambres/salchichas",),
+        jumbo=("quesos-y-fiambres/salchichas",),
         # ChangoMás: su hoja de embutidos mezcla salchichas con salame y mortadela.
         changomas=(),
     ),
@@ -526,6 +591,12 @@ _SHELF_LIST = (
             "lacteos/pastas-y-tapas/tapas",
             "pastas-frescas/simples",
         ),
+        jumbo=(
+            "lacteos/pastas-y-tapas/fideos-y-noquis",
+            "lacteos/pastas-y-tapas/pastas-rellenas",
+            "lacteos/pastas-y-tapas/tapas",
+            "pastas-frescas/simples",
+        ),
         changomas=("frescos/pastas-y-tapas",),
     ),
 
@@ -538,6 +609,7 @@ _SHELF_LIST = (
              "bebidas/jugos-y-energizantes/jugos-naturales"),
         carrefour=("bebidas/jugos",),
         vea=("bebidas/jugos",),
+        jumbo=("bebidas/jugos",),
         changomas=("bebidas/jugos",),
     ),
     _shelf(
@@ -547,6 +619,7 @@ _SHELF_LIST = (
              "bebidas/jugos-y-energizantes/energizantes"),
         carrefour=("bebidas/bebidas-energizantes", "bebidas/bebidas-isotonicas"),
         vea=("bebidas/energizantes", "bebidas/isotonicas"),
+        jumbo=("bebidas/energizantes", "bebidas/isotonicas"),
         changomas=("bebidas/bebidas-isotonicas-y-energizantes",),
     ),
     _shelf(
@@ -555,6 +628,7 @@ _SHELF_LIST = (
         dia=("bebidas/cervezas",),
         carrefour=("bebidas/cervezas",),
         vea=("bebidas/cervezas",),
+        jumbo=("bebidas/cervezas",),
         changomas=("bebidas/cervezas",),
     ),
     _shelf(
@@ -566,6 +640,7 @@ _SHELF_LIST = (
              "bebidas/bodega/vino-rosado"),
         carrefour=("bebidas/vinos",),
         vea=("bebidas/vinos",),
+        jumbo=("bebidas/vinos",),
         changomas=("bebidas/vinos-y-espumantes/vino-blanco",
                    "bebidas/vinos-y-espumantes/vino-rosado",
                    "bebidas/vinos-y-espumantes/vino-tinto"),
@@ -576,6 +651,7 @@ _SHELF_LIST = (
         dia=("bebidas/bodega/espumantes", "bebidas/bodega/sidras"),
         carrefour=("bebidas/espumantes-y-sidras",),
         vea=("bebidas/espumantes", "bebidas/sidras"),
+        jumbo=("bebidas/espumantes", "bebidas/sidras"),
         changomas=("bebidas/vinos-y-espumantes/espumantes",),
     ),
     _shelf(
@@ -584,6 +660,7 @@ _SHELF_LIST = (
         dia=("bebidas/aperitivos-y-destilados",),
         carrefour=("bebidas/fernet-y-aperitivos", "bebidas/bebidas-blancas"),
         vea=("bebidas/aperitivos", "bebidas/bebidas-blancas", "bebidas/licores", "bebidas/whiskys"),
+        jumbo=("bebidas/aperitivos", "bebidas/bebidas-blancas", "bebidas/licores", "bebidas/whiskys"),
         changomas=("bebidas/fernet-y-aperitivos",
                    "bebidas/bebidas-blancas-licores-y-whiskys",
                    "bebidas/a-base-de-hierbas"),
@@ -599,6 +676,7 @@ _SHELF_LIST = (
         dia=("congelados/vegetales-frutas-y-papas/papas-fritas-congeladas",),
         carrefour=("congelados/papas",),
         vea=("congelados/papas",),
+        jumbo=("congelados/papas",),
         # ChangoMás: una sola hoja mezcla papas con nuggets y formitas.
         changomas=(),
     ),
@@ -611,6 +689,7 @@ _SHELF_LIST = (
              "congelados/hamburguesas-y-medallones"),
         carrefour=("congelados/hamburguesas-y-medallones",),
         vea=("congelados/hamburguesas-y-milanesas",),
+        jumbo=("congelados/hamburguesas-y-milanesas",),
         changomas=("congelados/hamburguesas-y-medallones", "congelados/milanesas"),
     ),
     _shelf(
@@ -621,6 +700,7 @@ _SHELF_LIST = (
              "congelados/comidas-preparadas-y-rebozados/opciones-veganas-y-vegetarianas"),
         carrefour=("congelados/nuggets-y-rebozados",),
         vea=("congelados/pollo-y-carnes",),
+        jumbo=("congelados/pollo-y-carnes",),
         # ChangoMás: una sola hoja mezcla papas con nuggets y formitas.
         changomas=(),
     ),
@@ -635,6 +715,7 @@ _SHELF_LIST = (
         # padre trae 24. Cuesta que entre también algo de fruta congelada.
         carrefour=("congelados/frutas-y-vegetales-congelados",),
         vea=("congelados/vegetales",),
+        jumbo=("congelados/vegetales",),
         changomas=("congelados/verduras-congeladas", "congelados/frutas-congeladas"),
     ),
     _shelf(
@@ -651,6 +732,7 @@ _SHELF_LIST = (
         dia=("congelados/comidas-preparadas-y-rebozados/pizzas-empanadas-y-panes",),
         carrefour=("congelados/comidas-y-panificados",),
         vea=("congelados/comidas-congeladas",),
+        jumbo=("congelados/comidas-congeladas",),
         changomas=("congelados/comidas-preparadas", "congelados/panaderia-congelada"),
     ),
     _shelf(
@@ -659,6 +741,7 @@ _SHELF_LIST = (
         dia=("congelados/pescaderia-congelada",),
         carrefour=("congelados/pescados-y-mariscos",),
         vea=("congelados/pescados-y-mariscos",),
+        jumbo=("congelados/pescados-y-mariscos",),
         changomas=("congelados/pescados-y-mariscos-congelados",),
     ),
     _shelf(
@@ -673,6 +756,7 @@ _SHELF_LIST = (
         dia=("congelados/helados-y-postres",),
         carrefour=("congelados/helados-y-postres",),
         vea=("congelados/helados-y-postres",),
+        jumbo=("congelados/helados-y-postres",),
         changomas=("congelados/helados-y-postres",),
     ),
 
@@ -688,6 +772,7 @@ _SHELF_LIST = (
              "frutas-y-verduras/frutas/otras-frutas"),
         carrefour=("frutas-y-verduras/frutas",),
         vea=("frutas-y-verduras/frutas/frutas-empaquetadas", "frutas-y-verduras/frutas/frutas-sueltas"),
+        jumbo=("frutas-y-verduras/frutas/frutas-empaquetadas", "frutas-y-verduras/frutas/frutas-sueltas"),
         changomas=("frutas-y-verduras/frutas-frescas",),
     ),
     _shelf(
@@ -696,6 +781,7 @@ _SHELF_LIST = (
         dia=("frutas-y-verduras/verduras",),
         carrefour=("frutas-y-verduras/verduras",),
         vea=("frutas-y-verduras/verduras",),
+        jumbo=("frutas-y-verduras/verduras",),
         changomas=("frutas-y-verduras/verduras-frescas",
                    "frutas-y-verduras/verduras-fraccionadas",
                    "frutas-y-verduras/hongos"),
@@ -706,6 +792,7 @@ _SHELF_LIST = (
         dia=("carniceria/carne-vacuna", "carniceria/carne-de-cerdo"),
         carrefour=("carnes-y-pescados/carne-vacuna", "carnes-y-pescados/carne-de-cerdo"),
         vea=("carnes/carne-vacuna", "carnes/carne-de-cerdo"),
+        jumbo=("carnes/carne-vacuna", "carnes/carne-de-cerdo"),
         changomas=("carniceria-y-pescaderia/carniceria/carnes",),
     ),
     _shelf(
@@ -714,6 +801,7 @@ _SHELF_LIST = (
         dia=("carniceria/pollo-y-aves",),
         carrefour=("carnes-y-pescados/pollo-y-granja",),
         vea=("carnes/pollos/pollos",),
+        jumbo=("carnes/pollos/pollos",),
         changomas=("carniceria-y-pescaderia/carniceria/pollo-y-pavo",),
     ),
 
@@ -730,6 +818,7 @@ _SHELF_LIST = (
         dia=("limpieza/papeleria-y-descartables/papel-higienico",),
         carrefour=("limpieza/papeles-higienicos",),
         vea=("limpieza/papeles/papel-higienico",),
+        jumbo=("limpieza/papeles/papel-higienico",),
         changomas=("limpieza/papeles-bolsas-y-films/papel-higienico",),
     ),
     _shelf(
@@ -738,6 +827,7 @@ _SHELF_LIST = (
         dia=("limpieza/papeleria-y-descartables/rollos-de-cocina",),
         carrefour=("limpieza/rollos-de-cocina-y-servilletas",),
         vea=("limpieza/papeles/rollos-de-cocina", "limpieza/papeles/servilletas"),
+        jumbo=("limpieza/papeles/rollos-de-cocina", "limpieza/papeles/servilletas"),
         changomas=("limpieza/papeles-bolsas-y-films/rollos-de-cocina",
                    "limpieza/papeles-bolsas-y-films/servilletas-descartables"),
     ),
@@ -747,6 +837,7 @@ _SHELF_LIST = (
         dia=("limpieza/cocina-y-vajilla/detergentes",),
         carrefour=("limpieza/limpieza-de-cocina/detergentes",),
         vea=("limpieza/limpieza-de-cocina/detergentes",),
+        jumbo=("limpieza/limpieza-de-cocina/detergentes",),
         changomas=("limpieza/limpieza-de-cocina/detergentes-y-lavavajillas",),
     ),
     _shelf(
@@ -756,6 +847,7 @@ _SHELF_LIST = (
              "limpieza/ropa-y-lavado/jabon-liquido"),
         carrefour=("limpieza/limpieza-de-la-ropa/jabones-para-la-ropa",),
         vea=("limpieza/cuidado-para-la-ropa/detergente-para-ropa",),
+        jumbo=("limpieza/cuidado-para-la-ropa/detergente-para-ropa",),
         changomas=("limpieza/limpieza-de-la-ropa/jabones",),
     ),
     _shelf(
@@ -764,6 +856,7 @@ _SHELF_LIST = (
         dia=("limpieza/ropa-y-lavado/suavizantes",),
         carrefour=("limpieza/limpieza-de-la-ropa/suavizantes-para-la-ropa",),
         vea=("limpieza/cuidado-para-la-ropa/suavizantes",),
+        jumbo=("limpieza/cuidado-para-la-ropa/suavizantes",),
         changomas=("limpieza/limpieza-de-la-ropa/suavizantes",),
     ),
     _shelf(
@@ -772,6 +865,7 @@ _SHELF_LIST = (
         dia=("limpieza/banos-pisos-y-superficies/lavandinas",),
         carrefour=("limpieza/lavandinas",),
         vea=("limpieza/lavandina",),
+        jumbo=("limpieza/lavandina",),
         changomas=("limpieza/lavandinas",),
     ),
 
@@ -790,6 +884,7 @@ _SHELF_LIST = (
         dia=("perfumeria/cuidado-del-pelo/shampoo",),
         carrefour=("perfumeria-y-farmacia/cuidado-del-cabello/shampoos",),
         vea=("perfumeria/cuidado-capilar/shampoo",),
+        jumbo=("perfumeria/cuidado-capilar/shampoo",),
         changomas=("perfumeria-y-belleza/cuidado-del-cabello/shampoo",),
     ),
     _shelf(
@@ -798,6 +893,7 @@ _SHELF_LIST = (
         dia=("perfumeria/cuidado-del-pelo/acondicionadores",),
         carrefour=("perfumeria-y-farmacia/cuidado-del-cabello/acondicionadores",),
         vea=("perfumeria/cuidado-capilar/acondicionador",),
+        jumbo=("perfumeria/cuidado-capilar/acondicionador",),
         changomas=("perfumeria-y-belleza/cuidado-del-cabello/acondicionador",),
     ),
     _shelf(
@@ -806,6 +902,7 @@ _SHELF_LIST = (
         dia=("perfumeria/cuidado-del-pelo/coloracion",),
         carrefour=("perfumeria-y-farmacia/cuidado-del-cabello/coloracion",),
         vea=("perfumeria/cuidado-capilar/coloracion",),
+        jumbo=("perfumeria/cuidado-capilar/coloracion",),
         changomas=("perfumeria-y-belleza/cuidado-del-cabello/coloracion",),
     ),
     _shelf(
@@ -821,6 +918,10 @@ _SHELF_LIST = (
             "perfumeria/cuidado-personal/desodorantes-de-hombres",
             "perfumeria/cuidado-personal/desodorantes-de-mujer",
         ),
+        jumbo=(
+            "perfumeria/cuidado-personal/desodorantes-de-hombres",
+            "perfumeria/cuidado-personal/desodorantes-de-mujer",
+        ),
         changomas=("perfumeria-y-belleza/cuidado-personal/desodorantes-y-antitranspirantes",),
     ),
     _shelf(
@@ -833,6 +934,7 @@ _SHELF_LIST = (
         carrefour=("perfumeria-y-farmacia/jabones/jabones-liquidos",
                    "perfumeria-y-farmacia/jabones/jabones-en-barra"),
         vea=("perfumeria/cuidado-personal/jabones",),
+        jumbo=("perfumeria/cuidado-personal/jabones",),
         changomas=("perfumeria-y-belleza/cuidado-personal/jabones-y-talcos",),
     ),
     _shelf(
@@ -841,6 +943,7 @@ _SHELF_LIST = (
         dia=("perfumeria/cuidado-bucal/pastas-dentales",),
         carrefour=("perfumeria-y-farmacia/cuidado-dental/pasta-dental",),
         vea=("perfumeria/cuidado-oral/pastas-dentales",),
+        jumbo=("perfumeria/cuidado-oral/pastas-dentales",),
         changomas=("perfumeria-y-belleza/cuidado-oral/crema-dental",),
     ),
     _shelf(
@@ -849,6 +952,7 @@ _SHELF_LIST = (
         dia=("perfumeria/cuidado-bucal/cepillos-de-dientes",),
         carrefour=("perfumeria-y-farmacia/cuidado-dental/cepillos-de-dientes",),
         vea=("perfumeria/cuidado-oral/cepillos-dentales",),
+        jumbo=("perfumeria/cuidado-oral/cepillos-dentales",),
         changomas=("perfumeria-y-belleza/cuidado-oral/cepillos-dentales",),
     ),
     _shelf(
@@ -857,9 +961,10 @@ _SHELF_LIST = (
         dia=("perfumeria/cuidado-bucal/enjuagues-bucal",),
         carrefour=("perfumeria-y-farmacia/cuidado-dental/enjuagues-bucales",),
         vea=("perfumeria/cuidado-oral/enjuagues-bucales",),
+        jumbo=("perfumeria/cuidado-oral/enjuagues-bucales",),
         changomas=("perfumeria-y-belleza/cuidado-oral/enjuague-bucal",),
     ),
-    # Vea (`vea=()` en estas tres filas) tiene una sola hoja de protección
+    # Vea y Jumbo (`()` en estas tres filas; comparten árbol) tienen una sola hoja de protección
     # femenina que mezcla toallitas, protectores y tampones, y su árbol no baja
     # a un cuarto nivel. Archivarla en una góndola dejaría al optimizador
     # ofrecer un tampón por una toallita; mismo criterio que con las hojas
@@ -870,6 +975,7 @@ _SHELF_LIST = (
         dia=("perfumeria/proteccion-femenina/toallitas-femeninas",),
         carrefour=("perfumeria-y-farmacia/proteccion-femenina/toallitas-femeninas",),
         vea=(),
+        jumbo=(),
         changomas=("perfumeria-y-belleza/proteccion-femenina/toallitas-higienicas",),
     ),
     _shelf(
@@ -878,6 +984,7 @@ _SHELF_LIST = (
         dia=("perfumeria/proteccion-femenina/protectores-diarios",),
         carrefour=("perfumeria-y-farmacia/proteccion-femenina/protectores-diarios",),
         vea=(),
+        jumbo=(),
         changomas=("perfumeria-y-belleza/proteccion-femenina/protectores-diarios",),
     ),
     _shelf(
@@ -886,6 +993,7 @@ _SHELF_LIST = (
         dia=("perfumeria/proteccion-femenina/tampones",),
         carrefour=("perfumeria-y-farmacia/proteccion-femenina/tampones",),
         vea=(),
+        jumbo=(),
         changomas=("perfumeria-y-belleza/proteccion-femenina/tampones",),
     ),
     _shelf(
@@ -896,6 +1004,7 @@ _SHELF_LIST = (
         dia=("perfumeria/afeitado-y-depilacion/maquinas-y-repuestos-de-afeitar",),
         carrefour=("perfumeria-y-farmacia/cuidado-corporal/afeitado",),
         vea=("perfumeria/cuidado-personal/productos-para-afeitarse",),
+        jumbo=("perfumeria/cuidado-personal/productos-para-afeitarse",),
         changomas=("perfumeria-y-belleza/cuidado-personal/afeitado-y-depilacion",),
     ),
     _shelf(
@@ -908,6 +1017,7 @@ _SHELF_LIST = (
         dia=(),
         carrefour=("perfumeria-y-farmacia/cuidado-de-la-piel/cremas-corporales",),
         vea=("perfumeria/cuidado-de-la-piel/cremas-corporales",),
+        jumbo=("perfumeria/cuidado-de-la-piel/cremas-corporales",),
         changomas=("perfumeria-y-belleza/cuidado-de-la-piel/cuidado-corporal",),
     ),
     _shelf(
@@ -920,6 +1030,7 @@ _SHELF_LIST = (
         dia=("perfumeria/cuidado-corporal-y-bano/proteccion-solar",),
         carrefour=("perfumeria-y-farmacia/cuidado-de-la-piel/proteccion-solar",),
         vea=("perfumeria/cuidado-de-la-piel/solares-y-post-solares",),
+        jumbo=("perfumeria/cuidado-de-la-piel/solares-y-post-solares",),
         changomas=("perfumeria-y-belleza/cuidado-de-la-piel/protectores-solares",),
     ),
     _shelf(
@@ -928,6 +1039,7 @@ _SHELF_LIST = (
         dia=("perfumeria/farmacia-y-botiquin/algodon-e-hisopos",),
         carrefour=("perfumeria-y-farmacia/algodones-e-hisopos",),
         vea=("perfumeria/farmacia/algodon",),
+        jumbo=("perfumeria/farmacia/algodon",),
         changomas=("perfumeria-y-belleza/cuidado-personal/algodones-e-hisopos",),
     ),
 )
