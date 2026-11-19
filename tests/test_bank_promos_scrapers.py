@@ -12,7 +12,10 @@ Los registros son capturas reales recortadas, no invenciones.
 import httpx
 import pytest
 
-from src.promotions import CarrefourScraper, CotoScraper, DiaScraper, DiscountScrapeError, VeaScraper
+from src.promotions import (
+    CarrefourScraper, ChangomasScraper, CotoScraper, DiaScraper, DiscountScrapeError, VeaScraper,
+)
+from src.promotions.banks import is_membership
 from src.promotions.models import BankDiscount, InvalidDiscount
 
 # --------------------------------------------------------------- payload de Coto
@@ -595,3 +598,112 @@ def test_vea_value_es_json_adentro_de_un_string():
     scraper = VeaScraper(client=_cliente(_handler_json(payload)), now=AHORA)
 
     assert [d.entidad for d in scraper.scrape()] == ["cencopay"]
+
+
+# -------------------------------------------------------------------- ChangoMás
+
+# Las fechas de ChangoMás son ISO; AHORA_CM cae dentro de la vigencia de la promo base.
+AHORA_CM = 1795000000  # 18-nov-2026
+BNA = "e9570b46-44c8-11ed-83ab-0a7e73da0665"
+MASCLUB = "8fab960f-8b29-11ef-b37f-98380ffd16cd"
+BANCOS_CM = [{"id": BNA, "name": "Banco Nación BNA"}, {"id": MASCLUB, "name": "MasClub"}]
+
+
+def _promo_changomas(**overrides):
+    """Un registro de gdn-services/content/banks-promotions, recortado del real
+    de Banco Nación. El real es sólo presencial: acá `ecommerce` va en True para
+    tener una promo online de base, y cada test que la quiere presencial lo pisa."""
+    base = {
+        "id": "a1",
+        "title": "Con Crédito visa y mastercard",
+        "sub_title": "Tope: $15.000 semanal. No acumulable con otras promociones. Aplican exclusiones. (N1)*",
+        "discount_percentage": 35,
+        "active": True,
+        "active_from": "2026-04-01T00:00:00+00:00",
+        "active_to": "2026-12-01T00:00:00+00:00",
+        "ecommerce": True,
+        "express_ecommerce_all": False,
+        "isMasClub": False,
+        "idBank": BNA,
+        "legal": "",
+        "monday": False, "tuesday": False, "wednesday": True, "thursday": False,
+        "friday": False, "saturday": False, "sunday": False,
+    }
+    base.update(overrides)
+    return base
+
+
+def _changomas():
+    return ChangomasScraper(now=AHORA_CM, banks={b["id"]: b["name"] for b in BANCOS_CM})
+
+
+def test_changomas_lee_dias_porcentaje_y_tope():
+    # preparar / ejecutar
+    descuento = _changomas()._to_discount(_promo_changomas())
+
+    # verificar
+    assert descuento.entidad == "nacion"
+    assert descuento.porcentaje_descuento == 35.0
+    assert descuento.dias_validos == ("miercoles",)
+    assert (descuento.tope_reintegro, descuento.tope_periodo) == (15000, "semanal")
+
+
+def test_changomas_masclub_es_membresia():
+    # preparar: la promo online real de MasClub, sin su lista de exclusiones
+    promo = _promo_changomas(idBank=MASCLUB, isMasClub=True, discount_percentage=25,
+                             sub_title="Promoción exclusiva para socios de masclub.",
+                             tuesday=True, wednesday=False)
+
+    # ejecutar
+    descuento = _changomas()._to_discount(promo)
+
+    # verificar
+    assert descuento.entidad == "masclub"
+    assert is_membership("masclub")
+
+
+@pytest.mark.parametrize("overrides,motivo", [
+    ({"ecommerce": False}, "solo local fisico"),
+    ({"active": False}, "inactiva"),
+    ({"active_to": "2026-10-28T00:00:00+00:00"}, "fuera de vigencia"),
+    ({"discount_percentage": None}, "sin porcentaje"),
+    ({"sub_title": "Tope: $25.000 mensual por banco. Mínimo de compra: $75.000."}, "monto minimo"),
+    # La real de MasClub (27-oct-2026) excluía aceites, harinas, leches, bebidas...
+    ({"legal": "EXCLUIDOS - NO INCLUYE:\r\n\r\nQuesos, Frutas Y Verduras, Huevos. Aceites Comestibles"},
+     "productos excluidos"),
+    ({"idBank": "15ff1c4e", "isMasClub": False}, "entidad desconocida"),
+    ({"wednesday": False}, "sin dias"),
+])
+def test_changomas_descarta_lo_que_el_modelo_no_representa(overrides, motivo):
+    # preparar
+    scraper = _changomas()
+
+    # ejecutar / verificar
+    assert scraper._to_discount(_promo_changomas(**overrides)) is None
+    assert scraper.discards[motivo] == 1
+
+
+def test_changomas_sin_promos_online_es_un_bloque_vacio_y_no_una_falla():
+    # preparar: lo normal en ChangoMás, todo presencial
+    def handler(request):
+        if request.url.path.endswith("/financing-banks"):
+            return httpx.Response(200, json=BANCOS_CM)
+        return httpx.Response(200, json=[_promo_changomas(ecommerce=False)])
+
+    scraper = ChangomasScraper(client=_cliente(handler), now=AHORA_CM)
+
+    # ejecutar / verificar
+    assert scraper.scrape() == []
+
+
+def test_changomas_toma_el_nombre_del_banco_de_financing_banks():
+    # preparar
+    def handler(request):
+        if request.url.path.endswith("/financing-banks"):
+            return httpx.Response(200, json=BANCOS_CM)
+        return httpx.Response(200, json=[_promo_changomas()])
+
+    scraper = ChangomasScraper(client=_cliente(handler), now=AHORA_CM)
+
+    # ejecutar / verificar
+    assert [d.entidad for d in scraper.scrape()] == ["nacion"]

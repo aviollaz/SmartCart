@@ -20,6 +20,7 @@ montan respuestas falsas por tienda y ya cubren los tres formatos de payload.
 """
 import pytest
 
+from src.scrapers.scraper_changomas import ChangomasScraper
 from src.scrapers.scraper_vea import VeaScraper
 from src.shelves import SHELVES, keys_for_store
 from test_scraper_truncation import (
@@ -35,7 +36,7 @@ from test_scraper_truncation import (
 
 # Una clave real de cada tienda, para que la góndola resuelva de verdad y no por
 # el camino del None. Salen de la tabla, así que no pueden quedar desactualizadas.
-CLAVES = {store: keys_for_store(store)[0] for store in ("coto", "dia", "carrefour", "vea")}
+CLAVES = {store: keys_for_store(store)[0] for store in ("coto", "dia", "carrefour", "vea", "changomas")}
 
 
 def _barrer_coto(monkeypatch):
@@ -65,7 +66,13 @@ def _barrer_vea(monkeypatch):
     return scraper.scrape_entire_category(CLAVES["vea"]), CLAVES["vea"], "vea"
 
 
-BARRIDOS = (_barrer_coto, _barrer_dia, _barrer_carrefour, _barrer_vea)
+def _barrer_changomas(monkeypatch):
+    scraper = ChangomasScraper()
+    _falsear_paginas(monkeypatch, scraper, [_pagina_vtex([1, 2]), _pagina_vtex([])])
+    return scraper.scrape_entire_category(CLAVES["changomas"]), CLAVES["changomas"], "changomas"
+
+
+BARRIDOS = (_barrer_coto, _barrer_dia, _barrer_carrefour, _barrer_vea, _barrer_changomas)
 
 
 @pytest.mark.parametrize("barrer", BARRIDOS, ids=lambda f: f.__name__)

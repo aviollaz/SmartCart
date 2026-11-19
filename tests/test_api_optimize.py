@@ -155,12 +155,13 @@ def _resolve(req):
 
 @pytest.fixture(autouse=True)
 def _dia_sin_novedad(monkeypatch):
-    """Día, Carrefour y Vea no consultan la red en estos tests: responden como su fallback."""
+    """Día, Carrefour, Vea y ChangoMás no consultan la red en estos tests: responden como su fallback."""
     sin_novedad = lambda lat, lng, fallback_delivery_cost: {
         "covered": True, "delivery_cost": fallback_delivery_cost, "source": "fallback"}
     monkeypatch.setattr(api, "resolve_dia_logistics", sin_novedad)
     monkeypatch.setattr(api, "resolve_carrefour_logistics", sin_novedad)
     monkeypatch.setattr(api, "resolve_vea_logistics", sin_novedad)
+    monkeypatch.setattr(api, "resolve_changomas_logistics", sin_novedad)
 
 
 def test_dia_sin_cobertura_se_excluye_y_coto_live_pisa_el_costo(monkeypatch):
@@ -175,7 +176,7 @@ def test_dia_sin_cobertura_se_excluye_y_coto_live_pisa_el_costo(monkeypatch):
     assert excluded == [DIA]
     assert costs[COTO] == 3399.0
     assert costs[DIA] == 3000
-    assert set(logistics) == {"coto", "dia", "carrefour", "vea"}
+    assert set(logistics) == {"coto", "dia", "carrefour", "vea", "changomas"}
 
 
 def test_dia_cubierto_pisa_su_costo(monkeypatch):
@@ -514,9 +515,9 @@ def _tienda_lenta(segundos, cubre=True):
 
 
 def test_la_logistica_tarda_lo_que_la_tienda_mas_lenta(monkeypatch):
-    # preparar: cuatro tiendas que tardan medio segundo cada una
+    # preparar: cinco tiendas que tardan medio segundo cada una
     for nombre in ("resolve_coto_logistics", "resolve_dia_logistics",
-                   "resolve_carrefour_logistics", "resolve_vea_logistics"):
+                   "resolve_carrefour_logistics", "resolve_vea_logistics", "resolve_changomas_logistics"):
         monkeypatch.setattr(api, nombre, _tienda_lenta(0.5))
 
     # ejecutar
@@ -524,7 +525,7 @@ def test_la_logistica_tarda_lo_que_la_tienda_mas_lenta(monkeypatch):
     api._resolve_logistics_stage(_Req(None, -34.6, -58.4))
     duracion = time.perf_counter() - inicio
 
-    # verificar: en serie serían 2 s; en paralelo, ~0,5 s
+    # verificar: en serie serían 2,5 s; en paralelo, ~0,5 s
     assert duracion < 1.0
 
 
@@ -546,7 +547,7 @@ def test_los_precios_del_carrito_se_calculan_mientras_se_resuelve_la_logistica(m
 
     # preparar: la logística tarda medio segundo y los precios otro medio
     for nombre in ("resolve_coto_logistics", "resolve_dia_logistics",
-                   "resolve_carrefour_logistics", "resolve_vea_logistics"):
+                   "resolve_carrefour_logistics", "resolve_vea_logistics", "resolve_changomas_logistics"):
         monkeypatch.setattr(api, nombre, _tienda_lenta(0.5))
 
     def precios_lentos(*a, **k):

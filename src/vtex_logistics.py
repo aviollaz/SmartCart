@@ -1,7 +1,7 @@
 # src/vtex_logistics.py
 """
 Lo que comparten las consultas de logística de las tiendas VTEX (Día,
-Carrefour, Vea): el request que nunca lanza, el caché de 30 minutos que sólo
+Carrefour, Vea, ChangoMás): el request que nunca lanza, el caché de 30 minutos que sólo
 guarda respuestas exitosas, y el contrato fail-open de src/coto_logistics.py.
 
 Lo único propio de cada tienda es cómo lee sus SLAs: una función

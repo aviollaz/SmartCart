@@ -44,6 +44,12 @@ STORES = (
     # descripciones de vea.com.ar (oct-2026). El 13-nov-2026 ya no estaba: 0 de
     # 1.551 productos muestreados con onerror/atob/eval en `description`.
     Store("vea", "vea_online", "Vea", 0, 3499, "www.vea.com.ar", sales_channel=34),
+    # ChangoMás (masonline.com.ar). El mínimo sale del checkout real ($20.000,
+    # nov 2026): ningún endpoint lo publica, y la prop `minPurchaseAmount` del
+    # minicart de su tema dice 2000, desactualizada. El precio es por sucursal (la
+    # simulación cotiza la misma yerba $5.289 en CABA y $4.399 en Córdoba); el
+    # catálogo sin `regionId` trae el de CABA.
+    Store("changomas", "changomas_online", "ChangoMás", 20000, 3999, "www.masonline.com.ar"),
 )
 
 STORE_IDS = {s.key: s.id for s in STORES}

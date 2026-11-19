@@ -14,6 +14,7 @@ from src.promotions.base import DiscountScraper, DiscountScrapeError
 from src.promotions.models import CANONICAL_DAYS, BankDiscount, InvalidDiscount
 from src.promotions.playwright_base import PlaywrightScraper
 from src.promotions.scraper_carrefour import CarrefourScraper
+from src.promotions.scraper_changomas import ChangomasScraper
 from src.promotions.scraper_coto import CotoScraper
 from src.promotions.scraper_dia import DiaScraper
 from src.promotions.scraper_vea import VeaScraper
@@ -24,12 +25,14 @@ SCRAPERS = {
     "dia": DiaScraper,
     "carrefour": CarrefourScraper,
     "vea": VeaScraper,
+    "changomas": ChangomasScraper,
 }
 
 __all__ = [
     "BankDiscount",
     "CANONICAL_DAYS",
     "CarrefourScraper",
+    "ChangomasScraper",
     "CotoScraper",
     "DiaScraper",
     "DiscountScrapeError",

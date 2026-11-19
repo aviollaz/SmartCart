@@ -27,6 +27,7 @@ from src.coto_logistics import check_coverage, resolve_coto_logistics
 from src.dia_logistics import check_coverage as check_dia_coverage, quote_cart as quote_dia_cart, resolve_dia_logistics
 from src.carrefour_logistics import check_coverage as check_carrefour_coverage, resolve_carrefour_logistics
 from src.vea_logistics import check_coverage as check_vea_coverage, resolve_vea_logistics
+from src.changomas_logistics import check_coverage as check_changomas_coverage, resolve_changomas_logistics
 from src.schema import ensure_schema
 from src.shelves import SECTIONS, SHELVES, sections as shelf_sections, shelf_label
 from src.stores import STORES
@@ -1044,13 +1045,14 @@ def _resolve_logistics_stage(request):
         ("dia", "dia_online", resolve_dia_logistics),
         ("carrefour", "carrefour_online", resolve_carrefour_logistics),
         ("vea", "vea_online", resolve_vea_logistics),
+        ("changomas", "changomas_online", resolve_changomas_logistics),
     )
 
     def resolve(tienda):
         _, store_id, resolve_logistics = tienda
         return resolve_logistics(request.lat, request.lng, fallback_delivery_cost=delivery_costs.get(store_id))
 
-    # Las cuatro consultas son HTTP a sitios distintos: en paralelo la etapa
+    # Las cinco consultas son HTTP a sitios distintos: en paralelo la etapa
     # tarda lo que la tienda más lenta y no la suma. `map` devuelve en el orden
     # de `tiendas`, no en el de llegada, así que `excluded_stores` sale igual
     # que antes.
@@ -1588,6 +1590,17 @@ def get_vea_coverage(
     /logistics/dia/coverage.
     """
     return check_vea_coverage(lat, lng)
+
+@app.get("/logistics/changomas/coverage")
+def get_changomas_coverage(
+    lat: float = Query(..., description="Latitud del domicilio de entrega"),
+    lng: float = Query(..., description="Longitud del domicilio de entrega")
+):
+    """
+    Indica si ChangoMás envía a domicilio en una coordenada dada. Mismo contrato
+    que /logistics/dia/coverage.
+    """
+    return check_changomas_coverage(lat, lng)
 
 @app.get("/categories", response_model=List[SectionResponse])
 def get_categories():

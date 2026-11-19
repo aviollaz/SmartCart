@@ -4,7 +4,7 @@ Guidance for Claude Code in this repository.
 
 ## Project overview
 
-SmartCart finds the cheapest way to split a grocery cart across four Argentine supermarkets (Coto, Día, Carrefour, Vea). It scrapes each store's internal API, unifies catalogs by EAN, lets the user build a cart via semantic search, and runs CP-SAT (OR-Tools) over promotions, bank/membership discounts, delivery costs and minimum spend.
+SmartCart finds the cheapest way to split a grocery cart across five Argentine supermarkets (Coto, Día, Carrefour, Vea, ChangoMás). It scrapes each store's internal API, unifies catalogs by EAN, lets the user build a cart via semantic search, and runs CP-SAT (OR-Tools) over promotions, bank/membership discounts, delivery costs and minimum spend.
 
 - `src/` — Python/FastAPI backend + Postgres/pgvector. `frontend/` — React/Vite/Tailwind SPA. Two processes over HTTP.
 - `docs/arquitectura.md`: how it works, stage by stage. `docs/operacion.md`: where it runs, deploy commands, Neon limits, PowerShell gotchas. Pending work: `gh issue list`.
@@ -99,14 +99,18 @@ Each scraper calls the store's internal API (Coto: BFF REST; VTEX stores: GraphQ
   - No product promo is visible anywhere (teasers, highlights, checkout simulation), so Vea is quoted without promos.
   - It sells through sales channel 34 (`Store.sales_channel`); the cart URL fails with `sc=1`.
   - In Oct 2026 its descriptions carried a card skimmer (`<img onerror="eval(atob(…))">`). `clean_description()` stores plain text only; a test pins a defanged copy.
+- **ChangoMás** (masonline.com.ar, `sc=1`):
+  - `ListPrice` is a real list price and the gap is an open discount (the public schema.org offer shows `Price` to everyone), so `PromoTransformer.changomas()` is Día's rule. `teasers` came empty on every product sampled (Nov 2026).
+  - Prices are per branch (the same yerba is $5.289 in CABA, $4.399 in Córdoba); the catalog, with no `regionId`, returns CABA's.
+  - The $20.000 minimum comes from a real checkout. No endpoint publishes it: the minicart theme prop `minPurchaseAmount` says 2000 and is stale.
 - **The `warning` mechanism stays for next time** (no store has one today). A store with a `warning` on its `Store` row and the matching text in `constants.js` stays in the catalog and the solver, but the frontend excludes it unless the user opts in (`ProfileContext.optedInStores`), and `ProductPage` never links to it. `tests/test_stores.py` checks both sides match.
 
 ### 1b. Shelves (`src/shelves.py`)
 
-`SHELVES` maps 75 canonical shelf slugs to per-store key tuples (141 Coto, 109 Día, 86 Carrefour, 104 Vea), in nine `SECTIONS`. One row decides what gets scraped, a product's category (`unified_products.shelf`), what can substitute what, and what the mega-menu draws.
+`SHELVES` maps 75 canonical shelf slugs to per-store key tuples (141 Coto, 109 Día, 86 Carrefour, 104 Vea, 97 ChangoMás), in nine `SECTIONS`. One row decides what gets scraped, a product's category (`unified_products.shelf`), what can substitute what, and what the mega-menu draws.
 
 - **Alignment is the point.** Products unify by EAN, so they only compare if every store swept the same shelf. Favor branded packaged goods, where EANs coincide.
-- **Every row names every store; an empty tuple is a decision.** Vea's three feminine-care rows are `vea=()` because its single leaf mixes pads, liners and tampons. Two mixed Día leaves stay out of Limpieza for the same reason. `test_shelves.py` requires the store to be named, not to have keys.
+- **Every row names every store; an empty tuple is a decision.** Vea's three feminine-care rows are `vea=()` because its single leaf mixes pads, liners and tampons. Two mixed Día leaves stay out of Limpieza for the same reason, and five ChangoMás rows are `()`: one canned-goods leaf mixes tuna with peas, one mixes sausages with salami, one frozen leaf mixes fries with nuggets. `test_shelves.py` requires the store to be named, not to have keys.
 - **No key may be an ancestor of another key of the same store** (`test_ninguna_clave_contiene_a_otra`): the parent's batch carries the child's products and the last shelf swept wins `shelf`. Use the sibling leaves.
 - **A key existing in the dump doesn't mean it has products.** Stores rename nodes and keep the old one empty (Día, Sep 2026: 20 dead keys, 15 empty shelves, all categories "OK"). When a store's keys read empty, regenerate its dump first; the diff names the dead keys.
 - **Keys returning byte-identical results** (Día's two yogurt leaves): keep one.
@@ -175,7 +179,8 @@ Online, before the solver: per store, does it deliver here and what does shippin
   - A failed seller makes the answer indeterminate.
   - **Shipping depends on weight** (issue #15). `quote_cart()` simulates the real cart at the chosen branch (`None` if any line lacks home delivery). After the solve, `_requote_dia_shipping` re-optimizes when the quote is higher, at most `DIA_REQUOTE_ROUNDS` times, and **the cost only rises** (lowering it can oscillate between two splits). It is skipped without coordinates or on a fallback lookup.
 - **Vea:** `regions` ignores the coordinate (~88 branches everywhere), so Vea can't say "no". One simulation carries one item per branch (~2 s). Home delivery is the SLA named "Envío a Domicilio"; cost is `sla.price` + the cheapest window.
-- **`_resolve_logistics_stage` runs the four stores in parallel** (`ThreadPoolExecutor`; `map` keeps list order, so `excluded_stores` order is stable): the stage costs the slowest store (usually Vea, 2-6 s cold), not the sum. Meanwhile `optimize_shopping_cart` flattens the cart in another thread and passes `flat_prices` down (`_optimize_purchase_window`, `_requote_dia_shipping`, `_enrich_successful_result`, `build_semantic_suggestions(cart_prices=…)`) instead of each re-flattening.
+- **ChangoMás:** `regions` does filter by coordinate (Ushuaia: `sellers: []`, a real "no", as in Día). Every covered address also lists four national sellers (`masonlineprod0008/0014/0095/0101`) that answer `withoutStock`, so it simulates once with one item per seller (Vea's pattern) and keeps the seller with an "Envío a domicilio" SLA. Cost is `sla.price` + the cheapest window: $3.999 in all four zones, but $13.000 in Quilmes (same branch as Lanús, so it is distance-based).
+- **`_resolve_logistics_stage` runs the five stores in parallel** (`ThreadPoolExecutor`; `map` keeps list order, so `excluded_stores` order is stable): the stage costs the slowest store (usually Vea, 2-6 s cold), not the sum. Meanwhile `optimize_shopping_cart` flattens the cart in another thread and passes `flat_prices` down (`_optimize_purchase_window`, `_requote_dia_shipping`, `_enrich_successful_result`, `build_semantic_suggestions(cart_prices=…)`) instead of each re-flattening.
 
 ### 6. API (`src/api.py`)
 
@@ -218,7 +223,7 @@ Loads the sentence-transformers model once in `lifespan` (`ml_models`).
   - It takes no dietary filters.
   - Order follows the request, deduped.
   - It **does not fail open to `[]`**: an empty answer would claim every usual product was delisted.
-- **`GET /logistics/{coto,dia,carrefour,vea}/coverage`**: thin wrappers for the address onboarding.
+- **`GET /logistics/{coto,dia,carrefour,vea,changomas}/coverage`**: thin wrappers for the address onboarding.
 
 **`POST /optimize`:** logistics → flatten (`flatten_cart_prices`: cheapest net cost per line per store at that quantity) → `optimize_cart` (CP-SAT: a bool per (product, store), an active var per store, min spend as a hard constraint, minimizing subtotal + delivery − capped bank discount) → enrichment. An infeasible cart is a 400 with a human `detail`.
 - **`user_excluded_stores`**: the solver, `price_savings` and swaps get coverage ∪ user exclusions. The response's `excluded_stores` stays **coverage only**, because `LogisticsNotice` and the analytics KPI read it. Unknown ids and excluding every store are 422.
@@ -256,6 +261,7 @@ Offline pipeline writing `src/scrapers/bank_promos.json`: store-wide card/wallet
 - **Transports:**
   - Coto: `httpx` on `getPromocionesMulticanal`, public, no token.
   - Vea: Master Data `JN/bankDiscount`, a JSON *string* shared with Jumbo/Disco. Day `"6"` is Saturday **and** Sunday. The bank comes from `banks[].name` only. Promos with a minimum spend are discarded (unrepresentable).
+  - ChangoMás: GDN's content service, `gdn-services/content/banks-promotions` + `financing-banks` (bank `id → name`), public. Online = `ecommerce` or `express_ecommerce_all`; almost everything is in-store, and in Nov 2026 no online promo was live, so `MIN_EXPECTED_DISCOUNTS = 0` (an empty block is normal, not a failure). Promos with a minimum spend or an explicit exclusion list ("NO INCLUYE: … aceites, harinas, leches") are discarded. `isMasClub` → `masclub`, a membership; its UI option is added only once a promo lands in the JSON (`test_promos.py`).
   - Día, Carrefour: `PlaywrightScraper`, importing playwright lazily so the API runs without Chromium.
 - **Coto's bank identity comes from the logo filename** (`logo_naranjax2.png`), so `banks.py`'s alias boundary blocks letters but allows digits.
 - **Día:** days come from clicking the day tabs. Its "Ver Legales" modal must be open → read → close. **The card face is an image** (the DOM only says "ONLINE / TIENDAS / Ver Legales"), so `card_ocr.py` reads it with Tesseract (green channel + threshold; 12/12 cards in Nov 2026). Percentage and cap come from the card first, the legal is the fallback: some legals never state the % (MODO, BNA+), and Naranja X publishes one card per plan sharing one legal that lists all three, which used to yield 30% with the 20% plan's cap. Pillow is imported inside `read_card()`, like Playwright: the API imports `src.promotions` and its image has no Pillow (a top-level import crashed the 18-Nov deploy). Without Tesseract it logs and falls back to the legal; **an entity missing from the JSON may be unreadable, not discount-less** — check the discards before dropping its option.
@@ -294,7 +300,7 @@ Adds only operations concerns around `run_scrapers.py`. Details and commands in 
 - **GitHub Actions against Neon.** WSL2 cron never fired; AWS has no free tier for new accounts; Oracle never delivered capacity (A1 Always Free was halved to 2 OCPU/12 GB on 15-Jun-2026).
 - **The nightly path has no bash**: `workflow_dispatch` takes one free-text `args` input passed through `env` (never `${{ }}` inside `run`, which becomes code). The one branch is the `DATABASE_URL` presence check.
 - **Torch from PyTorch's CPU index**, here and in the `Dockerfile`: PyPI's wheel brings CUDA, which filled the runner's disk (26-27 Sep 2026: red job, no telemetry) and made the image 10,3 GB instead of 2,78. The workflow file is part of the pip cache key.
-- **The sweep takes ~1 h 15 min** (Día/Vea ~45 min, Coto/Carrefour ~1 h 10 min, parallel matrix). **The schedule is not the start time**: on `0 6` runs were on time until 20 Oct 2026, then GitHub's delay grew to ~9 h. On 18 Nov the cron moved off the hour (`23 5`). If it stays late, trigger `workflow_dispatch` from Cloud Scheduler.
+- **The sweep takes ~1 h 15 min** (Día/Vea ~45 min, Coto/Carrefour ~1 h 10 min, ChangoMás not yet measured on Actions; parallel matrix). **The schedule is not the start time**: on `0 6` runs were on time until 20 Oct 2026, then GitHub's delay grew to ~9 h. On 18 Nov the cron moved off the hour (`23 5`). If it stays late, trigger `workflow_dispatch` from Cloud Scheduler.
 - **`keepalive.yml`**: GitHub disables schedules after 60 days without commits, and scheduled runs don't count.
 - **`bank-promos.yml`** (Mondays) regenerates `bank_promos.json` and opens/updates the PR `promos-bancarias-semanal` only when a promo changed (ignoring `scraped_at`), with an in/out table and the promo tests' result (a `GITHUB_TOKEN` PR doesn't trigger `ci.yml`). It never commits to main: a misread page would be an invented discount. Merging still needs a Cloud Run redeploy; the repo must allow Actions to create PRs.
 - **`ops/probe_endpoints.py` is the gate for every new place the sweep runs**: JSON content type and expected shape, never just 200. It imports nothing from `src/`.

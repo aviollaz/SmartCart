@@ -265,3 +265,13 @@ class PromoTransformer:
         """
         oferta = {**raw_commertial_offer, "ListPrice": raw_commertial_offer.get("Price", 0.0)}
         return PromoTransformer._vtex(oferta, product_id, "vea")
+
+    @staticmethod
+    def changomas(raw_commertial_offer: dict, product_id: str) -> tuple[float, list]:
+        """
+        Traduce la oferta comercial de ChangoMás (VTEX) al estándar único, igual
+        que Día: su `ListPrice` es un precio de lista de verdad (relevado sobre
+        129 productos, nov 2026: 27 por encima de `Price`, entre 1,18 y 1,66
+        veces) y la diferencia es un descuento abierto.
+        """
+        return PromoTransformer._vtex(raw_commertial_offer, product_id, "changomas")

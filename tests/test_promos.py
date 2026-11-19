@@ -76,6 +76,19 @@ def test_vea_ignora_su_list_price():
     assert promos == []
 
 
+def test_changomas_listprice_mayor_es_descuento_directo():
+    # preparar: aceite Cañuelas 1,5 L, relevado en masonline.com.ar (nov 2026)
+    oferta = {"ListPrice": 6989, "Price": 4999, "teasers": []}
+
+    # ejecutar
+    base_price, promos = PromoTransformer.changomas(oferta, "7792180001665")
+
+    # verificar
+    assert base_price == 6989
+    assert [(p["type"], p["discount_price_per_unit"], p["requires_membership"]) for p in promos] == [
+        ("direct_discount", 4999, None)]
+
+
 # --- Paridad entre banks.py y el selector del frontend ----------------------
 #
 # `optimize_cart` compara `promo["card"] in user_cards` por IGUALDAD EXACTA, así

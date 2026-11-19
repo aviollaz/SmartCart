@@ -76,6 +76,9 @@ BANK_ALIASES = {
     "mi carrefour": "mi_carrefour",
     "mi crf": "mi_carrefour",
     "tarjeta carrefour": "mi_carrefour",
+    # El club de socios de ChangoMás.
+    "masclub": "masclub",
+    "mas club": "masclub",
     # Carrefour Banco (Banco de Servicios Financieros) es una entidad distinta de
     # Mi Carrefour, que es el programa de fidelidad. Comparten la palabra
     # "carrefour", y por eso estos alias son más largos: _ALIASES_POR_LONGITUD los
@@ -90,7 +93,7 @@ BANK_ALIASES = {
 # sin esta distinción, "Comunidad Coto 15%" se buscaría entre las tarjetas y no se
 # aplicaría nunca, aunque el usuario tenga la membresía tildada.
 MEMBERSHIP_ENTITIES = frozenset({
-    "comunidad_coto", "coto_tci", "club_dia", "mi_carrefour", "club_la_nacion",
+    "comunidad_coto", "coto_tci", "club_dia", "mi_carrefour", "club_la_nacion", "masclub",
 })
 
 # Alias ordenados por longitud descendente: "naranja x" tiene que evaluarse antes
@@ -188,6 +191,7 @@ DISPLAY_NAMES = {
     "personal_pay": "Personal Pay",
     "banco_del_sol": "Banco del Sol",
     "cencopay": "CencoPay",
+    "masclub": "MasClub",
 }
 
 
