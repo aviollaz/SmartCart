@@ -12,7 +12,7 @@ purchase.
 
 | | |
 |---|---|
-| Chains | Coto, Día, Carrefour, Vea, ChangoMás, Jumbo — the same 75 shelves in each (72 at Vea and Jumbo, 70 at ChangoMás) |
+| Chains | Coto, Día, Carrefour, Vea, ChangoMás, Jumbo — the same 85 shelves in each (79 to 85 depending on the chain) |
 | Refresh | Nightly, GitHub Actions |
 | Tests | 540+ (pytest) |
 | Infra | API on Cloud Run, Postgres + pgvector on Neon, frontend on Vercel — all free tiers |

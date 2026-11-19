@@ -219,18 +219,48 @@ _SHELF_LIST = (
         jumbo=("lacteos/yogures",),
         changomas=("frescos/lacteos/yogures",),
     ),
+    # Quesos, en cuatro góndolas como los separan todas las cadenas: la góndola
+    # habilita sustituciones, y un untable no reemplaza a un reggianito. Quedan
+    # afuera a propósito las hojas que mezclan tipos: fetas (Día, Carrefour),
+    # especiales e importados (Coto, Carrefour, Vea) y fundidos (Coto). El
+    # viejo `frescos/fiambreria` de Día mezclaba quesos con fiambres; desde
+    # oct-2026 Día separa `frescos/quesos` y sus hojas.
     _shelf(
-        "quesos", "Quesos", "Frescos",
-        coto=("catv00003273", "catv00003803"),
-        # El viejo `frescos/fiambreria` mezclaba quesos con fiambres, patés y
-        # salchichas, y como la góndola habilita una sustitución el optimizador
-        # podía ofrecer un salame por un queso. Desde oct-2026 Día separa
-        # `frescos/quesos`, que es sólo queso (138 productos), y se toma entero.
-        dia=("frescos/quesos",),
-        carrefour=("lacteos-y-productos-frescos/quesos",),
-        vea=("quesos-y-fiambres/quesos",),
-        jumbo=("quesos-y-fiambres/quesos",),
-        changomas=("frescos/quesos",),
+        "quesos-untables", "Quesos untables y ricota", "Frescos",
+        coto=("catv00003273",),
+        dia=("frescos/quesos/untables-y-ricotta",),
+        carrefour=("lacteos-y-productos-frescos/quesos/quesos-cremas-y-untables",
+                   "lacteos-y-productos-frescos/quesos/ricota"),
+        vea=("quesos-y-fiambres/quesos/quesos-untables", "quesos-y-fiambres/quesos/ricota"),
+        jumbo=("quesos-y-fiambres/quesos/quesos-untables", "quesos-y-fiambres/quesos/ricota"),
+        changomas=("frescos/quesos/quesos-crema-y-untables", "frescos/quesos/ricota"),
+    ),
+    _shelf(
+        "quesos-blandos", "Quesos blandos, cremosos y mozzarella", "Frescos",
+        coto=("catv00004620",),
+        dia=("frescos/quesos/blandos-y-cremosos",),
+        carrefour=("lacteos-y-productos-frescos/quesos/quesos-cremosos-y-mozzarellas",),
+        vea=("quesos-y-fiambres/quesos/queso-muzzarella", "quesos-y-fiambres/quesos/quesos-port-salut-y-cremosos"),
+        jumbo=("quesos-y-fiambres/quesos/queso-muzzarella", "quesos-y-fiambres/quesos/quesos-port-salut-y-cremosos"),
+        changomas=("frescos/quesos/cremosos-y-port-salut", "frescos/quesos/mozzarella"),
+    ),
+    _shelf(
+        "quesos-duros", "Quesos duros y semiduros", "Frescos",
+        coto=("catv00003780", "catv00003803"),
+        dia=("frescos/quesos/duros-y-semiduros",),
+        carrefour=("lacteos-y-productos-frescos/quesos/quesos-duros-y-semi-duros",),
+        vea=("quesos-y-fiambres/quesos/quesos-duros", "quesos-y-fiambres/quesos/quesos-semiblandos"),
+        jumbo=("quesos-y-fiambres/quesos/quesos-duros", "quesos-y-fiambres/quesos/quesos-semiblandos"),
+        changomas=("frescos/quesos/duros", "frescos/quesos/semiduros"),
+    ),
+    _shelf(
+        "quesos-rallados", "Quesos rallados", "Frescos",
+        coto=("catv00003800",),
+        dia=("frescos/quesos/rallados-y-en-hebras",),
+        carrefour=("lacteos-y-productos-frescos/quesos/quesos-rallados-y-en-hebras",),
+        vea=("quesos-y-fiambres/quesos/quesos-rallados",),
+        jumbo=("quesos-y-fiambres/quesos/quesos-rallados",),
+        changomas=("frescos/quesos/rallados",),
     ),
     _shelf(
         "dulce-de-leche", "Dulce de leche", "Desayuno y merienda",
@@ -481,26 +511,28 @@ _SHELF_LIST = (
         jumbo=("almacen/desayuno-y-merienda/cacao-y-saborizantes",),
         changomas=("desayunos-y-meriendas/cacao",),
     ),
+    # Pan industrial envasado, en dos góndolas. La panadería propia de cada
+    # cadena (pan x kg, facturas del día) queda afuera: se vende por peso con
+    # códigos internos y no unifica entre cadenas. Por eso Coto es `()`: su hoja
+    # "Panificados" mezcla su panadería propia (Baguette COTO, Mignon x kg) con
+    # pan de molde y de hamburguesa, y tomarla metía la panadería en la góndola.
     _shelf(
-        "panificados", "Pan y panificados", "Desayuno y merienda",
-        coto=("catv00003540", "catv00003531"),
-        # Las hojas de `almacen/panaderia`: el nivel 2 también trae budines, que
-        # son su propia góndola, y pan rallado, que es otra cosa.
-        dia=("almacen/panaderia-y-panificados/panes-lactales-y-de-mesa",
-             "almacen/panaderia-y-panificados/pan-de-hamburguesa-y-pancho",
-             "almacen/panaderia-y-panificados/facturas-y-medialunas"),
-        carrefour=("panaderia/panificados",),
-        vea=(
-            "almacen/panificados/lacteados",
-            "almacen/panificados/pan-para-hamburguesas-y-panchos",
-            "almacen/panificados/integral-y-salvado",
-        ),
-        jumbo=(
-            "almacen/panificados/lacteados",
-            "almacen/panificados/pan-para-hamburguesas-y-panchos",
-            "almacen/panificados/integral-y-salvado",
-        ),
-        changomas=("panaderia/pan-lactal", "panaderia/pan-para-hamburguesas-y-panchos"),
+        "pan-lactal", "Pan lactal y de mesa", "Desayuno y merienda",
+        coto=(),
+        dia=("almacen/panaderia-y-panificados/panes-lactales-y-de-mesa",),
+        carrefour=("panaderia/panificados/panes-lacteados-y-de-mesa",),
+        vea=("almacen/panificados/lacteados", "almacen/panificados/integral-y-salvado"),
+        jumbo=("almacen/panificados/lacteados", "almacen/panificados/integral-y-salvado"),
+        changomas=("panaderia/pan-lactal",),
+    ),
+    _shelf(
+        "pan-hamburguesa", "Pan de hamburguesa y pancho", "Desayuno y merienda",
+        coto=(),
+        dia=("almacen/panaderia-y-panificados/pan-de-hamburguesa-y-pancho",),
+        carrefour=("panaderia/panificados/pan-para-hamburguesas-y-panchos",),
+        vea=("almacen/panificados/pan-para-hamburguesas-y-panchos",),
+        jumbo=("almacen/panificados/pan-para-hamburguesas-y-panchos",),
+        changomas=("panaderia/pan-para-hamburguesas-y-panchos",),
     ),
     _shelf(
         "budines-y-bizcochuelos", "Budines y bizcochuelos", "Desayuno y merienda",
@@ -843,6 +875,69 @@ _SHELF_LIST = (
         vea=("limpieza/limpieza-de-cocina/detergentes",),
         jumbo=("limpieza/limpieza-de-cocina/detergentes",),
         changomas=("limpieza/limpieza-de-cocina/detergentes-y-lavavajillas",),
+    ),
+    # Para el lavavajillas (detergente en polvo, pastillas, sal, abrillantador).
+    # Día no tiene la hoja; la de ChangoMás mezcla los de máquina con el
+    # detergente de mano y queda en "detergente", donde es mayoría.
+    _shelf(
+        "lavavajillas", "Para el lavavajillas", "Limpieza",
+        coto=("catv00003044",),
+        dia=(),
+        carrefour=("limpieza/limpieza-de-cocina/para-el-lavavajillas",),
+        vea=("limpieza/limpieza-de-cocina/productos-para-lavavajillas",),
+        jumbo=("limpieza/limpieza-de-cocina/productos-para-lavavajillas",),
+        changomas=(),
+    ),
+    # Desengrasantes, limpiadores de cocina y cremosos (tipo Cif): Día y Vea los
+    # tienen en una sola hoja, así que van juntos.
+    _shelf(
+        "limpiadores-de-cocina", "Desengrasantes y limpiadores de cocina", "Limpieza",
+        coto=("catv00003080", "catv00003130"),
+        dia=("limpieza/cocina-y-vajilla/desengrasantes-y-limpiadores",),
+        carrefour=("limpieza/limpieza-de-cocina/limpiadores-liquidos",
+                   "limpieza/limpieza-de-cocina/limpiadores-cremosos"),
+        vea=("limpieza/limpieza-de-cocina/limpiadores",),
+        jumbo=("limpieza/limpieza-de-cocina/limpiadores",),
+        changomas=("limpieza/limpieza-de-cocina/desengrasantes-de-cocina-y-horno",
+                   "limpieza/limpieza-de-cocina/limpiadores-cremosos"),
+    ),
+    # Día tiene baño con pastillas en una hoja y vidrios con multiuso en otra:
+    # mezclas, `()` en las tres góndolas que tocan.
+    _shelf(
+        "limpiadores-de-bano", "Limpiadores de baño", "Limpieza",
+        coto=("catv00003082",),
+        dia=(),
+        carrefour=("limpieza/limpieza-de-bano/limpiadores-de-bano",),
+        vea=("limpieza/limpieza-de-bano/desinfectantes",),
+        jumbo=("limpieza/limpieza-de-bano/desinfectantes",),
+        changomas=("limpieza/limpieza-de-bano/desinfectantes-de-bano",),
+    ),
+    _shelf(
+        "pastillas-inodoro", "Pastillas y bloques para inodoro", "Limpieza",
+        coto=("catv00003081",),
+        dia=(),
+        carrefour=("limpieza/limpieza-de-bano/canastas-y-bloques",),
+        vea=("limpieza/limpieza-de-bano/pastillas-y-bloques",),
+        jumbo=("limpieza/limpieza-de-bano/pastillas-y-bloques",),
+        changomas=("limpieza/limpieza-de-bano/pastillas-y-bloques",),
+    ),
+    _shelf(
+        "limpiavidrios", "Limpiavidrios", "Limpieza",
+        coto=("catv00003122",),
+        dia=(),
+        carrefour=("limpieza/limpieza-de-pisos-y-muebles/limpiavidrios",),
+        vea=("limpieza/limpieza-de-cocina/limpiavidrios",),
+        jumbo=("limpieza/limpieza-de-cocina/limpiavidrios",),
+        changomas=("limpieza/limpieza-de-cocina/limpia-vidrios",),
+    ),
+    _shelf(
+        "limpiadores-de-piso", "Limpiadores de piso", "Limpieza",
+        coto=("catv00003042",),
+        dia=("limpieza/banos-pisos-y-superficies/limpiadores-de-piso",),
+        carrefour=("limpieza/limpieza-de-pisos-y-muebles/limpiadores-de-piso",),
+        vea=("limpieza/limpieza-de-pisos-y-muebles/limpiadores-de-pisos",),
+        jumbo=("limpieza/limpieza-de-pisos-y-muebles/limpiadores-de-pisos",),
+        changomas=("limpieza/limpieza-de-pisos-y-muebles/perfume-para-pisos",),
     ),
     _shelf(
         "jabon-para-ropa", "Jabón para la ropa", "Limpieza",

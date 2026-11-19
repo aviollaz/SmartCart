@@ -105,8 +105,8 @@ entidad de promos bancarias. Vende por el canal 32.
 
 La única taxonomía del proyecto. Cada fila es un slug canónico (`yerba-mate`),
 una etiqueta, una sección del menú y las claves de esa góndola en cada tienda.
-Hoy: **75 góndolas** en nueve secciones, con 141 claves de Coto, 109 de Día, 86
-de Carrefour, 104 de Vea, 97 de ChangoMás y 104 de Jumbo. Una góndola puede necesitar varias claves por tienda
+Hoy: **85 góndolas** en nueve secciones, con 149 claves de Coto, 113 de Día, 98
+de Carrefour, 116 de Vea, 109 de ChangoMás y 116 de Jumbo. Una góndola puede necesitar varias claves por tienda
 porque cada taxonomía anida a otra profundidad.
 
 Existe porque un producto sólo se compara entre cadenas si todas barrieron la
@@ -121,7 +121,8 @@ Vea y Jumbo no cubren tres góndolas de protección femenina: su taxonomía mezc
 toallitas, protectores y tampones en una sola hoja. ChangoMás no cubre cinco,
 por lo mismo: una hoja de conservas mezcla atún con arvejas, la de embutidos
 mezcla salchichas con salame, y las papas congeladas comparten hoja con los
-nuggets. Pescadería y panadería
+nuggets. Coto no entra en las dos góndolas de pan: su hoja "Panificados"
+mezcla su panadería propia con el pan envasado. Pescadería y panadería
 propia quedan afuera: se venden por peso con códigos internos y no unifican.
 
 #### 3.1.2 Frescos emparejados a mano (`src/fresh_items.py`)

@@ -96,7 +96,8 @@ def main() -> int:
                     literal = "[" + ",".join(map(str, vector)) + "]"
                     filas = search_rows(cur, literal, query, TOP_N, mode=args.modo)
 
-                    aciertos = sum(1 for f in filas if f["shelf"] == gondola)
+                    # "quesos" acierta en cualquiera de sus góndolas (quesos-duros, ...).
+                    aciertos = sum(1 for f in filas if f["shelf"] == gondola or f["shelf"].startswith(gondola + "-"))
                     aciertos_totales += aciertos
                     marca = "  " if aciertos >= TOP_N - 1 else "<-"
                     primera = filas[0] if filas else {"distance": float("nan"), "name": "-"}
