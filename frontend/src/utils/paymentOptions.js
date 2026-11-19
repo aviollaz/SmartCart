@@ -52,9 +52,12 @@ export const CARD_OPTIONS = [
 // "jumbo_mas" se fue: no publica ningún descuento en la entidad de promos de
 // Cencosud (nov 2026), así que era una opción que no podía aplicar a ningún
 // precio. Vuelve si aparece en bank_promos.json.
+//
+// Coto TCI (la tarjeta de crédito de Coto) va al final: casi nadie la conoce,
+// pero da un 20% sin tope los martes, así que sigue para quien la tiene.
 export const MEMBERSHIP_OPTIONS = [
-  { value: "coto_tci", label: "Coto TCI" },
   { value: "comunidad_coto", label: "Comunidad Coto" },
   { value: "mi_carrefour", label: "Mi Carrefour" },
   { value: "club_la_nacion", label: "Club La Nación" },
+  { value: "coto_tci", label: "Coto TCI" },
 ];
