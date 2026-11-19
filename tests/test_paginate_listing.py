@@ -152,3 +152,40 @@ def test_una_gondola_sin_tipos_no_devuelve_tipos():
 
     # ejecutar / verificar
     assert _paginate_listing(filas, ofertas, _params())["types"] == []
+
+
+# --- El nombre que se muestra ------------------------------------------------
+#
+# Cada cadena escribe el nombre a su manera, y Vea o Coto abrevian ("Zerolact
+# Bot 1l", "La Serenisi Pot 250 Grm"). Se muestra el de la cadena que lo escribe
+# más claro, no el de la última que barrió.
+
+def _con_nombre(oferta, nombre):
+    return {**oferta, "product_name": nombre}
+
+
+def test_el_nombre_sale_de_la_cadena_que_lo_escribe_mas_claro():
+    # preparar: la fila quedó con el nombre de Vea, que barrió último
+    fila = {**_fila("leche"), "name": "Leche La Serenisima Zerolact Bot 1l"}
+    ofertas = {"leche": [
+        _con_nombre(_oferta("vea_online", 1800.0), "Leche La Serenisima Zerolact Bot 1l"),
+        _con_nombre(_oferta("dia_online", 1750.0), "Leche UAT Zero lactosa La Serenisima 1 Lt."),
+    ]}
+
+    # ejecutar
+    producto = _paginate_listing([fila], ofertas, _params())["items"][0]
+
+    # verificar
+    assert producto["name"] == "Leche UAT Zero lactosa La Serenisima 1 Lt."
+
+
+def test_un_producto_fresco_conserva_su_nombre_curado():
+    # preparar
+    fila = {**_fila("fresh_tomate-redondo"), "name": "Tomate redondo x kg"}
+    ofertas = {"fresh_tomate-redondo": [_con_nombre(_oferta("dia_online", 2500.0), "Tomate Perita x Kg")]}
+
+    # ejecutar
+    producto = _paginate_listing([fila], ofertas, _params())["items"][0]
+
+    # verificar
+    assert producto["name"] == "Tomate redondo x kg"

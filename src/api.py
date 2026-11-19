@@ -510,6 +510,15 @@ def _best_quantity_promo(base_price: float, raw_promos: list, single_unit_price:
 # en constants.js (resolveDisplayImage() en formatters.js).
 IMAGE_STORE_PRIORITY = tuple(s.id for s in STORES)
 
+# De qué cadena sale el nombre que se muestra. `unified_products.name` es el de
+# la última que barrió, y las tiendas corren en paralelo, así que cambiaba según
+# la noche, a veces a uno abreviado: "Leche La Serenisima Zerolact Bot 1l" (Vea),
+# "La Serenisi Pot 250 Grm" (Coto). Ordenado por lo medido sobre los productos
+# que venden 4+ cadenas (nov 2026): Día abrevia el 0,3%, Coto el 12% y además
+# corta palabras. Una tienda que no esté acá va después de todas.
+NAME_STORE_PRIORITY = ("dia_online", "carrefour_online", "changomas_online",
+                       "vea_online", "jumbo_online", "coto_online")
+
 
 def _fetch_offers_by_product(cur, product_ids: list,
                              user_memberships: Optional[List[str]] = None) -> dict:
@@ -529,15 +538,17 @@ def _fetch_offers_by_product(cur, product_ids: list,
 
     cur.execute("""
         SELECT unified_product_id, store_id, product_url, base_price, in_stock,
-               promotions_json, image_url
+               promotions_json, image_url, name
         FROM store_products
         WHERE unified_product_id = ANY(%s)
     """, (product_ids,))
 
     offers_by_product: Dict[str, List[Dict[str, Any]]] = {}
     for sp in cur.fetchall():
+        # `product_name` sólo sirve para elegir el nombre del producto
+        # (_display_name); StoreOffer no lo declara y no viaja al cliente.
         offers_by_product.setdefault(sp["unified_product_id"], []).append(
-            _build_store_offer(sp, user_memberships)
+            {**_build_store_offer(sp, user_memberships), "product_name": sp["name"]}
         )
     return offers_by_product
 
@@ -633,6 +644,21 @@ def _build_unit_price(row: dict, offers: list) -> Optional[dict]:
     return {"value": round(precio / peso * UNIT_PRICE_FACTOR, 2), "base": base}
 
 
+def _display_name(row: dict, offers: list) -> str:
+    """El nombre de la cadena que lo escribe más claro (NAME_STORE_PRIORITY).
+
+    Los frescos (`fresh_*`) conservan el de src/fresh_items.py: es un nombre
+    curado a mano para el ítem, y cada cadena llama distinto a su SKU.
+    """
+    if row["id"].startswith("fresh_"):
+        return row["name"]
+    rank = {store_id: i for i, store_id in enumerate(NAME_STORE_PRIORITY)}
+    named = [o for o in offers if o.get("product_name")]
+    if not named:
+        return row["name"]
+    return min(named, key=lambda o: rank.get(o["store_id"], len(rank)))["product_name"]
+
+
 def _build_product_response(row: dict, offers: list, distance: float = 0.0) -> dict:
     """
     Arma un ProductResponse a partir de una fila de unified_products y sus
@@ -667,7 +693,7 @@ def _build_product_response(row: dict, offers: list, distance: float = 0.0) -> d
     return {
         "unified_id": row["id"],
         "ean": row["ean"],
-        "name": row["name"],
+        "name": _display_name(row, offers),
         "brand": row["brand"],
         "shelf": row["shelf"],
         "shelf_label": shelf_label(row["shelf"]),
