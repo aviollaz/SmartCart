@@ -152,6 +152,7 @@ function ProductDetail({ product: rawProduct, unavailableStores, excludedStores,
           </div>
         )}
 
+        <Description product={rawProduct} />
         <StoreOffers
           offers={rawProduct.available_at_stores}
           unavailableStores={unavailableStores}
@@ -234,6 +235,23 @@ function StoreOffers({ offers, unavailableStores, excludedStores }) {
   );
 }
 
+// Debajo del precio y no en "Especificaciones": ahí quedaba abajo de la foto,
+// y es lo primero que la gente busca al abrir un producto. Es el texto de UNA
+// tienda, no un dato que SmartCart verificó: por eso va atribuido. Coto no
+// publica descripción, así que en productos sólo de Coto no aparece.
+function Description({ product }) {
+  if (!product.description) return null;
+  return (
+    <section>
+      <h2 className="mb-1 font-display text-base font-bold text-ink">Descripción</h2>
+      <p className="text-sm text-ink">{product.description}</p>
+      {product.description_store && (
+        <p className="mt-1 text-xs text-ink-muted">Según {storeName(product.description_store)}</p>
+      )}
+    </section>
+  );
+}
+
 function SpecsTable({ product, className = "" }) {
   const rows = [
     ["EAN", product.ean],
@@ -251,20 +269,6 @@ function SpecsTable({ product, className = "" }) {
     // afirmar algo que el parser nunca vio.
     ["Sin TACC", product.is_gluten_free && "Sí"],
     ["Vegano", product.is_vegan && "Sí"],
-    // Es el texto de UNA tienda, no un dato que SmartCart verificó: por eso va
-    // atribuido. Coto no publica descripción, así que en productos sólo de Coto
-    // la fila no aparece.
-    [
-      "Descripción",
-      product.description && (
-        <div key="description">
-          <p>{product.description}</p>
-          {product.description_store && (
-            <p className="mt-1 text-xs text-ink-muted">Según {storeName(product.description_store)}</p>
-          )}
-        </div>
-      ),
-    ],
   ].filter(([, value]) => value);
 
   return (
