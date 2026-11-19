@@ -4,6 +4,7 @@ import { Header } from "./components/layout/Header";
 import { CartDrawer } from "./components/cart/CartDrawer";
 import { LocationModal } from "./components/onboarding/LocationModal";
 import { MembershipModal } from "./components/onboarding/MembershipModal";
+import { StoresModal } from "./components/profile/StoresModal";
 import { useProfile } from "./context/ProfileContext";
 import { HomePage } from "./pages/HomePage";
 import { SearchResultsPage } from "./pages/SearchResultsPage";
@@ -15,6 +16,7 @@ function App() {
   const [isCartOpen, setCartOpen] = useState(false);
   const [isLocationOpen, setLocationOpen] = useState(false);
   const [isMembershipsOpen, setMembershipsOpen] = useState(false);
+  const [isStoresOpen, setStoresOpen] = useState(false);
   const { location, membershipsAsked } = useProfile();
 
   // Sin dirección el modal es el onboarding y no se puede abandonar: se monta
@@ -36,10 +38,14 @@ function App() {
       {isMembershipsOpen && !isOnboarding && !askMemberships && !isLocationOpen && (
         <MembershipModal onClose={() => setMembershipsOpen(false)} />
       )}
+      {isStoresOpen && !isOnboarding && !askMemberships && !isLocationOpen && (
+        <StoresModal onClose={() => setStoresOpen(false)} />
+      )}
       <Header
         onOpenCart={() => setCartOpen(true)}
         onOpenLocation={() => setLocationOpen(true)}
         onOpenMemberships={() => setMembershipsOpen(true)}
+        onOpenStores={() => setStoresOpen(true)}
       />
 
       <main className="flex-1">

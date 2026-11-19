@@ -1,16 +1,17 @@
 import { Link } from "react-router-dom";
-import { BadgePercent, CircleHelp, MapPin, ShoppingCart } from "lucide-react";
+import { BadgePercent, CircleHelp, MapPin, ShoppingCart, Store } from "lucide-react";
 import { SearchBar } from "./SearchBar";
 import { SectionBar } from "../megamenu/SectionBar";
 import { useCart } from "../../context/CartContext";
 import { useProfile } from "../../context/ProfileContext";
 import { useCartProductsContext } from "../../context/CartProductsContext";
 import { formatPrice, formatShortAddress } from "../../utils/formatters";
+import { STORES } from "../../utils/constants";
 
-export function Header({ onOpenCart, onOpenLocation, onOpenMemberships }) {
+export function Header({ onOpenCart, onOpenLocation, onOpenMemberships, onOpenStores }) {
   const { itemCount } = useCart();
   const { subtotalEstimado } = useCartProductsContext();
-  const { location, memberships } = useProfile();
+  const { location, memberships, excludedStores } = useProfile();
 
   // Reemplaza al viejo "Envío a {zona}", que linkeaba al carrito: la zona es un
   // dato secundario que se sigue editando en el perfil, mientras que la
@@ -20,32 +21,64 @@ export function Header({ onOpenCart, onOpenLocation, onOpenMemberships }) {
   // Las membresías cambian los precios de toda la grilla, así que corregirlas
   // tiene que estar a un clic desde cualquier página, igual que la dirección.
   const membershipCount = memberships?.length ?? 0;
+  // Lo mismo con los súper habilitados: sacan ofertas de toda la grilla.
+  const enabledStores = STORES.length - excludedStores.length;
 
   return (
     <header className="sticky top-0 z-30">
       <div className="bg-brand-violet-900 text-white">
-        <div className="mx-auto flex max-w-7xl items-center justify-between px-4 py-1.5 text-xs">
+        {/* Una sola fila también en el celular: ahí los textos se acortan (sin
+            "Envío a", "Clubes", "Súper 5/6", Ayuda sólo con el ícono) y la
+            dirección se recorta. Una fila que scrollea de costado no la
+            descubre nadie. */}
+        <div className="mx-auto flex max-w-7xl items-center justify-between whitespace-nowrap px-4 py-1.5 text-xs">
           <button
             type="button"
             onClick={onOpenLocation}
             title={shortAddress ? location.displayName : "Ingresá tu dirección de entrega"}
-            className="flex items-center gap-1.5 hover:underline"
+            className="flex min-w-0 items-center gap-1.5 hover:underline"
           >
-            <MapPin size={14} aria-hidden="true" />
-            {shortAddress ? `Envío a ${shortAddress}` : "Ingresar ubicación"}
+            <MapPin size={14} className="shrink-0" aria-hidden="true" />
+            <span className="truncate">
+              {shortAddress ? (
+                <>
+                  <span className="hidden sm:inline">Envío a </span>
+                  {shortAddress}
+                </>
+              ) : (
+                "Ingresar ubicación"
+              )}
+            </span>
           </button>
           <button
             type="button"
             onClick={onOpenMemberships}
             title="Clubes de supermercado: cambian los precios que ves"
-            className="ml-4 mr-auto flex items-center gap-1.5 hover:underline"
+            className="ml-3 flex items-center gap-1.5 hover:underline sm:ml-4"
           >
             <BadgePercent size={14} aria-hidden="true" />
-            {membershipCount > 0 ? `Mis clubes (${membershipCount})` : "Sin clubes"}
+            <span className="sm:hidden">{membershipCount > 0 ? `Clubes (${membershipCount})` : "Clubes"}</span>
+            <span className="hidden sm:inline">
+              {membershipCount > 0 ? `Mis clubes (${membershipCount})` : "Sin clubes"}
+            </span>
           </button>
-          <Link to="/ayuda" className="flex items-center gap-1.5 hover:underline">
+          <button
+            type="button"
+            onClick={onOpenStores}
+            title="Supermercados que se usan para comparar"
+            className="ml-3 mr-auto flex items-center gap-1.5 hover:underline sm:ml-4"
+          >
+            <Store size={14} aria-hidden="true" />
+            <span className="sm:hidden">
+              {enabledStores === STORES.length ? "Súper" : `Súper ${enabledStores}/${STORES.length}`}
+            </span>
+            <span className="hidden sm:inline">
+              {enabledStores === STORES.length ? "Todos los súper" : `Súper (${enabledStores} de ${STORES.length})`}
+            </span>
+          </button>
+          <Link to="/ayuda" aria-label="Ayuda" className="ml-3 flex items-center gap-1.5 hover:underline sm:ml-4">
             <CircleHelp size={14} aria-hidden="true" />
-            Ayuda
+            <span className="hidden sm:inline">Ayuda</span>
           </Link>
         </div>
       </div>
