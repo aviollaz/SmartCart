@@ -29,7 +29,7 @@ import logging
 import os
 from datetime import date
 
-from src.promotions.banks import MEMBERSHIP_ENTITIES
+from src.promotions.banks import MEMBERSHIP_ENTITIES, display_name
 from src.promotions.models import CANONICAL_DAYS
 
 logger = logging.getLogger(__name__)
@@ -135,14 +135,27 @@ def _read(path: str) -> dict | None:
     return documento
 
 
+_POR_PERIODO = {"transaccion": " por compra", "semanal": " por semana", "mensual": " por mes"}
+
+
+def _pesos(monto: int) -> str:
+    return f"${monto:,.0f}".replace(",", ".")
+
+
+def _condiciones(tope: int | None, periodo: str | None, minimo: int) -> str | None:
+    """"Tope $25.000 por mes · compra mínima $100.000", o None si no tiene ninguna."""
+    partes = []
+    if tope is not None:
+        partes.append(f"Tope {_pesos(tope)}{_POR_PERIODO.get(periodo, '')}")
+    if minimo:
+        partes.append(f"compra mínima {_pesos(minimo)}" if partes else f"Compra mínima {_pesos(minimo)}")
+    return " · ".join(partes) or None
+
+
 def _to_optimizer_promo(registro: dict) -> dict:
     """Traduce un BankDiscount serializado al dict que consume optimize_cart."""
     tope = registro.get("tope_reintegro")
     minimo = registro.get("compra_minima") or 0
-    descripcion = registro.get("descripcion") or ""
-    if minimo:
-        # Acá y no en cada scraper: es la única puerta hacia la UI.
-        descripcion = f"{descripcion}, compra mínima " + f"${minimo:,.0f}".replace(",", ".")
     return {
         "card": registro["entidad"],
         # Entero obligatorio: optimize_cart lo usa como coeficiente de una
@@ -151,7 +164,12 @@ def _to_optimizer_promo(registro: dict) -> dict:
         # son enteros, así que no se pierde nada.
         "discount_pct": int(round(registro["porcentaje_descuento"])),
         "cap": SIN_TOPE_CAP if tope is None else tope,
-        "description": descripcion,
+        "description": registro.get("descripcion") or "",
+        # Lo que dibuja el desglose: el título en el renglón del monto y las
+        # condiciones abajo, más chicas. En un solo texto, el tope quedaba pegado
+        # al monto aplicado y se leía como "te quedan $X".
+        "title": f"{registro['porcentaje_descuento']:g}% de descuento con {display_name(registro['entidad'])}",
+        "conditions": _condiciones(tope, registro.get("tope_periodo"), minimo),
         # Subtotal de productos desde el que rige; 0 si no tiene.
         "min_purchase": minimo,
         # El optimizador compara `card` contra user_cards. Las entidades que en

@@ -876,3 +876,21 @@ def test_si_coto_solo_aporta_empates_no_se_abre(fake_prices):
 
     # verificar
     assert set(result["split"]) == {DIA}
+
+
+def test_el_descuento_aplicado_trae_titulo_y_condiciones(fake_prices):
+    # preparar
+    fake_prices({"prod_a": {COTO: 120000}})
+    promo = {**MODO_CON_MINIMO, "title": "20% de descuento con MODO",
+             "conditions": "Tope $25.000 por mes · compra mínima $100.000"}
+
+    # ejecutar
+    result = optimize_cart(
+        _cart("prod_a"), user_cards=["modo"], bank_promos={COTO: [promo]},
+        min_spend_limits={COTO: 5000, DIA: 5000}, delivery_costs={COTO: 3000, DIA: 3000},
+    )
+
+    # verificar
+    descuento = result["split"][COTO]["bank_discount"]
+    assert (descuento["title"], descuento["conditions"]) == (
+        "20% de descuento con MODO", "Tope $25.000 por mes · compra mínima $100.000")

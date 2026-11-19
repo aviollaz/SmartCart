@@ -219,6 +219,8 @@ def optimize_cart(cart_items, user_memberships=None, user_cards=None, min_spend_
                         "card": promo["card"],
                         "amount": round(disc, 2),
                         "description": promo.get("description"),
+                        "title": promo.get("title"),
+                        "conditions": promo.get("conditions"),
                         # Qué día rige, cuando src/api.py le pasa las promos de
                         # varios días juntas (rango de compra); si no, None.
                         "date": promo.get("date"),

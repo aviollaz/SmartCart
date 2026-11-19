@@ -190,7 +190,8 @@ def test_sin_tope_se_traduce_a_un_tope_alto_y_no_a_cero(tmp_path):
 def test_las_claves_son_las_que_espera_el_optimizador(tmp_path):
     ruta = _escribir(tmp_path, {"coto_online": [_registro()]})
     promo = load_bank_promos(today=LUNES, path=ruta)["coto_online"][0]
-    assert set(promo) == {"card", "discount_pct", "cap", "description", "is_membership", "min_purchase"}
+    assert set(promo) == {"card", "discount_pct", "cap", "description", "is_membership", "min_purchase",
+                          "title", "conditions"}
 
 
 def test_load_bank_promos_pasa_el_minimo_al_optimizador(tmp_path):
@@ -203,8 +204,31 @@ def test_load_bank_promos_pasa_el_minimo_al_optimizador(tmp_path):
 
     # verificar
     assert modo["min_purchase"] == 100000
-    assert "compra mínima $100.000" in modo["description"]
     assert galicia["min_purchase"] == 0
+
+
+def test_el_descuento_trae_titulo_y_condiciones_por_separado(tmp_path):
+    # preparar: MODO en Jumbo, como lo publica (nov 2026)
+    modo = {**_registro(entidad="modo", pct=20.0, tope=25000, periodo="mensual"), "compra_minima": 100000}
+    ruta = _escribir(tmp_path, {"coto_online": [modo]})
+
+    # ejecutar
+    promo = load_bank_promos(today=LUNES, path=ruta)["coto_online"][0]
+
+    # verificar
+    assert promo["title"] == "20% de descuento con MODO"
+    assert promo["conditions"] == "Tope $25.000 por mes · compra mínima $100.000"
+
+
+def test_sin_tope_ni_minimo_no_hay_condiciones(tmp_path):
+    # preparar
+    ruta = _escribir(tmp_path, {"coto_online": [_registro(entidad="credicoop", pct=30.0, tope=None, periodo=None)]})
+
+    # ejecutar
+    promo = load_bank_promos(today=LUNES, path=ruta)["coto_online"][0]
+
+    # verificar
+    assert (promo["title"], promo["conditions"]) == ("30% de descuento con Credicoop", None)
 
 
 @pytest.mark.parametrize("entidad, es_membresia", [

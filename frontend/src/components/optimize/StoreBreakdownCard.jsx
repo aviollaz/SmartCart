@@ -6,7 +6,8 @@ import { PromoTransparency } from "./PromoTransparency";
 function readBankDiscount(bankDiscount) {
   if (!bankDiscount) return null;
   return {
-    description: bankDiscount.description || "Descuento bancario aplicado",
+    title: bankDiscount.title || bankDiscount.description || "Descuento bancario aplicado",
+    conditions: bankDiscount.conditions,
     amount: bankDiscount.amount ?? 0,
   };
 }
@@ -82,9 +83,16 @@ export function StoreBreakdownCard({ storeId, checkout, cartItems, shippingEstim
             <dd>{formatPrice(checkout.delivery_cost)}</dd>
           </div>
           {bankDiscount && (
-            <div className="flex justify-between text-state-success">
-              <dt>{bankDiscount.description}</dt>
-              <dd>-{formatPrice(bankDiscount.amount)}</dd>
+            <div className="flex justify-between gap-3 text-state-success">
+              <dt>
+                {bankDiscount.title}
+                {/* Tope y mínimo aparte, más chicos: pegados al monto aplicado
+                    se leían como "te quedan $X" de la promo. */}
+                {bankDiscount.conditions && (
+                  <span className="block text-xs text-ink-muted">{bankDiscount.conditions}</span>
+                )}
+              </dt>
+              <dd className="shrink-0">-{formatPrice(bankDiscount.amount)}</dd>
             </div>
           )}
         </dl>

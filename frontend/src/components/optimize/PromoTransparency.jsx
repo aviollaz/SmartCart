@@ -34,8 +34,9 @@ export function PromoTransparency({ checkout, cartItems }) {
             <li className="border-l-2 border-state-success pl-2">
               <p className="font-semibold text-ink">Descuento bancario</p>
               <p className="text-state-success">
-                {bankDiscount.description || `Tarjeta ${bankDiscount.card}`}
+                {bankDiscount.title || bankDiscount.description || `Tarjeta ${bankDiscount.card}`}
               </p>
+              {bankDiscount.conditions && <p>{bankDiscount.conditions}</p>}
               <p>-{formatPrice(bankDiscount.amount)}</p>
             </li>
           )}
