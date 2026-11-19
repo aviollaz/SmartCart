@@ -1,6 +1,6 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Link } from "react-router-dom";
-import { Tag } from "lucide-react";
+import { Tag, Volume2, VolumeX } from "lucide-react";
 import { getDeals } from "../api/products";
 import { useShelves } from "../hooks/useShelves";
 import { useProfile } from "../context/ProfileContext";
@@ -49,19 +49,48 @@ export function HomePage() {
 // El recorrido grabado en la app real: agregar productos → optimizar → dónde
 // comprar cada cosa. Mudo, en loop y sin controles, se ve como un GIF pero pesa
 // una fracción. Grabado aparte (frontend/public/como-funciona.mp4): si la UI
-// cambia mucho, hay que regrabarlo.
+// cambia mucho, hay que regrabarlo, y volver a narrarlo.
+//
+// Tiene una voz que lo explica (generada con IA), pero los navegadores no dejan
+// arrancar un video con sonido solo: "Ver con explicación" lo reinicia con
+// audio, una vez y sin loop, y al terminar vuelve a quedar mudo en loop.
 function HowItWorks() {
+  const videoRef = useRef(null);
+  const [narrating, setNarrating] = useState(false);
+
+  function setNarration(on) {
+    const video = videoRef.current;
+    if (!video) return;
+    video.muted = !on;
+    video.loop = !on;
+    if (on) video.currentTime = 0;
+    video.play().catch(() => {});
+    setNarrating(on);
+  }
+
   return (
     <section aria-label="Cómo funciona" className="mt-12">
       <p className="mb-3 text-center font-display text-base font-bold text-ink">Así funciona</p>
-      <video
-        src="/como-funciona.mp4"
-        autoPlay
-        muted
-        loop
-        playsInline
-        className="mx-auto w-full max-w-3xl rounded-xl border border-line"
-      />
+      <div className="relative mx-auto w-full max-w-3xl">
+        <video
+          ref={videoRef}
+          src="/como-funciona.mp4"
+          autoPlay
+          muted
+          loop
+          playsInline
+          onEnded={() => setNarration(false)}
+          className="w-full rounded-xl border border-line"
+        />
+        <button
+          type="button"
+          onClick={() => setNarration(!narrating)}
+          className="absolute bottom-3 left-3 flex items-center gap-2 rounded-md bg-black/75 px-3 py-2 text-sm font-semibold text-white hover:bg-black/90"
+        >
+          {narrating ? <VolumeX size={16} aria-hidden="true" /> : <Volume2 size={16} aria-hidden="true" />}
+          {narrating ? "Quitar sonido" : "Ver con explicación"}
+        </button>
+      </div>
       <p className="mt-4 text-center text-sm">
         <Link to="/ayuda" className="font-semibold text-brand-violet-700 hover:underline">
           ¿Dudas? Mirá las preguntas frecuentes
