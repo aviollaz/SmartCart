@@ -1,6 +1,7 @@
 import { CalendarDays, ChevronDown, CreditCard, Store } from "lucide-react";
 import { useProfile } from "../../context/ProfileContext";
 import { CARD_OPTIONS, MEMBERSHIP_OPTIONS } from "../../utils/paymentOptions";
+import { STORES } from "../../utils/constants";
 import { AddressField } from "../profile/AddressField";
 import { MultiSelectField } from "../profile/MultiSelectField";
 import { StoreToggles, storesSummary } from "../profile/StoreToggles";
@@ -15,7 +16,8 @@ function paymentSummary(cards, memberships) {
 }
 
 function StoresField() {
-  const { excludedStores, maxStores } = useProfile();
+  const { excludedStores, maxStores, setMaxStores } = useProfile();
+  const enabledCount = STORES.length - excludedStores.length;
 
   return (
     <details className="group rounded-md border border-line">
@@ -30,6 +32,25 @@ function StoresField() {
         <ChevronDown size={16} className="shrink-0 text-ink-muted transition-transform group-open:rotate-180" />
       </summary>
       <StoreToggles className="border-t border-line p-3" />
+      {/* Cada súper del reparto es un checkout aparte. Con una sola tienda
+          habilitada no hay nada que limitar. */}
+      {enabledCount > 1 && (
+        <label className="mx-3 mb-3 flex items-center justify-between gap-2 text-sm text-ink">
+          Comprar en como máximo
+          <select
+            value={maxStores ?? ""}
+            onChange={(event) => setMaxStores(event.target.value ? Number(event.target.value) : null)}
+            className="rounded border border-line bg-surface px-2 py-1 text-sm"
+          >
+            <option value="">Sin límite</option>
+            {Array.from({ length: enabledCount - 1 }, (_, i) => i + 1).map((n) => (
+              <option key={n} value={n}>
+                {n} supermercado{n === 1 ? "" : "s"}
+              </option>
+            ))}
+          </select>
+        </label>
+      )}
     </details>
   );
 }

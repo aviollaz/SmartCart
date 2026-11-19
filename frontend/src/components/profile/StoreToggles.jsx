@@ -14,13 +14,15 @@ export function storesSummary(excludedStores, maxStores) {
  * producto), y hay quien prefiere pagar un poco más con tal de no hacerlo.
  *
  * Lo usan el carrito y el botón "Súper" del Header, para que se pueda cambiar
- * desde cualquier página: cambia los precios que muestra toda la grilla.
+ * desde cualquier página: cambia los precios que muestra toda la grilla. El
+ * "comprar en como máximo" queda sólo en el carrito: es una opción de cómo
+ * optimizar, y en el Header parecía limitar qué súper se muestran.
  *
  * La última tienda marcada queda deshabilitada: sin ninguna no hay nada que
  * optimizar, y el backend lo rechaza igual (422).
  */
 export function StoreToggles({ className = "" }) {
-  const { excludedStores, setExcludedStores, maxStores, setMaxStores } = useProfile();
+  const { excludedStores, setExcludedStores } = useProfile();
   const enabledCount = STORES.length - excludedStores.length;
 
   const toggle = (storeId) => {
@@ -61,25 +63,6 @@ export function StoreToggles({ className = "" }) {
         );
       })}
       <p className="text-xs text-ink-muted">Los que desmarques no se usan al optimizar ni aparecen en los precios.</p>
-      {/* Cada súper del reparto es un checkout aparte. Con una sola tienda
-          habilitada no hay nada que limitar. */}
-      {enabledCount > 1 && (
-        <label className="mt-1 flex items-center justify-between gap-2 text-sm text-ink">
-          Comprar en como máximo
-          <select
-            value={maxStores ?? ""}
-            onChange={(event) => setMaxStores(event.target.value ? Number(event.target.value) : null)}
-            className="rounded border border-line bg-surface px-2 py-1 text-sm"
-          >
-            <option value="">Sin límite</option>
-            {Array.from({ length: enabledCount - 1 }, (_, i) => i + 1).map((n) => (
-              <option key={n} value={n}>
-                {n} supermercado{n === 1 ? "" : "s"}
-              </option>
-            ))}
-          </select>
-        </label>
-      )}
     </fieldset>
   );
 }
