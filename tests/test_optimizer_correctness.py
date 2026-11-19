@@ -31,7 +31,6 @@ PROMOS_FIJAS = {
     DIA: [{"card": "macro", "discount_pct": 15, "cap": 3000,
            "description": "15% de ahorro con Macro (Tope $3000)"}],
 }
-BANK_PROMOS = {store: promos[0] for store, promos in PROMOS_FIJAS.items()}
 
 
 @pytest.fixture(autouse=True)
@@ -80,7 +79,7 @@ def _cart(*uids, quantity=1):
     return [{"unified_id": uid, "quantity": quantity} for uid in uids]
 
 
-def _brute_force_optimum(matrix, min_spend, delivery, user_cards, max_stores=None):
+def _brute_force_optimum(matrix, min_spend, delivery, user_cards, max_stores=None, promos=None):
     """
     Calcula el mínimo real enumerando todas las asignaciones posibles.
 
@@ -89,8 +88,10 @@ def _brute_force_optimum(matrix, min_spend, delivery, user_cards, max_stores=Non
     Devuelve (costo_óptimo_en_centavos, cantidad_de_tiendas_activas) o
     (None, None) si ninguna asignación es factible. `max_stores` descarta las
     asignaciones que abren más tiendas que el tope, igual que la restricción
-    del solver.
+    del solver. `promos` (default PROMOS_FIJAS) puede traer varias por tienda:
+    se prueba cada una que el usuario tenga y cuyo mínimo se alcance.
     """
+    promos = PROMOS_FIJAS if promos is None else promos
     uids = list(matrix)
     options = [[s for s in matrix[uid]] for uid in uids]
     best = None
@@ -110,10 +111,12 @@ def _brute_force_optimum(matrix, min_spend, delivery, user_cards, max_stores=Non
         total = 0
         for store in min_spend:
             subtotal = subtotals[store]
-            promo = BANK_PROMOS.get(store)
-            discount = 0
-            if promo and promo["card"] in user_cards:
-                discount = min((subtotal * promo["discount_pct"]) // 100, int(promo["cap"] * 100))
+            discount = max(
+                [min((subtotal * p["discount_pct"]) // 100, int(p["cap"] * 100))
+                 for p in promos.get(store, [])
+                 if p["card"] in user_cards and subtotal >= int(p.get("min_purchase", 0) * 100)],
+                default=0,
+            )
             delivery_cents = int(delivery[store] * 100) if store in active else 0
             total += subtotal + delivery_cents - discount
 
@@ -670,3 +673,129 @@ def test_tope_inviable_lo_dice_en_vez_de_pedir_mas_productos(fake_prices):
     )
     assert result["status"] == "infeasible"
     assert "como máximo 1 supermercado" in result["message"]
+
+
+# --------------------------------------------------------------------------
+# Promos con monto mínimo ("20% con MODO en compras de $100.000 o más") y
+# elección entre varias tarjetas del usuario en la misma tienda
+# --------------------------------------------------------------------------
+
+def _promo(card, pct, cap, minimo=0):
+    return {"card": card, "discount_pct": pct, "cap": cap, "min_purchase": minimo,
+            "description": f"{pct}% con {card}"}
+
+
+MODO_CON_MINIMO = _promo("modo", 20, 25000, minimo=100000)
+
+
+def test_promo_con_minimo_no_aplica_si_el_subtotal_no_llega(fake_prices):
+    # preparar
+    fake_prices({"prod_a": {COTO: 80000}})
+
+    # ejecutar
+    result = optimize_cart(
+        _cart("prod_a"), user_cards=["modo"], bank_promos={COTO: [MODO_CON_MINIMO]},
+        min_spend_limits={COTO: 5000, DIA: 5000}, delivery_costs={COTO: 3000, DIA: 3000},
+    )
+
+    # verificar
+    assert result["total_spent_net"] == 83000
+    assert result["split"][COTO]["bank_discount"] is None
+
+
+def test_promo_con_minimo_aplica_al_llegar(fake_prices):
+    # preparar
+    fake_prices({"prod_a": {COTO: 120000}})
+
+    # ejecutar
+    result = optimize_cart(
+        _cart("prod_a"), user_cards=["modo"], bank_promos={COTO: [MODO_CON_MINIMO]},
+        min_spend_limits={COTO: 5000, DIA: 5000}, delivery_costs={COTO: 3000, DIA: 3000},
+    )
+
+    # verificar: 20% de $120.000 = $24.000, bajo el tope de $25.000
+    assert result["total_spent_net"] == 120000 + 3000 - 24000
+    assert result["split"][COTO]["bank_discount"]["amount"] == 24000
+
+
+def test_mueve_productos_para_destrabar_una_promo_con_minimo(fake_prices):
+    """
+    El caso real (Día + Jumbo, nov 2026): Día ya está en su tope, así que
+    sacarle un producto no le cuesta descuento, y llevarlo a la otra tienda la
+    pasa de los $100.000 y destraba su 20%.
+    """
+    # preparar: prod_b es $8.000 más barato en Día. Sin el mínimo en juego
+    # (20% de $38.000 = $7.600) no conviene moverlo; destrabando los $100.000, sí.
+    matrix = {
+        "prod_a": {COTO: 70000},
+        "prod_b": {DIA: 30000, COTO: 38000},
+        "prod_c": {DIA: 200000},
+    }
+    fake_prices(matrix)
+    promos = {COTO: [MODO_CON_MINIMO], DIA: [_promo("modo", 20, 20000)]}
+    min_spend, delivery = {COTO: 5000, DIA: 5000}, {COTO: 3000, DIA: 3000}
+
+    # ejecutar
+    result = optimize_cart(_cart("prod_a", "prod_b", "prod_c"), user_cards=["modo"], bank_promos=promos,
+                           min_spend_limits=min_spend, delivery_costs=delivery)
+
+    # verificar: prod_b se va a Coto; Coto $108.000 - $21.600, Día $200.000 - $20.000
+    assert "prod_b" in [p["unified_id"] for p in result["split"][COTO]["products"]]
+    assert result["total_spent_net"] == (108000 + 3000 - 21600) + (200000 + 3000 - 20000)
+
+
+def test_si_no_llega_al_minimo_usa_otra_tarjeta_sin_minimo(fake_prices):
+    # preparar: el loader pone MODO primero (mismo %, tope más alto)
+    fake_prices({"prod_a": {COTO: 50000}})
+    promos = {COTO: [MODO_CON_MINIMO, _promo("naranja_x", 20, 3000)]}
+
+    # ejecutar
+    result = optimize_cart(
+        _cart("prod_a"), user_cards=["modo", "naranja_x"], bank_promos=promos,
+        min_spend_limits={COTO: 5000, DIA: 5000}, delivery_costs={COTO: 3000, DIA: 3000},
+    )
+
+    # verificar
+    assert result["split"][COTO]["bank_discount"]["card"] == "naranja_x"
+    assert result["total_spent_net"] == 50000 + 3000 - 3000
+
+
+def test_elige_la_promo_que_mas_ahorra_y_no_la_primera(fake_prices):
+    # preparar: 30% con tope de $2.000 contra 20% sin tope, en ese orden
+    fake_prices({"prod_a": {COTO: 50000}})
+    promos = {COTO: [_promo("icbc", 30, 2000), _promo("galicia", 20, 100_000_000)]}
+
+    # ejecutar
+    result = optimize_cart(
+        _cart("prod_a"), user_cards=["icbc", "galicia"], bank_promos=promos,
+        min_spend_limits={COTO: 5000, DIA: 5000}, delivery_costs={COTO: 3000, DIA: 3000},
+    )
+
+    # verificar
+    assert result["split"][COTO]["bank_discount"]["card"] == "galicia"
+    assert result["total_spent_net"] == 50000 + 3000 - 10000
+
+
+@pytest.mark.parametrize("matrix", [
+    {"a": {COTO: 60000, DIA: 58000}, "b": {COTO: 45000, DIA: 47000}, "c": {COTO: 9000, DIA: 8000}},
+    {"a": {COTO: 30000}, "b": {DIA: 25000}, "c": {COTO: 12000, DIA: 11000}},
+    {"a": {COTO: 70000, DIA: 72000}, "b": {DIA: 30000, COTO: 36000}, "c": {DIA: 5000, COTO: 5500}},
+])
+def test_coincide_con_la_fuerza_bruta_con_promos_con_minimo(fake_prices, matrix):
+    # preparar
+    fake_prices(matrix)
+    promos = {
+        COTO: [MODO_CON_MINIMO, _promo("naranja_x", 20, 3000)],
+        DIA: [_promo("modo", 15, 15000, minimo=35000), _promo("icbc", 30, 4000)],
+    }
+    cards = ["modo", "naranja_x", "icbc"]
+    min_spend, delivery = {COTO: 5000, DIA: 5000}, {COTO: 3000, DIA: 2500}
+
+    # ejecutar
+    result = optimize_cart(_cart(*matrix), user_cards=cards, bank_promos=promos,
+                           min_spend_limits=min_spend, delivery_costs=delivery)
+
+    # verificar
+    expected, expected_stores = _brute_force_optimum(matrix, min_spend, delivery, cards, promos=promos)
+    assert round(result["total_spent_net"] * 100) == expected
+    assert len(result["split"]) == expected_stores

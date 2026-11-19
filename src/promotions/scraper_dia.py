@@ -29,7 +29,9 @@ import logging
 
 from src.promotions.banks import display_name, normalize_entity
 from src.promotions.card_ocr import read_card
-from src.promotions.legal_parser import extract_cap, extract_days, extract_percentage, says_no_cap
+from src.promotions.legal_parser import (
+    extract_cap, extract_days, extract_min_purchase, extract_percentage, mentions_min_purchase, says_no_cap,
+)
 from src.promotions.models import CANONICAL_DAYS, BankDiscount
 from src.promotions.playwright_base import PlaywrightScraper
 from src.text_utils import normalize_label
@@ -193,6 +195,11 @@ class DiaScraper(PlaywrightScraper):
             return None
 
         tope, periodo = self._cap(tarjeta, legal)
+        minimo = extract_min_purchase(f"{tarjeta}. {legal}")
+        if minimo is None and mentions_min_purchase(f"{tarjeta}. {legal}"):
+            # Dice que hay mínimo pero no cuánto: aplicarla sin él cotizaría de menos.
+            self._discard("monto minimo ilegible")
+            return None
 
         return BankDiscount(
             store=self.STORE_ID,
@@ -205,6 +212,7 @@ class DiaScraper(PlaywrightScraper):
             promo_id=f"dia_{raw_promo.get('indice')}_{entidad}",
             texto_legal=legal,
             scraped_at=self._now_iso(),
+            compra_minima=minimo,
         )
 
     @staticmethod

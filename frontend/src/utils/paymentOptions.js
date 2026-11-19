@@ -30,7 +30,6 @@ export const CARD_OPTIONS = [
   { value: "columbia", label: "Columbia" },
   { value: "banco_del_sol", label: "Banco del Sol" },
   { value: "carrefour_banco", label: "Carrefour Banco" },
-  { value: "cencopay", label: "CencoPay" },
   { value: "naranja_x", label: "Naranja X" },
   { value: "mercado_pago", label: "Mercado Pago" },
   { value: "modo", label: "MODO" },
@@ -42,6 +41,10 @@ export const CARD_OPTIONS = [
 // Mismo criterio que CARD_OPTIONS, pero contra el otro eje: el loader marca
 // estas entidades con `is_membership` y el optimizador las busca en
 // user_memberships (ver MEMBERSHIP_ENTITIES en src/promotions/banks.py).
+//
+// "cencopay" (CARD_OPTIONS) se fue en nov-2026: su 20% de Vea y Jumbo
+// excluye carnes, leches y marcas propias, y no se puede aplicar al carrito
+// entero. Vuelve si aparece una promo sin exclusiones en bank_promos.json.
 //
 // "club_dia" se fue en nov-2026: no tenía descuento bancario ni cambia el
 // precio de ningún producto (el precio de socio sólo se lee en Carrefour).

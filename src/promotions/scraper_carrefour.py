@@ -25,7 +25,9 @@ import logging
 import re
 
 from src.promotions.banks import display_name, normalize_entity
-from src.promotions.legal_parser import extract_cap, extract_days, extract_percentage
+from src.promotions.legal_parser import (
+    extract_cap, extract_days, extract_min_purchase, extract_percentage, mentions_min_purchase,
+)
 from src.promotions.models import BankDiscount
 from src.promotions.playwright_base import PlaywrightScraper
 from src.text_utils import normalize_label
@@ -153,6 +155,13 @@ class CarrefourScraper(PlaywrightScraper):
         if tope is None:
             tope, periodo = extract_cap(raw_promo.get("legal"))
 
+        textos = f"{raw_promo.get('texto') or ''}. {raw_promo.get('legal') or ''}"
+        minimo = extract_min_purchase(textos)
+        if minimo is None and mentions_min_purchase(textos):
+            # Dice que hay mínimo pero no cuánto: aplicarla sin él cotizaría de menos.
+            self._discard("monto minimo ilegible")
+            return None
+
         return BankDiscount(
             store=self.STORE_ID,
             entidad=entidad,
@@ -164,6 +173,7 @@ class CarrefourScraper(PlaywrightScraper):
             promo_id=f"carrefour_{raw_promo.get('indice')}_{entidad}",
             texto_legal=(raw_promo.get("legal") or "").strip(),
             scraped_at=self._now_iso(),
+            compra_minima=minimo,
         )
 
     @staticmethod

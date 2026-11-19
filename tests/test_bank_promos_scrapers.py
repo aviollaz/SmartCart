@@ -191,6 +191,18 @@ def test_dia_traduce_una_tarjeta():
     assert descuento.tope_periodo == "transaccion"
 
 
+def test_dia_lee_el_monto_minimo_del_legal():
+    # preparar: MODO 20% en Día, real (nov 2026). Hasta acá se aplicaba sin mínimo.
+    legal = ("20% DE AHORRO PAGANDO CON MODO. TOPE DE REINTEGRO $20.000 POR BANCO, POR MES "
+             "PARA COMPRAS MAYORES O IGUALES A $35.000.")
+
+    # ejecutar
+    descuento = DiaScraper()._to_discount(_tarjeta_dia(legal=legal))
+
+    # verificar
+    assert (descuento.tope_reintegro, descuento.compra_minima) == (20000, 35000)
+
+
 def test_dia_prefiere_los_dias_de_los_tabs_sobre_el_texto():
     """
     Los tabs de la grilla filtran de verdad, así que dan los días como dato
@@ -381,6 +393,17 @@ def test_carrefour_traduce_una_tarjeta():
     assert descuento.tope_reintegro == 10000
 
 
+def test_carrefour_lee_el_monto_minimo():
+    # preparar
+    texto = "Tope de devolución $10.000. Mínimo de compra: $30.000."
+
+    # ejecutar
+    descuento = CarrefourScraper()._to_discount(_tarjeta_carrefour(texto=texto))
+
+    # verificar
+    assert (descuento.tope_reintegro, descuento.compra_minima) == (10000, 30000)
+
+
 def test_carrefour_descarta_las_promos_de_local_fisico():
     """13 de las 32 tarjetas no aplican comprando por web."""
     scraper = CarrefourScraper()
@@ -501,6 +524,7 @@ def test_un_registro_invalido_se_descarta_sin_voltear_la_corrida():
     ("dias_validos", ("lunes", "feriado")),
     ("tope_reintegro", -5),
     ("tope_periodo", "quincenal"),
+    ("compra_minima", 0),
 ])
 def test_el_modelo_valida_al_construir(campo, valor):
     campos = {
@@ -515,8 +539,20 @@ def test_el_modelo_valida_al_construir(campo, valor):
 
 def test_roundtrip_json():
     """El archivo es el único transporte entre el scraper y el optimizador."""
-    original = CotoScraper()._to_discount(_promo_coto())
+    original = CotoScraper()._to_discount(_promo_coto()).with_fields(compra_minima=35000)
     assert BankDiscount.from_json_dict(original.to_json_dict()) == original
+
+
+def test_un_json_sin_compra_minima_carga_sin_minimo():
+    # preparar: un registro escrito antes de que existiera el campo
+    registro = CotoScraper()._to_discount(_promo_coto()).to_json_dict()
+    del registro["compra_minima"]
+
+    # ejecutar
+    descuento = BankDiscount.from_json_dict(registro)
+
+    # verificar
+    assert descuento.compra_minima is None
 
 
 # -------------------------------------------------------------------------- Vea
@@ -580,7 +616,9 @@ def test_vea_lee_el_tope_del_legal():
     ({"discount": "6.00", "discountText": "cuotas sin interés"}, "cuotas sin interes"),
     ({"info": "PROMOCIÓN VÁLIDA CON CENCOPAY CUENTA EXCLUSIVO PRESENCIAL."}, "solo local fisico"),
     ({"info": "25% EN PRODUCTOS SELECCIONADOS DE LAS SECCIONES GALLETITAS"}, "productos seleccionados"),
-    ({"banks": [{"name": "MODO"}], "installmentsText": "en compras iguales o superiores a $100.000"}, "monto minimo"),
+    # La real de Amex Platinum en Jumbo (nov 2026), recortada.
+    ({"legals": "RECIBIRÁN UN REINTEGRO POR $100.000. NO INCLUYE ELECTRO, CARNES, BODEGAS LA RURAL."},
+     "productos excluidos"),
     # El legal de jubilados dice "15% con Cencopay": el banco sale de `banks`.
     ({"banks": [{"name": "Medios de Pago"}]}, "entidad desconocida"),
 ])
@@ -589,6 +627,30 @@ def test_vea_descarta_lo_que_el_modelo_no_representa(overrides, motivo):
 
     assert scraper._to_discount(_promo_vea(**overrides)) is None
     assert scraper.discards[motivo] == 1
+
+
+def test_vea_lee_el_monto_minimo():
+    # preparar: MODO 20% en Vea, real (nov 2026)
+    promo = _promo_vea(banks=[{"name": "MODO"}], installmentsText="en compras iguales o superiores a $100.000")
+
+    # ejecutar
+    descuento = _vea()._to_discount(promo)
+
+    # verificar
+    assert (descuento.entidad, descuento.compra_minima) == ("modo", 100000)
+
+
+def test_un_minimo_ilegible_se_sigue_descartando():
+    # preparar: dice que hay mínimo pero no cuánto
+    scraper = _vea()
+    promo = _promo_vea(installmentsText="en compras superiores a $ (ver legales)")
+
+    # ejecutar
+    descuento = scraper._to_discount(promo)
+
+    # verificar
+    assert descuento is None
+    assert scraper.discards["monto minimo ilegible"] == 1
 
 
 def test_vea_value_es_json_adentro_de_un_string():
@@ -696,7 +758,6 @@ def test_changomas_masclub_es_membresia():
     ({"active": False}, "inactiva"),
     ({"active_to": "2026-10-28T00:00:00+00:00"}, "fuera de vigencia"),
     ({"discount_percentage": None}, "sin porcentaje"),
-    ({"sub_title": "Tope: $25.000 mensual por banco. Mínimo de compra: $75.000."}, "monto minimo"),
     # La real de MasClub (27-oct-2026) excluía aceites, harinas, leches, bebidas...
     ({"legal": "EXCLUIDOS - NO INCLUYE:\r\n\r\nQuesos, Frutas Y Verduras, Huevos. Aceites Comestibles"},
      "productos excluidos"),
@@ -710,6 +771,17 @@ def test_changomas_descarta_lo_que_el_modelo_no_representa(overrides, motivo):
     # ejecutar / verificar
     assert scraper._to_discount(_promo_changomas(**overrides)) is None
     assert scraper.discards[motivo] == 1
+
+
+def test_changomas_lee_el_monto_minimo():
+    # preparar
+    promo = _promo_changomas(sub_title="Tope: $25.000 mensual por banco. Mínimo de compra: $75.000.")
+
+    # ejecutar
+    descuento = _changomas()._to_discount(promo)
+
+    # verificar
+    assert (descuento.tope_reintegro, descuento.compra_minima) == (25000, 75000)
 
 
 def test_changomas_sin_promos_online_es_un_bloque_vacio_y_no_una_falla():

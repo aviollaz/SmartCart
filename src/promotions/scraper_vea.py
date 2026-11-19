@@ -21,19 +21,18 @@ Cencosud (Jumbo, Disco, Vea), con vencidas incluidas. Lo relevado (oct 2026):
   ("Medios de Pago") menciona un "15% con Cencopay" que no es su beneficio.
 
 Se descartan, contándolas, las que el modelo no puede representar: sólo en
-locales, en productos seleccionados, o con monto mínimo (MODO: "compras iguales
-o superiores a $100.000"). Aplicar cualquiera de ellas a todo el carrito
-cotizaría de menos.
+locales, en productos seleccionados o con productos excluidos. Aplicar cualquiera de ellas a todo el
+carrito cotizaría de menos. El monto mínimo (MODO: "compras iguales o
+superiores a $100.000") sí se representa: viaja en `compra_minima`.
 """
 import json
-import re
 import time
 
 import httpx
 
 from src.promotions.base import DiscountScraper
 from src.promotions.banks import display_name, normalize_entity
-from src.promotions.legal_parser import extract_cap
+from src.promotions.legal_parser import extract_cap, extract_min_purchase, mentions_min_purchase
 from src.promotions.models import BankDiscount
 from src.text_utils import normalize_label
 
@@ -54,7 +53,6 @@ _DIAS = {
 }
 
 _ONLINE = ("online", "web", "vea.com.ar")
-_MINIMO_RE = re.compile(r"(superior|mayor)es? a \$|minimo de compra|a partir de \$")
 
 
 class VeaScraper(DiscountScraper):
@@ -118,8 +116,16 @@ class VeaScraper(DiscountScraper):
         if "seleccionad" in texto:
             self._discard("productos seleccionados")
             return None
-        if _MINIMO_RE.search(texto):
-            self._discard("monto minimo")
+        if "no incluye" in texto:
+            # Amex Platinum en Jumbo: "NO INCLUYE ELECTRO, CARNES, BODEGAS...".
+            # Aplicarla a todo el carrito cotizaría de menos.
+            self._discard("productos excluidos")
+            return None
+        textos = f"{raw_promo.get('installmentsText') or ''}. {info}. {legal}"
+        minimo = extract_min_purchase(textos)
+        if minimo is None and mentions_min_purchase(textos):
+            # Dice que hay mínimo pero no cuánto: aplicarla sin él cotizaría de menos.
+            self._discard("monto minimo ilegible")
             return None
 
         entidad = normalize_entity(*(b.get("name") for b in raw_promo.get("banks") or []))
@@ -148,6 +154,7 @@ class VeaScraper(DiscountScraper):
             promo_id=f"{self.PREFIX}_{raw_promo.get('priority')}_{entidad}_{porcentaje:g}",
             texto_legal=legal.strip() or info.strip(),
             scraped_at=self._now_iso(),
+            compra_minima=minimo,
         )
 
     @staticmethod

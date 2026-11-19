@@ -51,9 +51,8 @@ def optimize_cart(cart_items, user_memberships=None, user_cards=None, min_spend_
     if excluded_stores is None: excluded_stores = []
 
     # Los descuentos bancarios salen de src/scrapers/bank_promos.json, que genera
-    # `python -m src.scrapers.get_bank_promos`. Ya vienen filtrados al día de hoy
-    # y ordenados de mayor a menor, que es lo que hace correcta la selección de
-    # más abajo (se queda con el primero que matchee).
+    # `python -m src.scrapers.get_bank_promos`. Ya vienen filtrados al día de hoy;
+    # cuál usa cada tienda lo decide el modelo de más abajo.
     #
     # Carrefour antes quedaba afuera a propósito: sus descuentos son de días
     # puntuales y este modelo no tiene noción de día, así que cargarlos habría
@@ -138,7 +137,7 @@ def optimize_cart(cart_items, user_memberships=None, user_cards=None, min_spend_
     subtotal_vars = {}
     discount_vars = {}
     store_final_costs_cents = {}
-    applied_bank_discounts_info = {}
+    promo_vars = {}
 
     for j in stores:
         subtotal_vars[j] = model.NewIntVar(0, MAX_SUBTOTAL_CENTS, f'subtotal_{j}')
@@ -146,26 +145,35 @@ def optimize_cart(cart_items, user_memberships=None, user_cards=None, min_spend_
         model.Add(subtotal_vars[j] == sum(costs))
 
         discount_vars[j] = model.NewIntVar(0, MAX_SUBTOTAL_CENTS, f'discount_{j}')
-        # Las promos ya vienen ordenadas de mayor a menor descuento, así que el
-        # primero que matchee es el mejor. `is_membership` decide contra qué eje
-        # del perfil se compara: "Comunidad Coto" o "Mi Carrefour" no son tarjetas
-        # bancarias y el usuario las declara en user_memberships, así que
-        # buscarlas en user_cards no las encontraría nunca.
-        best_promo = next(
-            (p for p in bank_promos.get(j, [])
-             if p["card"] in (user_memberships if p.get("is_membership") else user_cards)),
-            None,
-        )
-
-        if best_promo:
-            subtotal_times_pct = model.NewIntVar(0, MAX_SUBTOTAL_CENTS * MAX_PCT, f'subtotal_times_pct_{j}')
-            model.Add(subtotal_times_pct == subtotal_vars[j] * best_promo["discount_pct"])
-            raw_discount = model.NewIntVar(0, MAX_SUBTOTAL_CENTS, f'raw_discount_{j}')
+        # Todas las promos del usuario en esta tienda compiten, y el solver usa a
+        # lo sumo una: cuál ahorra más depende del subtotal (un 30% con tope chico
+        # pierde contra un 20% sin tope, y una con mínimo no rige si no se llega).
+        # `is_membership` decide contra qué eje del perfil se compara: "Comunidad
+        # Coto" o "Mi Carrefour" no son tarjetas bancarias y el usuario las declara
+        # en user_memberships, así que buscarlas en user_cards no las encontraría.
+        promos_del_usuario = [
+            p for p in bank_promos.get(j, [])
+            if p["card"] in (user_memberships if p.get("is_membership") else user_cards)
+        ]
+        aplicados = []
+        for k, promo in enumerate(promos_del_usuario):
+            usa = model.NewBoolVar(f'usa_promo_{j}_{k}')
+            subtotal_times_pct = model.NewIntVar(0, MAX_SUBTOTAL_CENTS * MAX_PCT, f'subtotal_times_pct_{j}_{k}')
+            model.Add(subtotal_times_pct == subtotal_vars[j] * promo["discount_pct"])
+            raw_discount = model.NewIntVar(0, MAX_SUBTOTAL_CENTS, f'raw_discount_{j}_{k}')
             model.AddDivisionEquality(raw_discount, subtotal_times_pct, 100)
-            model.AddMinEquality(discount_vars[j], [raw_discount, model.NewConstant(int(best_promo["cap"] * 100))])
-            applied_bank_discounts_info[j] = best_promo
-        else:
-            model.Add(discount_vars[j] == 0)
+            capped = model.NewIntVar(0, MAX_SUBTOTAL_CENTS, f'capped_discount_{j}_{k}')
+            model.AddMinEquality(capped, [raw_discount, model.NewConstant(int(promo["cap"] * 100))])
+            aplicado = model.NewIntVar(0, MAX_SUBTOTAL_CENTS, f'applied_discount_{j}_{k}')
+            model.Add(aplicado == capped).OnlyEnforceIf(usa)
+            model.Add(aplicado == 0).OnlyEnforceIf(usa.Not())
+            # El mínimo se mide contra los productos, sin el envío: si el súper
+            # también cuenta el envío, el error queda del lado de cotizar de más.
+            model.Add(subtotal_vars[j] >= int(promo.get("min_purchase", 0) * 100)).OnlyEnforceIf(usa)
+            promo_vars[j, k] = (usa, promo)
+            aplicados.append(aplicado)
+        model.Add(sum(usa for (tienda, _), (usa, _) in promo_vars.items() if tienda == j) <= 1)
+        model.Add(discount_vars[j] == sum(aplicados))
 
         # x2 porque al subtotal se le suma el envío antes de restar el descuento.
         final_cost = model.NewIntVar(0, MAX_SUBTOTAL_CENTS * 2, f'final_cost_{j}')
@@ -183,6 +191,8 @@ def optimize_cart(cart_items, user_memberships=None, user_cards=None, min_spend_
             if solver.Value(activa[j]) == 1:
                 sub = solver.Value(subtotal_vars[j]) / 100.0
                 disc = solver.Value(discount_vars[j]) / 100.0
+                promo = next((p for (tienda, _), (usa, p) in promo_vars.items()
+                              if tienda == j and solver.Value(usa)), None) if disc > 0 else None
                 total = sub + delivery_costs[j] - disc
                 total_spent += total
                 
@@ -195,13 +205,13 @@ def optimize_cart(cart_items, user_memberships=None, user_cards=None, min_spend_
                     # solo puede mostrar un genérico "Descuento bancario aplicado",
                     # sin decir qué tarjeta se usó ni cuál era el tope.
                     "bank_discount": {
-                        "card": applied_bank_discounts_info[j]["card"],
+                        "card": promo["card"],
                         "amount": round(disc, 2),
-                        "description": applied_bank_discounts_info[j].get("description"),
+                        "description": promo.get("description"),
                         # Qué día rige, cuando src/api.py le pasa las promos de
                         # varios días juntas (rango de compra); si no, None.
-                        "date": applied_bank_discounts_info[j].get("date"),
-                    } if j in applied_bank_discounts_info else None,
+                        "date": promo.get("date"),
+                    } if promo else None,
                     "store_total": round(total, 2)
                 }
 

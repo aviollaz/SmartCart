@@ -13,6 +13,7 @@ from src.promotions.banks import display_name, is_membership, normalize_entity
 from src.promotions.legal_parser import (
     extract_cap,
     extract_days,
+    extract_min_purchase,
     extract_percentage,
     is_installment_offer,
     parse_legal_text,
@@ -75,6 +76,22 @@ def test_parse_money_ars(crudo, esperado):
 ])
 def test_extract_cap(texto, tope, periodo):
     assert extract_cap(texto) == (tope, periodo)
+
+
+@pytest.mark.parametrize("texto, minimo", [
+    # Vea / Jumbo (MODO, nov 2026)
+    ("en compras iguales o superiores a $100.000", 100000),
+    # ChangoMás
+    ("Tope: $25.000 mensual por banco. Mínimo de compra: $75.000.", 75000),
+    ("Válido a partir de $50.000 de compra.", 50000),
+    # Día (MODO, nov 2026): el tope y el mínimo en la misma oración
+    ("TOPE DE REINTEGRO $20.000 POR BANCO, POR MES PARA COMPRAS MAYORES O IGUALES A $35.000.", 35000),
+    # Un ejemplo no es un mínimo (Banco del Sol en Día)
+    ("Ejemplo: para una compra de $40.000 el reintegro es de $10.000.", None),
+    ("Tope de reintegro $12.000 por semana para clientes adheridos", None),
+])
+def test_extract_min_purchase(texto, minimo):
+    assert extract_min_purchase(texto) == minimo
 
 
 def test_extract_cap_ignora_el_ejemplo():
