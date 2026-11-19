@@ -9,6 +9,7 @@ import { STORES } from "../utils/constants";
 import { FiltersSidebar } from "../components/plp/FiltersSidebar";
 import { SortDropdown } from "../components/plp/SortDropdown";
 import { ProductGrid } from "../components/plp/ProductGrid";
+import { Pagination } from "../components/plp/Pagination";
 
 const NO_DIETARY_FILTERS = { glutenFree: false, vegan: false };
 
@@ -153,29 +154,12 @@ function ResultsView({ mode, shelf, query, dietary, onToggleDietary }) {
               </p>
               <SortDropdown sortBy={filters.sortBy} onChange={filters.setSortBy} options={filters.SORT_OPTIONS} />
             </div>
+            {!loading && (
+              <Pagination page={filters.page} totalPages={filters.totalPages} onChange={goToPage} className="mb-4" />
+            )}
             {!loading && <ProductGrid products={results?.items || []} emptyMessage={emptyMessage} />}
-            {!loading && filters.totalPages > 1 && (
-              <nav className="mt-6 flex items-center justify-center gap-4 text-sm text-ink">
-                <button
-                  type="button"
-                  onClick={() => goToPage(filters.page - 1)}
-                  disabled={filters.page <= 1}
-                  className="rounded-md border border-line px-3 py-1.5 hover:bg-surface-muted disabled:opacity-40"
-                >
-                  ‹ Anterior
-                </button>
-                <span className="text-ink-muted">
-                  Página {filters.page} de {filters.totalPages}
-                </span>
-                <button
-                  type="button"
-                  onClick={() => goToPage(filters.page + 1)}
-                  disabled={filters.page >= filters.totalPages}
-                  className="rounded-md border border-line px-3 py-1.5 hover:bg-surface-muted disabled:opacity-40"
-                >
-                  Siguiente ›
-                </button>
-              </nav>
+            {!loading && (
+              <Pagination page={filters.page} totalPages={filters.totalPages} onChange={goToPage} className="mt-6" />
             )}
           </div>
         </div>
