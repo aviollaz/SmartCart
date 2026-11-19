@@ -22,7 +22,7 @@ export function ProductCard({ product }) {
   const detailUrl = `/producto/${encodeURIComponent(product.unified_id)}`;
 
   return (
-    <div className="flex flex-col rounded-lg border border-line bg-surface p-4 transition-shadow hover:shadow-md">
+    <div className="flex min-w-0 flex-col rounded-lg border border-line bg-surface p-4 transition-shadow hover:shadow-md">
       <Link to={detailUrl} className="relative mb-3 flex h-36 items-center justify-center">
         {/* Sólo en /deals: el backend llena discount_pct únicamente ahí. */}
         {product.discount_pct > 0 && (
