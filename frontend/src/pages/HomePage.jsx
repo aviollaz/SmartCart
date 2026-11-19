@@ -27,8 +27,12 @@ export function HomePage() {
         <h1 className="mb-3 font-display text-3xl font-bold text-brand-violet-700 sm:text-4xl">
           Tu changuito, al menor precio
         </h1>
-        <p className="mx-auto max-w-3xl text-balance text-lg text-ink/80">
-          Comparamos {STORE_NAMES_LIST} y armamos tu lista de compras al mejor precio.
+        {/* Negrita y no mayúsculas en lo que hay que leer de un vistazo: los
+            usuarios escanean, y las mayúsculas se leen como un grito. */}
+        <p className="mx-auto max-w-3xl text-balance text-lg text-ink/80 sm:text-xl">
+          <strong className="text-ink">Comparamos precios</strong> de {STORE_NAMES_LIST} y armamos{" "}
+          <strong className="text-ink">tu lista de compras</strong> al{" "}
+          <strong className="text-ink">mejor precio</strong>.
         </p>
       </section>
 
