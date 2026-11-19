@@ -21,7 +21,7 @@ const FAQ = [
       },
       {
         q: "¿Cómo decide dónde comprar cada cosa?",
-        a: "Para cada producto calcula el precio real en cada súper con la cantidad que llevás, aplicando las promos (2x1, segunda unidad al 50%, etc.) y las de las membresías que declaraste. Después suma lo que cambia al repartir: el envío de cada súper, su mínimo de compra y los descuentos bancarios de tus tarjetas, que tienen tope. Con todo eso busca la combinación más barata posible, no una aproximación.",
+        a: "Para cada producto calcula el precio real en cada súper con la cantidad que llevás, aplicando las promos (2x1, segunda unidad al 50%, etc.) y las de las membresías que declaraste. Después suma lo que cambia al repartir: el envío de cada súper, su mínimo de compra y los descuentos bancarios de tus tarjetas, que tienen tope. Con todo eso busca la combinación más barata posible, no una aproximación. Una sola excepción: si un producto cuesta casi lo mismo en Coto que en otro súper, lo pone en el otro, porque en Coto hay que agregar cada producto a mano.",
       },
       {
         q: "¿Por qué a veces me recomienda comprar todo en un solo súper?",

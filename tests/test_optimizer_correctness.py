@@ -16,7 +16,7 @@ import itertools
 import pytest
 
 from src import optimizer as optimizer_module
-from src.optimizer import optimize_cart
+from src.optimizer import MANUAL_CHECKOUT_MARGIN, MANUAL_CHECKOUT_STORES, optimize_cart
 
 COTO = "coto_online"
 DIA = "dia_online"
@@ -90,6 +90,9 @@ def _brute_force_optimum(matrix, min_spend, delivery, user_cards, max_stores=Non
     asignaciones que abren más tiendas que el tope, igual que la restricción
     del solver. `promos` (default PROMOS_FIJAS) puede traer varias por tienda:
     se prueba cada una que el usuario tenga y cuyo mínimo se alcance.
+
+    Minimiza lo mismo que el solver —el costo real más MANUAL_CHECKOUT_MARGIN
+    por producto en una tienda sin carrito armado— y devuelve el costo real.
     """
     promos = PROMOS_FIJAS if promos is None else promos
     uids = list(matrix)
@@ -109,6 +112,7 @@ def _brute_force_optimum(matrix, min_spend, delivery, user_cards, max_stores=Non
             continue
 
         total = 0
+        margen = sum(int(MANUAL_CHECKOUT_MARGIN * 100) for store in assignment if store in MANUAL_CHECKOUT_STORES)
         for store in min_spend:
             subtotal = subtotals[store]
             discount = max(
@@ -120,8 +124,8 @@ def _brute_force_optimum(matrix, min_spend, delivery, user_cards, max_stores=Non
             delivery_cents = int(delivery[store] * 100) if store in active else 0
             total += subtotal + delivery_cents - discount
 
-        if best is None or total < best:
-            best = total
+        if best is None or total + margen < best_objetivo:
+            best, best_objetivo = total, total + margen
             best_stores = len(active)
 
     return best, best_stores
@@ -799,3 +803,76 @@ def test_coincide_con_la_fuerza_bruta_con_promos_con_minimo(fake_prices, matrix)
     expected, expected_stores = _brute_force_optimum(matrix, min_spend, delivery, cards, promos=promos)
     assert round(result["total_spent_net"] * 100) == expected
     assert len(result["split"]) == expected_stores
+
+
+# --------------------------------------------------------------------------
+# Coto no arma el carrito: cada producto se agrega a mano desde una lista de
+# links. Un producto casi empatado va a otro súper (MANUAL_CHECKOUT_MARGIN).
+# --------------------------------------------------------------------------
+
+# Un producto que sólo vende cada tienda, para que las dos queden abiertas.
+SOLO_COTO = {"ancla_coto": {COTO: 20000}}
+SOLO_DIA = {"ancla_dia": {DIA: 20000}}
+
+
+def _resolver_con_ambas_abiertas(fake_prices, producto):
+    fake_prices({**SOLO_COTO, **SOLO_DIA, "prod_a": producto})
+    return optimize_cart(
+        _cart("ancla_coto", "ancla_dia", "prod_a"),
+        min_spend_limits={COTO: 5000, DIA: 5000}, delivery_costs={COTO: 3000, DIA: 3000},
+    )
+
+
+def _tienda_de(result, uid):
+    return next(s for s, c in result["split"].items() if uid in [p["unified_id"] for p in c["products"]])
+
+
+def test_un_empate_con_coto_va_al_otro_super(fake_prices):
+    # preparar / ejecutar
+    result = _resolver_con_ambas_abiertas(fake_prices, {COTO: 1000, DIA: 1000})
+
+    # verificar
+    assert _tienda_de(result, "prod_a") == DIA
+
+
+def test_coto_hasta_5_pesos_mas_barato_igual_va_al_otro_super(fake_prices):
+    # preparar / ejecutar
+    result = _resolver_con_ambas_abiertas(fake_prices, {COTO: 999, DIA: 1003})
+
+    # verificar
+    assert _tienda_de(result, "prod_a") == DIA
+
+
+def test_coto_mas_de_5_pesos_mas_barato_se_queda_en_coto(fake_prices):
+    # preparar / ejecutar
+    result = _resolver_con_ambas_abiertas(fake_prices, {COTO: 990, DIA: 1000})
+
+    # verificar
+    assert _tienda_de(result, "prod_a") == COTO
+
+
+def test_el_total_informado_es_el_real_sin_el_margen(fake_prices):
+    # preparar / ejecutar: prod_a va a Día por $1.003
+    result = _resolver_con_ambas_abiertas(fake_prices, {COTO: 999, DIA: 1003})
+
+    # verificar: 20.000 + 3.000 en Coto, 20.000 + 1.003 + 3.000 en Día
+    assert result["total_spent_net"] == 23000 + 24003
+    assert result["split"][COTO]["store_total"] == 23000
+
+
+def test_si_coto_solo_aporta_empates_no_se_abre(fake_prices):
+    # preparar: Coto es $2 más barato en todo; todo en Coto ahorraría $6
+    fake_prices({
+        "prod_a": {COTO: 9998, DIA: 10000},
+        "prod_b": {COTO: 9998, DIA: 10000},
+        "prod_c": {COTO: 9998, DIA: 10000},
+    })
+
+    # ejecutar: sin envíos, sólo el margen lo deja afuera
+    result = optimize_cart(
+        _cart("prod_a", "prod_b", "prod_c"),
+        min_spend_limits={COTO: 5000, DIA: 5000}, delivery_costs={COTO: 0, DIA: 0},
+    )
+
+    # verificar
+    assert set(result["split"]) == {DIA}

@@ -26,6 +26,15 @@ MAX_PCT = 100
 DEFAULT_MIN_SPEND_LIMITS = {s.id: s.min_spend for s in STORES}
 DEFAULT_DELIVERY_COSTS = {s.id: s.delivery_cost for s in STORES}
 
+# Las tiendas sin carrito armado por URL (hoy Coto): el usuario agrega cada
+# producto a mano desde una lista de links. Por eso un producto que ahí sale
+# hasta MANUAL_CHECKOUT_MARGIN pesos menos va a otro súper, y si sólo aportaba
+# casi-empates la tienda no se abre. Las cadenas se ajustan a centavos o un
+# peso de la competencia, así que los empates son comunes. El margen sólo entra
+# en lo que el solver minimiza: el total informado es siempre el real.
+MANUAL_CHECKOUT_MARGIN = 5
+MANUAL_CHECKOUT_STORES = frozenset(s.id for s in STORES if s.checkout_domain is None)
+
 def optimize_cart(cart_items, user_memberships=None, user_cards=None, min_spend_limits=None, delivery_costs=None, excluded_stores=None, flat_prices=None, bank_promos=None, user_excluded_stores=None, max_stores=None):
     """
     `flat_prices` es un escape hatch para quien ya tiene la matriz de precios y
@@ -180,7 +189,9 @@ def optimize_cart(cart_items, user_memberships=None, user_cards=None, min_spend_
         model.Add(final_cost == subtotal_vars[j] + (activa[j] * int(delivery_costs[j] * 100)) - discount_vars[j])
         store_final_costs_cents[j] = final_cost
 
-    model.Minimize(sum(store_final_costs_cents.values()))
+    margen = int(MANUAL_CHECKOUT_MARGIN * 100)
+    model.Minimize(sum(store_final_costs_cents.values())
+                   + sum(margen * x for (i, j), x in compra.items() if j in MANUAL_CHECKOUT_STORES))
     solver = cp_model.CpSolver()
     
     if solver.Solve(model) in [cp_model.OPTIMAL, cp_model.FEASIBLE]:

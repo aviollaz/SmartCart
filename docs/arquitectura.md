@@ -235,6 +235,9 @@ Reciprocal Rank Fusion) apagado hasta medirlo (issue #24).
    las promos bancarias del usuario, la que más ahorra; una con monto mínimo
    ("20% con MODO en compras de $100.000 o más") sólo rige si los productos de
    esa tienda llegan, y el solver puede mover productos para destrabarla.
+   Cada producto en una tienda sin carrito armado (Coto) suma $5 a lo que se
+   minimiza, nunca al total informado: un casi-empate se va a otro súper,
+   porque en Coto cada producto se agrega a mano.
 
 Con el reparto vienen: el ahorro contra el promedio de las otras tiendas
 (`price_savings`, informativo, no comparable con el total), el costo de comprar
