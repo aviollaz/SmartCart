@@ -339,6 +339,8 @@ Adds only operations concerns around `run_scrapers.py`. Details and commands in 
 **Onboarding:**
 - **`LocationModal`**: blocking without `onClose`; dismissable with it (from the Header's `MapPin` and the cart's `AddressField`).
   - It geocodes **on submit only** (Nominatim allows 1 req/s).
+  - **One main button, two steps:** "Verificar ubicación" checks every store's coverage and shows in one line which ones don't deliver; the same button then reads "Confirmar ubicación", saves and closes. A store that doesn't deliver is not asked about again: the user can't change where they live, so confirming accepts buying without it. Changing the point (candidate, search, click, drag) goes back to "Verificar"; reopening with a saved address starts at "Confirmar", which just closes.
+  - Wheel zoom is on (Leaflet keeps the event, so the modal doesn't scroll). A point picked on the map doesn't recenter, so the user's zoom survives; a search candidate does.
   - It shows **several candidates** to pick from, because duplicate street names would bind the wrong branch.
   - "Seguir sin dirección" stores `{skipped: true}`, distinct from `null` (never onboarded).
   - New profile fields need no key version: old profiles just lack them and get the step.

@@ -1,4 +1,4 @@
-import { useEffect } from "react";
+import { useEffect, useRef } from "react";
 import { Icon } from "leaflet";
 import { MapContainer, Marker, TileLayer, useMap, useMapEvents } from "react-leaflet";
 
@@ -32,12 +32,17 @@ function ClickHandler({ onPick }) {
 
 // Recentra cuando el punto cambia desde afuera (al elegir un candidato del
 // buscador). MapContainer solo usa `center` en el montaje inicial, así que sin
-// esto el mapa se quedaría mirando el punto anterior.
-function RecenterOnChange({ position }) {
+// esto el mapa se quedaría mirando el punto anterior. Un punto marcado en el
+// propio mapa no recentra: el zoom que el usuario eligió con la rueda saltaría
+// de golpe a cada click.
+function RecenterOnChange({ position, pickedRef }) {
   const map = useMap();
   useEffect(() => {
-    if (position) map.setView([position.lat, position.lng], ADDRESS_ZOOM);
-  }, [map, position]);
+    if (!position) return;
+    const picked = pickedRef.current;
+    if (picked && picked.lat === position.lat && picked.lng === position.lng) return;
+    map.setView([position.lat, position.lng], ADDRESS_ZOOM);
+  }, [map, position, pickedRef]);
   return null;
 }
 
@@ -48,20 +53,26 @@ function RecenterOnChange({ position }) {
  */
 export function LocationMap({ position, onPick }) {
   const center = position || CABA_CENTER;
+  // El último punto marcado en el mapa, para que RecenterOnChange lo ignore.
+  const pickedRef = useRef(null);
+  function pick(point) {
+    pickedRef.current = point;
+    onPick(point);
+  }
 
   return (
     <MapContainer
       center={[center.lat, center.lng]}
       zoom={position ? ADDRESS_ZOOM : CITY_ZOOM}
-      scrollWheelZoom={false}
+      scrollWheelZoom
       className="h-40 w-full rounded-md sm:h-56"
     >
       <TileLayer
         url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
         attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>'
       />
-      <ClickHandler onPick={onPick} />
-      <RecenterOnChange position={position} />
+      <ClickHandler onPick={pick} />
+      <RecenterOnChange position={position} pickedRef={pickedRef} />
       {position && (
         <Marker
           position={[position.lat, position.lng]}
@@ -70,7 +81,7 @@ export function LocationMap({ position, onPick }) {
           eventHandlers={{
             dragend: (event) => {
               const { lat, lng } = event.target.getLatLng();
-              onPick({ lat, lng });
+              pick({ lat, lng });
             },
           }}
         />

@@ -18,7 +18,13 @@ import { LocationMap } from "./LocationMap";
  *
  * El buscador y el mapa son dos formas de fijar el mismo punto: elegir un
  * candidato mueve el pin, y arrastrarlo o clickear el mapa corrige lo que el
- * geocoder haya errado. Recién el botón de confirmar consulta la cobertura.
+ * geocoder haya errado.
+ *
+ * Dos pasos con el mismo botón: "Verificar ubicación" consulta qué súper llegan
+ * y lo muestra, y "Confirmar ubicación" guarda y cierra. Si alguno no llega no
+ * se pregunta de nuevo: la dirección es la del usuario y no la puede cambiar,
+ * así que confirmar ya es aceptar comprar sin esos súper. Mover el pin vuelve
+ * al primer paso.
  *
  * `onClose` es lo único que distingue el onboarding de un cambio de dirección
  * desde el Header: cuando viene, el modal se puede abandonar (X, Escape o clic
@@ -31,8 +37,13 @@ export function LocationModal({ onClose }) {
 
   const [query, setQuery] = useState("");
   const [candidates, setCandidates] = useState([]);
-  const [status, setStatus] = useState("idle"); // idle | searching | empty | error | confirming
-  const [coverageWarning, setCoverageWarning] = useState(null);
+  const [status, setStatus] = useState("idle"); // idle | searching | empty | error | verifying
+  // Resultado de "Verificar" para el punto actual: {coverageByStore, uncovered}.
+  // Se borra cada vez que cambia el punto. Con la dirección ya guardada arranca
+  // en `{unchanged: true}`: no hay nada que verificar, y confirmar sólo cierra.
+  const [verification, setVerification] = useState(() =>
+    location && !location.skipped && typeof location.lat === "number" ? { unchanged: true } : null
+  );
   // Elegir un candidato colapsa la lista: en el celular, lista + mapa ocupaban
   // la pantalla entera y el botón de confirmar quedaba fuera de vista.
   const [showCandidates, setShowCandidates] = useState(true);
@@ -65,7 +76,7 @@ export function LocationModal({ onClose }) {
     if (!query.trim()) return;
 
     setStatus("searching");
-    setCoverageWarning(null);
+    setVerification(null);
     try {
       const results = await geocodeAddress(query);
       setCandidates(results);
@@ -78,7 +89,7 @@ export function LocationModal({ onClose }) {
   }
 
   function selectCandidate(candidate) {
-    setCoverageWarning(null);
+    setVerification(null);
     setPendingPoint(candidate);
     setShowCandidates(false);
   }
@@ -88,7 +99,7 @@ export function LocationModal({ onClose }) {
   // req/s de Nominatim, y su resultado es opcional: si no viene, quedan las
   // coordenadas, que son lo único que el backend realmente necesita.
   async function handleMapPick({ lat, lng }) {
-    setCoverageWarning(null);
+    setVerification(null);
     setPendingPoint({ displayName: null, street: null, lat, lng, zone: null });
 
     const resolved = await reverseGeocode({ lat, lng });
@@ -123,38 +134,34 @@ export function LocationModal({ onClose }) {
     onClose?.();
   }
 
-  async function handleConfirm() {
+  async function handleVerify() {
     if (!pendingPoint) return;
-    setStatus("confirming");
+    setStatus("verifying");
 
     // Se consulta la cobertura antes de cerrar para poder avisar acá mismo, en
     // vez de que el usuario se entere recién al optimizar. Un ok:false es "no
-    // pudimos preguntar", no "no hay cobertura": no bloquea la confirmación ni
-    // se guarda como veredicto.
+    // pudimos preguntar", no "no hay cobertura": no se muestra ni se guarda
+    // como veredicto.
     const coverages = await Promise.all(STORES.map((s) => checkCoverage(s.key, pendingPoint)));
     const coverageByStore = Object.fromEntries(
       STORES.map((s, i) => [s.id, coverages[i]]).filter(([, coverage]) => coverage.ok)
     );
     const uncovered = Object.entries(coverageByStore)
       .filter(([, coverage]) => coverage.covered === false)
-      .map(([storeId, coverage]) => ({
-        name: STORES.find((s) => s.id === storeId).name,
-        message: coverage.mensaje,
-      }));
+      .map(([storeId]) => STORES.find((s) => s.id === storeId).name);
 
-    if (uncovered.length > 0) {
-      setCoverageWarning({ coverageByStore, uncovered });
-      setStatus("idle");
-      return;
-    }
-
-    persist(pendingPoint, coverageByStore);
+    setVerification({ coverageByStore, uncovered });
+    setStatus("idle");
   }
 
   // El veredicto negativo se guarda junto con la dirección: es lo que después
   // saca los productos de esa tienda del catálogo.
-  function acceptWithoutUncovered() {
-    persist(pendingPoint, coverageWarning.coverageByStore);
+  function handleConfirm() {
+    if (verification.unchanged) {
+      onClose?.();
+      return;
+    }
+    persist(pendingPoint, verification.coverageByStore);
   }
 
   return (
@@ -268,34 +275,30 @@ export function LocationModal({ onClose }) {
         </div>
 
         <div className="border-t border-line p-4 sm:px-6">
-          {/* En el pie y no en el cuerpo: aparece al tocar Confirmar, y en el
+          {/* En el pie y no en el cuerpo: aparece al verificar, y en el
               celular el cuerpo puede estar scrolleado lejos de acá. */}
-          {coverageWarning && (
-            <div className="mb-3 rounded-md border border-state-warning/40 bg-state-warning/10 p-3">
-              {coverageWarning.uncovered.map(({ name, message }) => (
-                <div key={name} className="mb-2">
-                  <p className="text-sm font-semibold text-ink">{name} no entrega en esta dirección</p>
-                  <p className="mt-1 text-xs text-ink-muted">
-                    {message || `${name} no realiza entregas en esta dirección.`}
-                  </p>
-                </div>
-              ))}
-              <button
-                type="button"
-                onClick={acceptWithoutUncovered}
-                className="text-sm font-semibold text-brand-accent underline"
-              >
-                Usar igual esta dirección (sin {coverageWarning.uncovered.map((u) => u.name).join(" ni ")})
-              </button>
-            </div>
-          )}
+          {verification?.uncovered &&
+            (verification.uncovered.length > 0 ? (
+              <p className="mb-3 rounded-md border border-state-warning/40 bg-state-warning/10 p-3 text-sm text-ink">
+                <span className="font-semibold">No entregan en esta dirección:</span>{" "}
+                {joinNames(verification.uncovered)}.
+              </p>
+            ) : (
+              <p className="mb-3 rounded-md border border-state-success/40 bg-state-success/10 p-3 text-sm font-semibold text-ink">
+                Todos los supermercados entregan en esta dirección.
+              </p>
+            ))}
           <button
             type="button"
-            onClick={handleConfirm}
-            disabled={!pendingPoint || status === "confirming"}
+            onClick={verification ? handleConfirm : handleVerify}
+            disabled={!pendingPoint || status === "verifying"}
             className="w-full rounded-md bg-brand-violet-700 px-4 py-2 text-sm font-semibold text-white hover:bg-brand-violet-900 disabled:opacity-50"
           >
-            {status === "confirming" ? "Verificando cobertura..." : "Confirmar esta ubicación"}
+            {status === "verifying"
+              ? "Verificando cobertura..."
+              : verification
+                ? "Confirmar ubicación"
+                : "Verificar ubicación"}
           </button>
 
           <button
@@ -312,6 +315,11 @@ export function LocationModal({ onClose }) {
       </div>
     </div>
   );
+}
+
+// "Carrefour, Vea y ChangoMás"
+function joinNames(names) {
+  return names.length > 1 ? `${names.slice(0, -1).join(", ")} y ${names.at(-1)}` : names[0];
 }
 
 function formatCoords({ lat, lng }) {
