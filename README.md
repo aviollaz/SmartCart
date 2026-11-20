@@ -17,6 +17,28 @@ purchase.
 | Tests | 540+ (pytest) |
 | Infra | API on Cloud Run, Postgres + pgvector on Neon, frontend on Vercel — all free tiers |
 
+<p align="center">
+  <img src="docs/demo.gif" width="800" alt="SmartCart demo: browsing a category, adding products, reviewing the cart and getting the cheapest split across three supermarkets">
+  <br><sub>Browse or search, build the cart, and get the cheapest split across chains, with the savings and a buy button per store.</sub>
+</p>
+
+## Architecture
+
+```mermaid
+flowchart LR
+    subgraph Nightly["Nightly · GitHub Actions"]
+        S[Scrapers<br/>Coto REST · VTEX GraphQL] --> U[Unify by EAN<br/>+ promos]
+        U --> E[Embeddings<br/>all-MiniLM-L6-v2]
+    end
+    U --> DB[(Postgres + pgvector<br/>Neon)]
+    E --> DB
+    DB <--> API[FastAPI · Cloud Run<br/>/search · /optimize]
+    API --> L[Delivery coverage<br/>and cost per store]
+    API --> O[CP-SAT solver<br/>OR-Tools]
+    FE[React · Vercel] <--> API
+    API -. event per cart .-> AN[Analytics service<br/>→ Power BI]
+```
+
 ## How it works
 
 1. **Scraping.** Each chain's internal API: a REST BFF at Coto, VTEX GraphQL at
@@ -67,3 +89,5 @@ pytest                     # everything; needs Postgres populated and downloads 
 - [`docs/arquitectura.md`](docs/arquitectura.md): how it's built, stage by stage.
 - [`docs/operacion.md`](docs/operacion.md): where it runs, how to deploy, which limits to watch.
 - [Issues](https://github.com/aviollaz/SmartCart/issues): pending work and known risks.
+- [SmartCart Performance Analyzer](https://github.com/aviollaz/SmartCart-Performance-Analyzer):
+  the analytics service that receives one event per optimized cart and feeds the Power BI KPIs.
