@@ -33,6 +33,5 @@ logs/
 # Ojo con el patrón: `docs/` a secas excluye el directorio entero y git ni
 # siquiera desciende, así que una negación adentro no tendría efecto.
 docs/*
-!docs/*.md!docs/demo.gif
-
+!docs/*.md
 !docs/demo.gif
