@@ -34,3 +34,4 @@ logs/
 # siquiera desciende, así que una negación adentro no tendría efecto.
 docs/*
 !docs/*.md
+!docs/demo.gif
