@@ -33,6 +33,7 @@ from src.schema import ensure_schema
 from src.meat_cuts import OTROS, product_type
 from src.shelves import SECTIONS, SHELVES, sections as shelf_sections, shelf_label
 from src.stores import STORES
+from src.store_comparison import SPLIT_MIN_SAVING, SPLIT_MIN_SAVING_PCT, compare_stores, find_replacements
 from src.strategic_swaps import find_strategic_swaps
 from src.substitutions import build_semantic_suggestions, format_size
 
@@ -261,6 +262,13 @@ class OptimizationRequest(BaseModel):
         if set(DEFAULT_MIN_SPEND_LIMITS) <= set(value):
             raise ValueError("Tiene que quedar al menos un supermercado habilitado.")
         return list(dict.fromkeys(value))
+
+class CompareRequest(OptimizationRequest):
+    # {tienda: {uid faltante: uid elegido}}: el reemplazo que el usuario eligió
+    # en vez del más parecido. `purchase_days` y `max_stores` no se usan: cada
+    # súper informa su mejor día solo, y dividir se cotiza sin tope.
+    replacement_choices: Dict[str, Dict[str, str]] = {}
+
 
 class PricePreviewRequest(BaseModel):
     items: List[CartItem]
@@ -1590,6 +1598,111 @@ def optimize_shopping_cart(request: OptimizationRequest, background_tasks: Backg
 
     emit_analytics(result)
     return result
+
+def _compare_with_links(request, cart_data, flat_prices, delivery_costs, stores, promos_by_day) -> dict:
+    """La comparación por súper, con los links para comprar cada carrito."""
+    with pooled_connection(SmartCartDB().conn_string) as conn:
+        with conn.cursor() as cur:
+            replacements = _optional_feature(
+                "los reemplazos", {}, find_replacements,
+                cur, cart_data, flat_prices, stores, request.user_memberships, flatten=flatten_cart_prices,
+            )
+            comparison = compare_stores(
+                cart_data, flat_prices, replacements,
+                stores=stores, delivery_costs=delivery_costs,
+                user_cards=request.user_cards, user_memberships=request.user_memberships,
+                promos_by_day=promos_by_day, replacement_choices=request.replacement_choices,
+            )
+            # Lo mismo que _attach_* hace con un split: cada súper es un split de uno.
+            split = {s["store_id"]: {"products": [dict(p) for p in s["products"]]}
+                     for s in comparison["stores"] if s["products"]}
+            line_prices = {}
+            for store in comparison["stores"]:
+                for line in store["lines"]:
+                    if line["status"] == "igual":
+                        line_prices.setdefault(line["unified_id"], {})[store["store_id"]] = flat_prices[line["unified_id"]][store["store_id"]]
+            _optional_feature("los links por producto", None, _attach_product_urls, cur, split, line_prices)
+            _optional_feature("los magic links de VTEX", None, _attach_vtex_checkout_links, cur, split)
+            for store in comparison["stores"]:
+                if store["store_id"] in split:
+                    store["products"] = split[store["store_id"]]["products"]
+                    store["checkout_url"] = split[store["store_id"]].get("checkout_url")
+    return comparison
+
+
+def _split_offer(request, cart_data, flat_prices, delivery_costs, excluded_stores, user_excluded,
+                 logistics, comparison) -> dict | None:
+    """
+    Dividir la compra, si vale la pena: el mismo cálculo que /optimize (hoy, sin
+    tope de súper), contra el súper completo más barato. Sin súper completo se
+    ofrece siempre que divida, porque es la única forma de comprar todo.
+    """
+    split_request = request.model_copy(update={"purchase_days": 1, "max_stores": None})
+    delivery_costs = dict(delivery_costs)
+    result, promos = _optimize_purchase_window(
+        split_request, cart_data, delivery_costs, excluded_stores, user_excluded, flat_prices)
+    result, _ = _requote_dia_shipping(
+        split_request, cart_data, delivery_costs, excluded_stores, user_excluded,
+        {k: dict(v) for k, v in logistics.items()}, result, promos, flat_prices)
+    if result.get("status") != "success" or len(result["split"]) < 2:
+        return None
+
+    offer = {"stores": list(result["split"]), "total_spent_net": result["total_spent_net"], "saving": None}
+    if comparison["cheapest"] is None:
+        return offer
+    reference = next(s["total"] for s in comparison["stores"] if s["store_id"] == comparison["cheapest"])
+    saving = round(reference - result["total_spent_net"], 2)
+    if saving < max(SPLIT_MIN_SAVING, SPLIT_MIN_SAVING_PCT * reference):
+        return None
+    return {**offer, "saving": saving}
+
+
+@app.post("/compare")
+def compare_supermarkets(request: CompareRequest):
+    """
+    Cuánto sale el carrito entero en cada súper (src/store_comparison.py), y si
+    dividirlo entre varios ahorra lo suficiente como para ofrecerlo.
+    """
+    try:
+        cart_data = [item.model_dump() for item in request.cart]
+        with ThreadPoolExecutor(max_workers=1) as ex:
+            precios = ex.submit(flatten_cart_prices, cart_data, request.user_memberships)
+            delivery_costs, coverage_excluded, logistics = _resolve_logistics_stage(request)
+            flat_prices = precios.result()
+
+        user_excluded = list(request.user_excluded_stores)
+        excluded_stores = list(dict.fromkeys(coverage_excluded + user_excluded))
+        stores = [s for s in DEFAULT_MIN_SPEND_LIMITS if s not in excluded_stores]
+        today = _today_ar()
+        promos_by_day = [((today + timedelta(days=d)).isoformat(), load_bank_promos(today + timedelta(days=d)))
+                         for d in range(7)]
+
+        comparison = _compare_with_links(request, cart_data, flat_prices, delivery_costs, stores, promos_by_day)
+
+        # Envío de Día por peso (issue #15), como en /optimize: si su carrito
+        # cotiza más caro que la zona, se recalcula con ese costo.
+        dia = logistics.get("dia") or {}
+        dia_card = next((s for s in comparison["stores"] if s["store_id"] == "dia_online" and s["products"]), None)
+        if dia_card and request.lat is not None and request.lng is not None                 and dia.get("source") == "live" and dia.get("sucursal"):
+            quote = _optional_feature("la cotización del envío de Día", None,
+                                      _quote_dia_split, request, dia["sucursal"], dia_card["products"])
+            if quote is not None and quote > delivery_costs["dia_online"]:
+                comparison = _compare_with_links(request, cart_data, flat_prices,
+                                                 {**delivery_costs, "dia_online": quote}, stores, promos_by_day)
+
+        comparison["split_offer"] = _optional_feature(
+            "la oferta de dividir", None, _split_offer,
+            request, cart_data, flat_prices, delivery_costs, excluded_stores, user_excluded,
+            logistics, comparison,
+        )
+        comparison["excluded_stores"] = coverage_excluded
+        comparison["user_excluded_stores"] = user_excluded
+        comparison["logistics"] = logistics
+        return comparison
+    except Exception as e:
+        logger.error(f"Error en la comparación por súper: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
 
 @app.get("/logistics/coto/coverage")
 def get_coto_coverage(
