@@ -4,7 +4,9 @@ Guidance for Claude Code in this repository.
 
 ## Project overview
 
-SmartCart finds the cheapest way to split a grocery cart across six Argentine supermarkets (Coto, Día, Carrefour, Vea, ChangoMás, Jumbo). It scrapes each store's internal API, unifies catalogs by EAN, lets the user build a cart via semantic search, and runs CP-SAT (OR-Tools) over promotions, bank/membership discounts, delivery costs and minimum spend.
+SmartCart compares what a grocery cart costs at each of six Argentine supermarkets (Coto, Día, Carrefour, Vea, ChangoMás, Jumbo), and offers splitting it across several when that saves enough. It scrapes each store's internal API, unifies catalogs by EAN, lets the user build a cart via semantic search, and runs CP-SAT (OR-Tools) over promotions, bank/membership discounts, delivery costs and minimum spend.
+
+The main flow is the per-store comparison (`POST /compare`); the split optimizer (`POST /optimize`) is the opt-in view behind its banner. The previous product, where the split was the main flow, lives on the branch `optimizador-dividido`.
 
 - `src/` — Python/FastAPI backend + Postgres/pgvector. `frontend/` — React/Vite/Tailwind SPA. Two processes over HTTP.
 - `docs/arquitectura.md`: how it works, stage by stage. `docs/operacion.md`: where it runs, deploy commands, Neon limits, PowerShell gotchas. Pending work: `gh issue list`.
@@ -233,6 +235,14 @@ Loads the sentence-transformers model once in `lifespan` (`ml_models`).
   - It **does not fail open to `[]`**: an empty answer would claim every usual product was delisted.
 - **`GET /logistics/{coto,dia,carrefour,vea,changomas,jumbo}/coverage`**: thin wrappers for the address onboarding.
 
+**`POST /compare`** (`src/store_comparison.py`), the main flow: per enabled, covered store, the whole cart's price.
+- Each line is `igual` (the store sells it), `reemplazo` or `falta`. **Replacing is mandatory**: a total without the missing products would reward the store that has the least. `find_replacements` uses `substitutions.comparable_candidates` restricted to that store, at the equivalent quantity, priced there. The default is the **most similar** (by distance), never the cheapest, which would also flatter the store needing the most replacements; up to three more travel as `alternatives`, and `replacement_choices` (`{store: {missing uid: chosen uid}}`) overrides the default. No uid already in the cart, no replacement for two lines. A line with no acceptable replacement stays `falta`, out of the total.
+- **The total comes from `optimize_cart` with that store alone** (min spend 0, so a cart below the minimum still shows its price plus `missing_for_min`): the same arithmetic as the split, so the split's saving compares like with like. `best_day` appears only when another day of the next seven is strictly cheaper (only bank discounts change). Día's shipping is requoted by weight as in `/optimize`.
+- `cheapest` is the cheapest **complete** store (no `falta`); stores sort by how many lines they miss, then by total.
+- **`split_offer`** runs `/optimize`'s own pipeline (today, no store cap) and is offered only if it saves at least `max(SPLIT_MIN_SAVING, SPLIT_MIN_SAVING_PCT × reference)` ($15.000, 20%) against `cheapest`, or always (with `saving: null`) when no store is complete. Each extra store is another checkout, login and cart to empty.
+- It emits no analytics event yet; `cart_optimized` only fires if the user opens the split view.
+- Known weak spot: `leches` is broad, so a lactose-free milk can default to a chocolate milk. Fixing it belongs in the shelves or a stricter comparability rule, never a looser one.
+
 **`POST /optimize`:** logistics → flatten (`flatten_cart_prices`: cheapest net cost per line per store at that quantity) → `optimize_cart` (CP-SAT: a bool per (product, store), an active var per store, min spend as a hard constraint, at most one bank promo per store chosen among the user's (each with its cap and its own minimum purchase), minimizing subtotal + delivery − bank discount, plus `MANUAL_CHECKOUT_MARGIN` ($5) per product placed in a store without a cart link, `checkout_domain` None, i.e. Coto) → enrichment. The margin is objective-only: totals are always real. It sends near-ties away from Coto, whose checkout is a checklist of links, and keeps Coto closed when all it offers is near-ties. An infeasible cart is a 400 with a human `detail`.
 - **`user_excluded_stores`**: the solver, `price_savings` and swaps get coverage ∪ user exclusions. The response's `excluded_stores` stays **coverage only**, because `LogisticsNotice` and the analytics KPI read it. Unknown ids and excluding every store are 422.
 - **Excluding a store is not making it expensive.** A product sold only by an excluded store would turn its constraint into `sum([]) == 1`, a plain "infeasible" blamed on minimum spend. `optimize_cart` detects it first and returns `unavailable_products` with the real cause.
@@ -372,7 +382,9 @@ Adds only operations concerns around `run_scrapers.py`. Details and commands in 
 - **The estimated subtotal is the sum of displayed prices** (q=1, no shipping, no bank discounts) and its label promises no direction: `/optimize` adds shipping and minimums but also quantity promos and bank discounts, so the total lands above or below. Adding anchor-store shipping was rejected (ignores minimums, drifts further with cards, needs client-side logic). A ceiling read as a bug. It renders only when every line has a price. The header shows "~$X". Label only, no explanatory paragraph (the FAQ has it).
 - **Coverage warning** (`useUnavailableCartItems`): reuses `/price-preview` only when `unavailableStores` is non-empty, never mutates the cart, and doesn't flag ids absent from the response (absent = out of stock everywhere).
 
-**Optimize results** (`components/optimize/`):
+**Store comparison** (`components/optimize/StoreComparison.jsx`), the cart's main result: one card per store (total, "N/M iguales · reemplazos · no lo tiene", best day, missing minimum, buy button or Coto's checklist), and "Ver detalle" with the replacements as selects that re-run `/compare`. The split banner under the cards opens the optimizer view below. The sidebar no longer asks for purchase days or a store cap: stores report their best day, and the cap lives inside the split view (`FewerStoresCard`).
+
+**Optimize results** (`components/optimize/`), the split view:
 - `SavingsPanel` shows the total; when the saving is `> 0`, a shelf-tag layout above it: the baseline struck through (`total_spent_net + saving`, same shipping) and a highlighted `%` badge, so the % checks on screen. Without the baseline users compared the % against the estimated subtotal. The saving in pesos and what it compares against live in "Ver de dónde sale": users don't read loose text.
 - `MoreOptions` is a closed `<details>` with signed effects: `StrategicSwapCard` (−$X), `FewerStoresCard` (+$X; choosing it sets `profile.maxStores` and re-optimizes) and `SuggestionsList` (`applySwaps` with quantity). The sign keeps "sacá Coto" and "comprá solo en Coto" from reading as contradictory.
 - `StoreBreakdownCard` per store. Coto's buy button is a checklist of links: a loop of `window.open` gets blocked from the second window. Coto's shipping reads "Envío (estimado)" on `source == "fallback"`.
