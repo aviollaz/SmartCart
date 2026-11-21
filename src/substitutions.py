@@ -32,6 +32,7 @@ importan de acá.
 import logging
 from concurrent.futures import ThreadPoolExecutor
 
+from src.attributes import attributes_match
 from src.flattener import flatten_cart_prices
 from src.size_parser import extract_pack_count
 
@@ -50,8 +51,10 @@ UNKNOWN_WEIGHT = 1.0
 
 # Cuántos vecinos semánticos se traen por producto antes de filtrar. Los filtros
 # de comparabilidad descartan bastante, así que pedir exactamente los que se van
-# a mostrar deja huecos por candidatos que igual no íbamos a usar.
-CANDIDATES_PER_ANCHOR = 5
+# a mostrar deja huecos por candidatos que igual no íbamos a usar. 15 por los
+# atributos (src/attributes.py): la leche sin lactosa correcta de Día estaba
+# 12.ª entre los vecinos de una "reducida en lactosa".
+CANDIDATES_PER_ANCHOR = 15
 
 # Umbral para ofrecerle una alternativa al usuario, relativo al precio del
 # original. Por debajo de esto la diferencia se la come el ruido de tamaños y
@@ -262,8 +265,8 @@ def comparable_candidates(cur, anchor_rows: dict, target_stores, *, exclude_uids
                           limit: int = CANDIDATES_PER_ANCHOR) -> dict:
     """
     Los vecinos de cada ancla que además son sustituciones honestas: misma
-    góndola (vía la query), mismo formato de pack, unidad compatible y tamaño
-    dentro de la banda.
+    góndola (vía la query), mismo formato de pack, mismos atributos de góndola
+    (src/attributes.py), unidad compatible y tamaño dentro de la banda.
 
     Devuelve `{uid ancla: [{uid, name, weight, unit}]}`, sólo con las anclas que
     tienen al menos uno, en el orden de `anchor_rows`.
@@ -279,6 +282,8 @@ def comparable_candidates(cur, anchor_rows: dict, target_stores, *, exclude_uids
             if cand["id"] in excluded:
                 continue
             if not same_pack_format(anchor_row["name"], cand["name"]):
+                continue
+            if not attributes_match(anchor_row.get("shelf"), anchor_row["name"], cand["name"]):
                 continue
             cand_size = weight_of(cand)
             if not is_comparable(anchor_size, cand_size):

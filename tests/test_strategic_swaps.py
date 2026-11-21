@@ -407,11 +407,13 @@ def test_dos_packs_del_mismo_tamano_si_son_intercambiables(fake_flatten):
     spec, cart, cursor = _escenario_base(
         spec_extra={"prod_rep_pack": {COTO: 1500, DIA: 1600}},
         neighbors_override={"prod_crf_0": [
-            _product("prod_rep_pack", "Alfajor Carrefour classic x6 50 g.", 50.0, "g"),
+            _product("prod_rep_pack", "Alfajor Carrefour classic x6 50 g.", 50.0, "g", shelf="alfajores"),
         ]},
     )
+    # Su góndola real: en `leches` (el default del fixture) "chocolate" es un
+    # atributo y la chocolatada no reemplaza a la común (src/attributes.py).
     cursor.products["prod_crf_0"] = _product(
-        "prod_crf_0", "Alfajor de chocolate negro Entre Dos x6 45 g.", 45.0, "g"
+        "prod_crf_0", "Alfajor de chocolate negro Entre Dos x6 45 g.", 45.0, "g", shelf="alfajores"
     )
     fake_flatten(spec)
 
