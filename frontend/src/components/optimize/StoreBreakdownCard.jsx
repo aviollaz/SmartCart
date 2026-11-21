@@ -146,7 +146,7 @@ export function StoreBreakdownCard({ storeId, checkout, cartItems, shippingEstim
  * Lo abierto se marca (estado local: al re-optimizar la lista cambia, y
  * arrastrar la marca de un reparto al siguiente sería mentir).
  */
-function ProductChecklist({ storeId, items, productName }) {
+export function ProductChecklist({ storeId, items, productName }) {
   const [opened, setOpened] = useState(() => new Set());
   const markOpened = (uid) => setOpened((prev) => new Set(prev).add(uid));
 

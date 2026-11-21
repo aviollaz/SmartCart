@@ -63,3 +63,37 @@ export async function optimizeCart({
     throw err;
   }
 }
+
+/**
+ * POST /compare: cuánto sale el carrito entero en cada súper, con reemplazos
+ * obligatorios para lo que no vende, y si conviene dividir (`split_offer`).
+ * Mismo perfil que /optimize; `replacementChoices` es
+ * {tienda: {uid faltante: uid elegido}}.
+ */
+export function compareStores({
+  cart,
+  userMemberships,
+  userCards,
+  deliveryCosts,
+  coordinates,
+  anonUserId,
+  zone,
+  excludedStores,
+  replacementChoices,
+}) {
+  return apiFetch("/compare", {
+    method: "POST",
+    body: JSON.stringify({
+      cart,
+      user_memberships: userMemberships,
+      user_cards: userCards,
+      delivery_costs: deliveryCosts,
+      lat: coordinates?.lat ?? null,
+      lng: coordinates?.lng ?? null,
+      anon_user_id: anonUserId ?? null,
+      zone: zone ?? null,
+      user_excluded_stores: excludedStores ?? [],
+      replacement_choices: replacementChoices ?? {},
+    }),
+  });
+}

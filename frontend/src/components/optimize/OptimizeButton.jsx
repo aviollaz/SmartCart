@@ -11,12 +11,12 @@ export function OptimizeButton({ onClick, disabled, loading }) {
       {loading ? (
         <>
           <Loader2 size={18} className="animate-spin" />
-          Corriendo optimizador…
+          Comparando supermercados…
         </>
       ) : (
         <>
           <Sparkles size={18} />
-          Optimizar compra
+          Comparar supermercados
         </>
       )}
     </button>

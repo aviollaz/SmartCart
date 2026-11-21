@@ -1,7 +1,6 @@
-import { CalendarDays, ChevronDown, CreditCard, Store } from "lucide-react";
+import { ChevronDown, CreditCard, Store } from "lucide-react";
 import { useProfile } from "../../context/ProfileContext";
 import { CARD_OPTIONS, MEMBERSHIP_OPTIONS } from "../../utils/paymentOptions";
-import { STORES } from "../../utils/constants";
 import { AddressField } from "../profile/AddressField";
 import { MultiSelectField } from "../profile/MultiSelectField";
 import { StoreToggles, storesSummary } from "../profile/StoreToggles";
@@ -16,8 +15,7 @@ function paymentSummary(cards, memberships) {
 }
 
 function StoresField() {
-  const { excludedStores, maxStores, setMaxStores } = useProfile();
-  const enabledCount = STORES.length - excludedStores.length;
+  const { excludedStores } = useProfile();
 
   return (
     <details className="group rounded-md border border-line">
@@ -26,66 +24,13 @@ function StoresField() {
           <Store size={16} className="shrink-0 text-brand-accent" />
           <span>
             <span className="block font-semibold text-ink">Supermercados</span>
-            <span className="block text-xs text-ink-muted">{storesSummary(excludedStores, maxStores)}</span>
+            <span className="block text-xs text-ink-muted">{storesSummary(excludedStores)}</span>
           </span>
         </span>
         <ChevronDown size={16} className="shrink-0 text-ink-muted transition-transform group-open:rotate-180" />
       </summary>
       <StoreToggles className="border-t border-line p-3" />
-      {/* Cada súper del reparto es un checkout aparte. Con una sola tienda
-          habilitada no hay nada que limitar. */}
-      {enabledCount > 1 && (
-        <label className="mx-3 mb-3 flex items-center justify-between gap-2 text-sm text-ink">
-          Comprar en como máximo
-          <select
-            value={maxStores ?? ""}
-            onChange={(event) => setMaxStores(event.target.value ? Number(event.target.value) : null)}
-            className="rounded border border-line bg-surface px-2 py-1 text-sm"
-          >
-            <option value="">Sin límite</option>
-            {Array.from({ length: enabledCount - 1 }, (_, i) => i + 1).map((n) => (
-              <option key={n} value={n}>
-                {n} supermercado{n === 1 ? "" : "s"}
-              </option>
-            ))}
-          </select>
-        </label>
-      )}
     </details>
-  );
-}
-
-// Más de 7 no aporta: los descuentos bancarios son por día de la semana.
-const PURCHASE_DAYS_OPTIONS = [
-  { value: 1, label: "Hoy" },
-  { value: 2, label: "Hasta mañana" },
-  { value: 3, label: "En los próximos 3 días" },
-  { value: 7, label: "Esta semana" },
-];
-
-/**
- * Hasta cuándo puede esperar el usuario para comprar. Con más de un día, el
- * backend optimiza cada uno con sus descuentos bancarios y elige el más barato.
- */
-function PurchaseDaysField({ value, onChange }) {
-  return (
-    <label className="flex items-center justify-between gap-2 rounded-md border border-line px-3 py-2 text-sm">
-      <span className="flex items-center gap-2 font-semibold text-ink">
-        <CalendarDays size={16} className="shrink-0 text-brand-accent" />
-        Compro
-      </span>
-      <select
-        value={value}
-        onChange={(e) => onChange(Number(e.target.value))}
-        className="bg-transparent text-right text-ink"
-      >
-        {PURCHASE_DAYS_OPTIONS.map((option) => (
-          <option key={option.value} value={option.value}>
-            {option.label}
-          </option>
-        ))}
-      </select>
-    </label>
   );
 }
 
@@ -103,8 +48,6 @@ export function CheckoutSidebar({
   onOpenLocation,
   subtotalEstimado,
   onOptimize,
-  purchaseDays,
-  onPurchaseDaysChange,
   disabled,
   loading,
 }) {
@@ -137,7 +80,6 @@ export function CheckoutSidebar({
       </details>
 
       <StoresField />
-      <PurchaseDaysField value={purchaseDays} onChange={onPurchaseDaysChange} />
 
       <EstimatedSubtotal subtotalEstimado={subtotalEstimado} />
       <OptimizeButton onClick={onOptimize} disabled={disabled} loading={loading} />

@@ -2,7 +2,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { useCart } from "../context/CartContext";
 import { useProfile } from "../context/ProfileContext";
 import { useHistory } from "../context/HistoryContext";
-import { optimizeCart } from "../api/optimize";
+import { compareStores, optimizeCart } from "../api/optimize";
 import { STORES } from "../utils/constants";
 import { storeName } from "../utils/formatters";
 import { useCartProductsContext } from "../context/CartProductsContext";
@@ -12,11 +12,14 @@ import { ClearCartButton } from "../components/cart/ClearCartButton";
 import { CoverageWarning } from "../components/cart/CoverageWarning";
 import { UndoBar } from "../components/cart/UndoBar";
 import { InfeasibleNotice } from "../components/optimize/InfeasibleNotice";
+import { LogisticsNotice } from "../components/optimize/LogisticsNotice";
 import { OptimizeResultsPanel } from "../components/optimize/OptimizeResultsPanel";
+import { StoreComparison } from "../components/optimize/StoreComparison";
 import { PurchaseHistorySection } from "../components/history/PurchaseHistorySection";
 
 export function CartPage({ onOpenLocation }) {
   const resultsRef = useRef(null);
+  const splitRef = useRef(null);
   const { items, incrementItem, decrementItem, removeItem, replaceItems, restoreItems } =
     useCart();
   const {
@@ -50,8 +53,12 @@ export function CartPage({ onOpenLocation }) {
   // tienda ya conocida se avisa antes (onboarding, chequeo al abrir la app,
   // aviso de la grilla), y repetirlo en cada corrida era ruido.
   const [knownUncovered, setKnownUncovered] = useState([]);
-  // Hasta cuándo puede esperar para comprar. Es de esta compra, no del perfil.
-  const [purchaseDays, setPurchaseDays] = useState(1);
+  // La comparación por súper (/compare) es el flujo principal; el optimizador
+  // de arriba es la vista de dividir, que se abre desde su cartel.
+  const [compareStatus, setCompareStatus] = useState("idle"); // idle | loading | success | error
+  const [compareResult, setCompareResult] = useState(null);
+  // {tienda: {uid faltante: uid elegido}}: los reemplazos que cambió el usuario.
+  const [replacementChoices, setReplacementChoices] = useState({});
 
   // Se levanta al aceptar una sugerencia para que el efecto de abajo distinga
   // "el carrito cambió por un swap, hay que recalcular" de "el usuario tocó una
@@ -64,12 +71,63 @@ export function CartPage({ onOpenLocation }) {
   // operación inversa no puede reconstruir cuánto había de cada uno.
   const [undoSnapshot, setUndoSnapshot] = useState(null);
 
+  const cartPayload = Object.entries(items).map(([unifiedId, item]) => ({
+    unified_id: unifiedId,
+    quantity: item.quantity,
+  }));
+
+  // El backend vuelve a consultar la cobertura con cada corrida, así que su
+  // veredicto es más fresco que el guardado en el onboarding. Solo se persiste
+  // un "no entrega" afirmativo: la respuesta sin coordenadas trae covered:true
+  // por fail-open, y guardarlo pisaría un "no" real.
+  const persistCoverage = (logistics) => {
+    for (const { key, id } of STORES) {
+      if (logistics?.[key]?.covered === false) {
+        setStoreCoverage(id, { covered: false, message: logistics[key].message });
+      }
+    }
+  };
+
+  const runCompare = useCallback(async (choices) => {
+    setCompareStatus("loading");
+    setOptimizeStatus("idle");
+    try {
+      const data = await compareStores({
+        cart: cartPayload,
+        userMemberships: memberships,
+        userCards: cards,
+        deliveryCosts,
+        coordinates,
+        anonUserId: anon_user_id,
+        zone: location?.zone,
+        excludedStores,
+        replacementChoices: choices,
+      });
+      setCompareResult(data);
+      setKnownUncovered(unavailableStores);
+      setCompareStatus("success");
+      // Mismo criterio que en runOptimize: el carrito tal como se cotizó.
+      const cheapest = data.stores.find((store) => store.store_id === data.cheapest);
+      recordPurchase({ items, total: cheapest?.total ?? null, stores: cheapest ? [cheapest.store_id] : [] });
+      persistCoverage(data.logistics);
+    } catch {
+      setCompareResult(null);
+      setCompareStatus("error");
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [items, memberships, cards, deliveryCosts, coordinates, anon_user_id, location, excludedStores, recordPurchase, unavailableStores]);
+
+  const handleChooseReplacement = useCallback(
+    (storeId, uid, replacementUid) => {
+      const next = { ...replacementChoices, [storeId]: { ...replacementChoices[storeId], [uid]: replacementUid } };
+      setReplacementChoices(next);
+      runCompare(next);
+    },
+    [replacementChoices, runCompare]
+  );
+
   const runOptimize = useCallback(async () => {
     setOptimizeStatus("loading");
-    const cartPayload = Object.entries(items).map(([unifiedId, item]) => ({
-      unified_id: unifiedId,
-      quantity: item.quantity,
-    }));
 
     try {
       const response = await optimizeCart({
@@ -81,7 +139,6 @@ export function CartPage({ onOpenLocation }) {
         anonUserId: anon_user_id,
         zone: location?.zone,
         excludedStores,
-        purchaseDays,
         maxStores,
       });
 
@@ -107,17 +164,7 @@ export function CartPage({ onOpenLocation }) {
           total: response.data.total_spent_net,
           stores: Object.keys(response.data.split || {}),
         });
-
-        // El optimizador vuelve a consultar la cobertura con cada corrida, así
-        // que su veredicto es más fresco que el guardado en el onboarding. Solo
-        // se persiste un "no entrega" afirmativo: la respuesta sin coordenadas
-        // trae covered:true por fail-open, y guardarlo pisaría un "no" real.
-        for (const { key, id } of STORES) {
-          const logistics = response.data.logistics?.[key];
-          if (logistics?.covered === false) {
-            setStoreCoverage(id, { covered: false, message: logistics.message });
-          }
-        }
+        persistCoverage(response.data.logistics);
       } else {
         setInfeasibleDetail(response.detail);
         setOptimizeStatus("infeasible");
@@ -129,9 +176,12 @@ export function CartPage({ onOpenLocation }) {
       setOptimizeStatus("error");
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [items, memberships, cards, deliveryCosts, coordinates, anon_user_id, location, excludedStores, purchaseDays, maxStores, recordPurchase, unavailableStores]);
+  }, [items, memberships, cards, deliveryCosts, coordinates, anon_user_id, location, excludedStores, maxStores, recordPurchase, unavailableStores]);
 
   useEffect(() => {
+    // La comparación y los reemplazos elegidos describen el carrito anterior.
+    setCompareStatus((prev) => (prev === "success" ? "idle" : prev));
+    setReplacementChoices({});
     if (reoptimizeRef.current) {
       reoptimizeRef.current = false;
       runOptimize();
@@ -217,10 +267,22 @@ export function CartPage({ onOpenLocation }) {
   // izquierda y el botón a la derecha, el resultado cae debajo de los dos y sin
   // esto el usuario tocaba "Optimizar" y no veía que había pasado algo.
   useEffect(() => {
-    if (optimizeStatus === "success" || optimizeStatus === "infeasible") {
+    if (compareStatus === "success") {
       resultsRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
     }
+  }, [compareStatus, compareResult]);
+  useEffect(() => {
+    if (optimizeStatus === "success" || optimizeStatus === "infeasible") {
+      splitRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
+    }
   }, [optimizeStatus, optimizeResult]);
+
+  // El ahorro del cartel se calculó sin tope de súper: un tope guardado de una
+  // vista anterior se saca antes (el efecto de maxStores re-optimiza).
+  const handleShowSplit = () => {
+    if (maxStores != null) handleChooseMaxStores(null);
+    else runOptimize();
+  };
 
   return (
     <div className="mx-auto w-full max-w-6xl px-4 py-6">
@@ -266,11 +328,9 @@ export function CartPage({ onOpenLocation }) {
           <CheckoutSidebar
             onOpenLocation={onOpenLocation}
             subtotalEstimado={entries.length ? subtotalEstimado : null}
-            onOptimize={runOptimize}
-            purchaseDays={purchaseDays}
-            onPurchaseDaysChange={setPurchaseDays}
+            onOptimize={() => runCompare(replacementChoices)}
             disabled={entries.length === 0}
-            loading={optimizeStatus === "loading"}
+            loading={compareStatus === "loading"}
           />
         </div>
 
@@ -280,6 +340,26 @@ export function CartPage({ onOpenLocation }) {
         {entries.length === 0 && <PurchaseHistorySection />}
 
         <div ref={resultsRef} className="flex scroll-mt-28 flex-col gap-4">
+          {compareStatus === "error" && (
+            <p className="text-sm text-state-warning">
+              No pudimos comparar los supermercados. Probá de nuevo en un momento.
+            </p>
+          )}
+          {compareStatus === "success" && compareResult && (
+            <LogisticsNotice result={compareResult} knownUncovered={knownUncovered} />
+          )}
+          {compareStatus === "success" && compareResult && (
+            <StoreComparison
+              result={compareResult}
+              cartItems={items}
+              onChooseReplacement={handleChooseReplacement}
+              onShowSplit={handleShowSplit}
+              splitLoading={optimizeStatus === "loading"}
+            />
+          )}
+        </div>
+
+        <div ref={splitRef} className="flex scroll-mt-28 flex-col gap-4">
           {optimizeStatus === "infeasible" && <InfeasibleNotice detail={infeasibleDetail} />}
           {optimizeStatus === "error" && (
             <p className="text-sm text-state-warning">
