@@ -105,7 +105,9 @@ def compare_stores(cart_items, flat_prices, replacements, *, stores, delivery_co
         for store in stores
     ]
     complete = [r for r in results if r["missing"] == 0 and r["total"] is not None]
-    results.sort(key=lambda r: (r["missing"] > 0, r["total"] is None, r["total"] or 0))
+    # Los incompletos por cuánto les falta y no por total: por total, el que
+    # menos tiene saldría primero.
+    results.sort(key=lambda r: (r["missing"], r["total"] is None, r["total"] or 0))
     return {
         "stores": results,
         "cheapest": min(complete, key=lambda r: r["total"])["store_id"] if complete else None,

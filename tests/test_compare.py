@@ -109,6 +109,18 @@ def test_super_con_faltantes_no_es_el_mas_barato():
     assert result["cheapest"] == COTO
 
 
+def test_supers_incompletos_van_despues_y_primero_al_que_le_falta_menos():
+    # preparar: Coto tiene todo; a Día le falta uno; a Vea dos, pero es el más barato
+    VEA = "vea_online"
+    flat = _flat({"a": {COTO: 9000, DIA: 5000, VEA: 1000}, "b": {COTO: 9000, DIA: 5000}, "c": {COTO: 9000}})
+
+    # ejecutar
+    result = _compare(_cart("a", "b", "c"), flat, stores=[VEA, DIA, COTO])
+
+    # verificar
+    assert [s["store_id"] for s in result["stores"]] == [COTO, DIA, VEA]
+
+
 def test_reemplazo_elegido_por_el_usuario_pisa_el_por_defecto():
     # preparar
     flat = _flat({"a": {DIA: 1000}})
