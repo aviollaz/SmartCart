@@ -116,6 +116,7 @@ function ProductDetail({ product: rawProduct, unavailableStores, excludedStores,
             <span className="text-sm text-ink-muted">Sin foto</span>
           )}
         </div>
+        <Description product={rawProduct} className="hidden md:block" />
       </div>
 
       <div className="flex flex-col gap-4">
@@ -157,6 +158,7 @@ function ProductDetail({ product: rawProduct, unavailableStores, excludedStores,
           unavailableStores={unavailableStores}
           excludedStores={excludedStores}
         />
+        <Description product={rawProduct} className="md:hidden" />
       </div>
     </div>
   );
@@ -233,6 +235,22 @@ function StoreOffers({ offers, unavailableStores, excludedStores }) {
   );
 }
 
+// Es el texto de UNA tienda, no un dato que SmartCart verificó: por eso va
+// atribuido. Coto no publica descripción, así que en productos sólo de Coto no
+// aparece.
+function Description({ product, className = "" }) {
+  if (!product.description) return null;
+  return (
+    <section className={className}>
+      <h2 className="mb-1 font-display text-base font-bold text-ink">Descripción</h2>
+      <p className="text-sm text-ink">{product.description}</p>
+      {product.description_store && (
+        <p className="mt-1 text-xs text-ink-muted">Según {storeName(product.description_store)}</p>
+      )}
+    </section>
+  );
+}
+
 function SpecsTable({ product }) {
   const rows = [
     ["EAN", product.ean],
@@ -250,20 +268,6 @@ function SpecsTable({ product }) {
     // afirmar algo que el parser nunca vio.
     ["Sin TACC", product.is_gluten_free && "Sí"],
     ["Vegano", product.is_vegan && "Sí"],
-    // Es el texto de UNA tienda, no un dato que SmartCart verificó: por eso va
-    // atribuido. Coto no publica descripción, así que en productos sólo de Coto
-    // la fila no aparece.
-    [
-      "Descripción",
-      product.description && (
-        <div key="description">
-          <p>{product.description}</p>
-          {product.description_store && (
-            <p className="mt-1 text-xs text-ink-muted">Según {storeName(product.description_store)}</p>
-          )}
-        </div>
-      ),
-    ],
   ].filter(([, value]) => value);
 
   return (
