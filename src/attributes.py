@@ -59,7 +59,7 @@ SHELF_ATTRIBUTES = {
         )),
         # La que no declara la grasa es entera: así se erra hacia estricto.
         _attribute("entera", (
-            ("parcialmente descremada", ("parcialmente descremada", "semi descremada",
+            ("parcialmente descremada", ("parcialmente descremada", "parcial descremada", "semi descremada",
                                          "semidescremada", "semi-descremada")),
             ("descremada", ("descremada",)),
         )),

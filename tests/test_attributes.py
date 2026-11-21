@@ -73,6 +73,18 @@ def test_leche_entera_no_se_reemplaza_por_descremada():
     assert compatibles is False
 
 
+def test_leche_descremada_no_se_reemplaza_por_parcial_descremada():
+    # preparar: redacción vista en Carrefour con medir_reemplazos
+    original = "Leche Descremada Manfrey Uat 1 Lt"
+    candidato = "Leche ulta parcial descremada Carrefour classic sachet 1 lt."
+
+    # ejecutar
+    compatibles = attributes_match("leches", original, candidato)
+
+    # verificar
+    assert compatibles is False
+
+
 def test_bebida_vegetal_solo_se_reemplaza_por_vegetal():
     # preparar
     original = "Bebida vegetal protein Biba brick 500 ml"
