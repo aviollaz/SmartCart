@@ -32,7 +32,7 @@ importan de acá.
 import logging
 from concurrent.futures import ThreadPoolExecutor
 
-from src.attributes import attributes_match
+from src.attributes import attributes_match, dietary_match
 from src.flattener import flatten_cart_prices
 from src.size_parser import extract_pack_count
 
@@ -178,7 +178,8 @@ def fetch_product_rows(cur, uids) -> dict:
 
     cur.execute(
         """
-        SELECT id, name, shelf, total_volume_weight, unit_type, name_embedding
+        SELECT id, name, shelf, total_volume_weight, unit_type, name_embedding,
+               is_gluten_free, is_vegan
         FROM unified_products
         WHERE id = ANY(%s)
         """,
@@ -237,6 +238,7 @@ def fetch_candidates(cur, anchor_rows: dict, target_stores,
             SELECT * FROM (
                 SELECT DISTINCT ON (u.id)
                        u.id, u.name, u.total_volume_weight, u.unit_type,
+                       u.is_gluten_free, u.is_vegan,
                        u.name_embedding <=> a.name_embedding AS distance
                 FROM unified_products u
                 JOIN store_products sp ON u.id = sp.unified_product_id
@@ -266,7 +268,8 @@ def comparable_candidates(cur, anchor_rows: dict, target_stores, *, exclude_uids
     """
     Los vecinos de cada ancla que además son sustituciones honestas: misma
     góndola (vía la query), mismo formato de pack, mismos atributos de góndola
-    (src/attributes.py), unidad compatible y tamaño dentro de la banda.
+    y mismos flags sin TACC/vegano (src/attributes.py), unidad compatible y
+    tamaño dentro de la banda.
 
     Devuelve `{uid ancla: [{uid, name, weight, unit}]}`, sólo con las anclas que
     tienen al menos uno, en el orden de `anchor_rows`.
@@ -284,6 +287,8 @@ def comparable_candidates(cur, anchor_rows: dict, target_stores, *, exclude_uids
             if not same_pack_format(anchor_row["name"], cand["name"]):
                 continue
             if not attributes_match(anchor_row.get("shelf"), anchor_row["name"], cand["name"]):
+                continue
+            if not dietary_match(anchor_row, cand):
                 continue
             cand_size = weight_of(cand)
             if not is_comparable(anchor_size, cand_size):
