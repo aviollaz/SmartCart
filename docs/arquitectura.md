@@ -234,6 +234,18 @@ Calibrado contra el catálogo real: más bonus empieza a ordenar por cantidad de
 tiendas en vez de por relevancia. Hay un modo híbrido (léxico + denso, por
 Reciprocal Rank Fusion) apagado hasta medirlo (issue #24).
 
+**Búsqueda que nombra una góndola** (`src/search_intent.py`): "vino tinto",
+"tinto vino" o "vinos" devuelven la góndola entera con el filtro Tinto, no los
+100 más parecidos; "vino reserva" busca por similitud dentro de vinos. La
+góndola tiene que ser la primera palabra (salvo que el resto sean sus tipos),
+así "vinagre de vino" no termina en vinos. Un link deshace la lectura
+("Buscar en todas las góndolas").
+
+**Filtro "Tipo"** (`src/shelf_types.py`): las góndolas grandes (vinos,
+galletitas, aceites, fiambres…) filtran por un tipo leído del nombre con una
+tabla explícita, como los cortes de carne. Partirlas exigiría que las seis
+cadenas las separen igual; el nombre casi siempre lo dice.
+
 ### 3.6 Comparación por tienda (`src/store_comparison.py`)
 
 El flujo principal (`POST /compare`). Por cada tienda habilitada y que llega,
