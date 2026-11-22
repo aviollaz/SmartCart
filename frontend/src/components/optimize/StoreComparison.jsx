@@ -90,13 +90,15 @@ function SummaryCell({ label, value, note, valueClass = "text-ink", noteClass = 
 function StoreCompareRow({ store, names, onChooseReplacement }) {
   const name = (uid) => names[uid] || uid;
   const chosen = store.lines.length;
-  const toSwap = store.lines.filter((line) => line.status === "reemplazo");
-  const noSwap = store.lines.filter((line) => line.status === "falta");
+  // Con opciones va a "a cambiar" aunque el usuario haya elegido ninguna, para
+  // que pueda volver a elegir; las notas cuentan por estado.
+  const toSwap = store.lines.filter((line) => line.alternatives);
+  const noSwap = store.lines.filter((line) => line.status === "falta" && !line.alternatives);
   const productLinks = (store.products || []).filter((item) => item.product_url);
 
   const availabilityNote = [
-    toSwap.length > 0 && `${toSwap.length} a cambiar`,
-    noSwap.length > 0 && `${noSwap.length} sin reemplazo`,
+    store.replaced > 0 && `${store.replaced} a cambiar`,
+    store.missing > 0 && `${store.missing} sin reemplazo`,
   ]
     .filter(Boolean)
     .join(" · ");
@@ -125,7 +127,7 @@ function StoreCompareRow({ store, names, onChooseReplacement }) {
               value={`${store.exact}/${chosen}`}
               valueClass={store.exact === chosen ? "text-ink" : "text-state-warning"}
               note={availabilityNote}
-              noteClass={noSwap.length > 0 ? "text-state-warning" : "text-ink-muted"}
+              noteClass={store.missing > 0 ? "text-state-warning" : "text-ink-muted"}
             />
           </div>
           </div>
@@ -243,24 +245,18 @@ function SwapLine({ line, name, onChoose }) {
         {name(line.unified_id)}
         <ArrowRight size={12} className="shrink-0" />
       </span>
-      {line.alternatives.length > 1 ? (
-        <select
-          value={line.replacement.unified_id}
-          onChange={(event) => onChoose(event.target.value)}
-          className="mt-0.5 w-full truncate rounded border border-line bg-surface px-2 py-1 text-sm text-ink"
-        >
-          {line.alternatives.map((option) => (
-            <option key={option.unified_id} value={option.unified_id}>
-              {option.name} x{option.quantity} · {formatPrice(option.total_cost)}
-            </option>
-          ))}
-        </select>
-      ) : (
-        <p className="truncate text-sm text-ink" title={line.replacement.name}>
-          {line.replacement.name} x{line.replacement.quantity} · {formatPrice(line.replacement.total_cost)}
-          <span className="text-xs text-ink-muted"> · única opción</span>
-        </p>
-      )}
+      <select
+        value={line.replacement?.unified_id ?? ""}
+        onChange={(event) => onChoose(event.target.value)}
+        className="mt-0.5 w-full truncate rounded border border-line bg-surface px-2 py-1 text-sm text-ink"
+      >
+        {line.alternatives.map((option) => (
+          <option key={option.unified_id} value={option.unified_id}>
+            {option.name} x{option.quantity} · {formatPrice(option.total_cost)}
+          </option>
+        ))}
+        <option value="">Ninguno (queda fuera del precio)</option>
+      </select>
     </li>
   );
 }
