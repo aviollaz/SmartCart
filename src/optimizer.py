@@ -35,6 +35,22 @@ DEFAULT_DELIVERY_COSTS = {s.id: s.delivery_cost for s in STORES}
 MANUAL_CHECKOUT_MARGIN = 5
 MANUAL_CHECKOUT_STORES = frozenset(s.id for s in STORES if s.checkout_domain is None)
 
+# Tope de tiempo del solver. Con seis súper, un carrito de 76 productos y varias
+# promos por tienda, demostrar el óptimo tardaba más de 5 minutos y /compare no
+# contestaba nunca (nov 2026). Cortado, el solver devuelve la mejor asignación
+# que encontró: puede dejar algún ahorro sin encontrar (errar caro), pero el
+# total que se informa es siempre el de esa asignación (ver _descuento_real).
+SOLVER_TIME_LIMIT_SECONDS = 3.0
+
+
+def _descuento_real(subtotal_cents, promo):
+    """Lo que la promo descuenta sobre ese subtotal, en centavos: el porcentaje
+    truncado, con su tope y sólo si se llega al mínimo. Es la misma aritmética
+    que el oráculo de tests/test_optimizer_correctness.py."""
+    if subtotal_cents < int(promo.get("min_purchase", 0) * 100):
+        return 0
+    return min(subtotal_cents * promo["discount_pct"] // 100, int(promo["cap"] * 100))
+
 def optimize_cart(cart_items, user_memberships=None, user_cards=None, min_spend_limits=None, delivery_costs=None, excluded_stores=None, flat_prices=None, bank_promos=None, user_excluded_stores=None, max_stores=None):
     """
     `flat_prices` es un escape hatch para quien ya tiene la matriz de precios y
@@ -167,18 +183,24 @@ def optimize_cart(cart_items, user_memberships=None, user_cards=None, min_spend_
         aplicados = []
         for k, promo in enumerate(promos_del_usuario):
             usa = model.NewBoolVar(f'usa_promo_{j}_{k}')
-            subtotal_times_pct = model.NewIntVar(0, MAX_SUBTOTAL_CENTS * MAX_PCT, f'subtotal_times_pct_{j}_{k}')
-            model.Add(subtotal_times_pct == subtotal_vars[j] * promo["discount_pct"])
-            raw_discount = model.NewIntVar(0, MAX_SUBTOTAL_CENTS, f'raw_discount_{j}_{k}')
-            model.AddDivisionEquality(raw_discount, subtotal_times_pct, 100)
-            capped = model.NewIntVar(0, MAX_SUBTOTAL_CENTS, f'capped_discount_{j}_{k}')
-            model.AddMinEquality(capped, [raw_discount, model.NewConstant(int(promo["cap"] * 100))])
+            # Cotas lineales en vez de división y mínimo exactos: el descuento no
+            # puede pasar del porcentaje (truncado: 100 * d <= subtotal * pct) ni
+            # del tope, y como el objetivo lo quiere lo más grande posible, en el
+            # óptimo vale justo min(truncado, tope). La división y el mínimo
+            # explícitos hacían que un carrito grande no terminara nunca.
             aplicado = model.NewIntVar(0, MAX_SUBTOTAL_CENTS, f'applied_discount_{j}_{k}')
-            model.Add(aplicado == capped).OnlyEnforceIf(usa)
-            model.Add(aplicado == 0).OnlyEnforceIf(usa.Not())
+            model.Add(100 * aplicado <= subtotal_vars[j] * promo["discount_pct"])
+            model.Add(aplicado <= usa * int(promo["cap"] * 100))
+            # Redundante en enteros (sin compras no hay subtotal que descontar),
+            # pero sin esto la relajación lineal cobra el tope de cada súper
+            # abriéndolo "un poquito": la cota quedaba 40% abajo y el solver no
+            # podía demostrar el óptimo.
+            model.Add(usa <= activa[j])
             # El mínimo se mide contra los productos, sin el envío: si el súper
             # también cuenta el envío, el error queda del lado de cotizar de más.
-            model.Add(subtotal_vars[j] >= int(promo.get("min_purchase", 0) * 100)).OnlyEnforceIf(usa)
+            # Lineal y no `OnlyEnforceIf`: equivalente (el subtotal nunca es
+            # negativo) y la relajación lineal lo ve entero.
+            model.Add(subtotal_vars[j] >= int(promo.get("min_purchase", 0) * 100) * usa)
             promo_vars[j, k] = (usa, promo)
             aplicados.append(aplicado)
         model.Add(sum(usa for (tienda, _), (usa, _) in promo_vars.items() if tienda == j) <= 1)
@@ -193,17 +215,30 @@ def optimize_cart(cart_items, user_memberships=None, user_cards=None, min_spend_
     model.Minimize(sum(store_final_costs_cents.values())
                    + sum(margen * x for (i, j), x in compra.items() if j in MANUAL_CHECKOUT_STORES))
     solver = cp_model.CpSolver()
-    
+    solver.parameters.max_time_in_seconds = SOLVER_TIME_LIMIT_SECONDS
+    # Un solo worker con la relajación lineal completa: Cloud Run da 1 CPU, y ahí
+    # el portfolio por defecto reparte el tiempo entre workers que no usan la
+    # relajación y quedaba 3-4% arriba del óptimo al tope; éste llega al óptimo
+    # en un carrito realista de 76 productos (medido con taskset a un núcleo).
+    # Además es determinístico.
+    solver.parameters.num_workers = 1
+    solver.parameters.linearization_level = 2
+
     if solver.Solve(model) in [cp_model.OPTIMAL, cp_model.FEASIBLE]:
         assigned_cart = {}
         total_spent = 0.0
 
         for j in stores:
             if solver.Value(activa[j]) == 1:
-                sub = solver.Value(subtotal_vars[j]) / 100.0
-                disc = solver.Value(discount_vars[j]) / 100.0
+                sub_cents = solver.Value(subtotal_vars[j])
+                sub = sub_cents / 100.0
+                # El descuento se recalcula de la promo elegida y no se lee del
+                # modelo: si el solver cortó por tiempo, su variable puede haber
+                # quedado por debajo de lo que la promo da de verdad.
                 promo = next((p for (tienda, _), (usa, p) in promo_vars.items()
-                              if tienda == j and solver.Value(usa)), None) if disc > 0 else None
+                              if tienda == j and solver.Value(usa)), None)
+                disc = _descuento_real(sub_cents, promo) / 100.0 if promo else 0.0
+                promo = promo if disc > 0 else None
                 total = sub + delivery_costs[j] - disc
                 total_spent += total
                 
