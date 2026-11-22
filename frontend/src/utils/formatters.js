@@ -11,6 +11,20 @@ export function formatPrice(value) {
   return PRICE_FORMATTER.format(value);
 }
 
+const WHOLE_PRICE_FORMATTER = new Intl.NumberFormat("es-AR", {
+  style: "currency",
+  currency: "ARS",
+  maximumFractionDigits: 0,
+});
+
+/** Precio en pesos enteros, para resúmenes angostos (la comparación por súper
+ * en el celular): con seis cifras, los centavos cortaban el monto. El desglose
+ * de al lado sigue con formatPrice. */
+export function formatPriceWhole(value) {
+  if (typeof value !== "number" || Number.isNaN(value)) return "-";
+  return WHOLE_PRICE_FORMATTER.format(value);
+}
+
 /**
  * Precio por unidad de medida, listo para mostrar: "$14.929,00 por kg".
  *

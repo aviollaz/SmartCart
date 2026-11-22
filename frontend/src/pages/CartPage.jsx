@@ -55,7 +55,10 @@ export function CartPage({ onOpenLocation }) {
   const [knownUncovered, setKnownUncovered] = useState([]);
   // La comparación por súper (/compare) es el flujo principal; el optimizador
   // de arriba es la vista de dividir, que se abre desde su cartel.
-  const [compareStatus, setCompareStatus] = useState("idle"); // idle | loading | success | error
+  // "refreshing": recalcula por un reemplazo elegido y la comparación anterior
+  // sigue a la vista (atenuada), así no se cierra el desplegable que el usuario
+  // tenía abierto ni la página salta.
+  const [compareStatus, setCompareStatus] = useState("idle"); // idle | loading | refreshing | success | error
   const [compareResult, setCompareResult] = useState(null);
   // {tienda: {uid faltante: uid elegido}}: los reemplazos que cambió el usuario.
   const [replacementChoices, setReplacementChoices] = useState({});
@@ -88,8 +91,10 @@ export function CartPage({ onOpenLocation }) {
     }
   };
 
-  const runCompare = useCallback(async (choices) => {
-    setCompareStatus("loading");
+  const refreshingRef = useRef(false);
+  const runCompare = useCallback(async (choices, { refresh = false } = {}) => {
+    refreshingRef.current = refresh;
+    setCompareStatus(refresh ? "refreshing" : "loading");
     setOptimizeStatus("idle");
     try {
       const data = await compareStores({
@@ -121,7 +126,7 @@ export function CartPage({ onOpenLocation }) {
     (storeId, uid, replacementUid) => {
       const next = { ...replacementChoices, [storeId]: { ...replacementChoices[storeId], [uid]: replacementUid } };
       setReplacementChoices(next);
-      runCompare(next);
+      runCompare(next, { refresh: true });
     },
     [replacementChoices, runCompare]
   );
@@ -180,7 +185,7 @@ export function CartPage({ onOpenLocation }) {
 
   useEffect(() => {
     // La comparación y los reemplazos elegidos describen el carrito anterior.
-    setCompareStatus((prev) => (prev === "success" ? "idle" : prev));
+    setCompareStatus((prev) => (prev === "success" || prev === "refreshing" ? "idle" : prev));
     setReplacementChoices({});
     if (reoptimizeRef.current) {
       reoptimizeRef.current = false;
@@ -267,7 +272,7 @@ export function CartPage({ onOpenLocation }) {
   // izquierda y el botón a la derecha, el resultado cae debajo de los dos y sin
   // esto el usuario tocaba "Optimizar" y no veía que había pasado algo.
   useEffect(() => {
-    if (compareStatus === "success") {
+    if (compareStatus === "success" && !refreshingRef.current) {
       resultsRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
     }
   }, [compareStatus, compareResult]);
@@ -348,13 +353,14 @@ export function CartPage({ onOpenLocation }) {
           {compareStatus === "success" && compareResult && (
             <LogisticsNotice result={compareResult} knownUncovered={knownUncovered} />
           )}
-          {compareStatus === "success" && compareResult && (
+          {(compareStatus === "success" || compareStatus === "refreshing") && compareResult && (
             <StoreComparison
               result={compareResult}
               cartItems={items}
               onChooseReplacement={handleChooseReplacement}
               onShowSplit={handleShowSplit}
               splitLoading={optimizeStatus === "loading"}
+              refreshing={compareStatus === "refreshing"}
             />
           )}
         </div>
