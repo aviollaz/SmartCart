@@ -145,6 +145,12 @@ export function StoreBreakdownCard({ storeId, checkout, cartItems, shippingEstim
  *
  * Lo abierto se marca (estado local: al re-optimizar la lista cambia, y
  * arrastrar la marca de un reparto al siguiente sería mentir).
+ *
+ * Todos los links abren en la MISMA pestaña de la tienda (target con nombre):
+ * con una pestaña por producto, un carrito de 20 cosas eran 20 pestañas. Sin
+ * `noopener` a propósito: una pestaña de otro sitio abierta con noopener no
+ * queda vinculada a esta, y el navegador abriría una nueva en cada click. El
+ * referrer se sigue ocultando con `referrerPolicy`.
  */
 export function ProductChecklist({ storeId, items, productName }) {
   const [opened, setOpened] = useState(() => new Set());
@@ -159,7 +165,7 @@ export function ProductChecklist({ storeId, items, productName }) {
         </p>
       </div>
       <p className="mt-0.5 text-xs text-ink-muted">
-        {storeName(storeId)} no permite armar el carrito desde otro sitio: cada link abre el producto en una pestaña nueva.
+        {storeName(storeId)} no permite armar el carrito desde otro sitio: cada link abre el producto en la misma pestaña de {storeName(storeId)}.
       </p>
       <ul className="mt-2 space-y-1">
         {items.map((item) => {
@@ -168,8 +174,8 @@ export function ProductChecklist({ storeId, items, productName }) {
             <li key={item.unified_id}>
               <a
                 href={item.product_url}
-                target="_blank"
-                rel="noreferrer"
+                target={`smartcart_${storeId}`}
+                referrerPolicy="no-referrer"
                 onClick={() => markOpened(item.unified_id)}
                 className={`flex items-center gap-2 rounded px-1 py-1 text-sm hover:bg-surface-muted ${
                   done ? "text-ink-muted" : "text-ink"
