@@ -213,6 +213,31 @@ def test_sin_reemplazo_elegido_las_opciones_siguen_disponibles():
     assert [o["unified_id"] for o in _line(dia, "b")["alternatives"]] == ["x", "y"]
 
 
+def test_linea_a_cambiar_trae_el_precio_mas_barato_del_original_en_otro_super():
+    # preparar: Coto no vende "b"; Día lo tiene a $2.000 y Vea a $3.000
+    VEA = "vea_online"
+    flat = _flat({"a": {COTO: 1000, DIA: 1000, VEA: 1000}, "b": {DIA: 2000, VEA: 3000}})
+    replacements = {COTO: {"b": [_option("x", 2500)]}}
+
+    # ejecutar
+    coto = _store(_compare(_cart("a", "b"), flat, replacements, stores=[COTO, DIA, VEA]), COTO)
+
+    # verificar
+    assert _line(coto, "b")["original_cost"] == 2000
+
+
+def test_original_que_ningun_super_comparado_vende_no_trae_precio():
+    # preparar: "b" sólo está en Vea, que no se compara
+    flat = _flat({"a": {COTO: 1000}, "b": {"vea_online": 3000}})
+    replacements = {COTO: {"b": [_option("x", 2500)]}}
+
+    # ejecutar
+    coto = _store(_compare(_cart("a", "b"), flat, replacements), COTO)
+
+    # verificar
+    assert _line(coto, "b")["original_cost"] is None
+
+
 def test_producto_que_ya_esta_en_el_carrito_no_es_reemplazo():
     # preparar: el candidato más parecido para "b" es "a", que ya está
     flat = _flat({"a": {DIA: 1000}})

@@ -108,6 +108,7 @@ def compare_stores(cart_items, flat_prices, replacements, *, stores, delivery_co
         for store in stores
     ]
     _add_missing_cost(results)
+    _add_original_cost(results, flat_prices, stores)
     complete = [r for r in results if r["missing"] == 0 and r["total"] is not None]
     results.sort(key=lambda r: (r["total"] is None and r["missing_cost"] == 0, r["comparable_total"]))
     return {
@@ -129,6 +130,16 @@ def _add_missing_cost(results):
         r["comparable_total"] = round((r["total"] or 0) + r["missing_cost"], 2)
         if r["best_day"]:
             r["best_day"]["comparable_total"] = round(r["best_day"]["total"] + r["missing_cost"], 2)
+
+
+def _add_original_cost(results, flat_prices, stores):
+    """En cada línea a cambiar, lo más barato que cuesta el original en los súper comparados: con qué comparar el reemplazo."""
+    for r in results:
+        for line in r["lines"]:
+            if "alternatives" in line:
+                costs = [offer["total_cost"] for store, offer in flat_prices.get(line["unified_id"], {}).items()
+                         if store in stores]
+                line["original_cost"] = min(costs, default=None)
 
 
 def _public(option) -> dict:
