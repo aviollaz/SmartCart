@@ -265,7 +265,7 @@ class OptimizationRequest(BaseModel):
 
 class CompareRequest(OptimizationRequest):
     # {tienda: {uid faltante: uid elegido}}: el reemplazo que el usuario eligió
-    # en vez del más parecido. `purchase_days` y `max_stores` no se usan: cada
+    # en vez del más parecido, o "" para ninguno. `purchase_days` y `max_stores` no se usan: cada
     # súper informa su mejor día solo, y dividir se cotiza sin tope.
     replacement_choices: Dict[str, Dict[str, str]] = {}
 

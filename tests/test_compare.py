@@ -135,6 +135,34 @@ def test_reemplazo_elegido_por_el_usuario_pisa_el_por_defecto():
     assert dia["total"] == 1000 + 1500 + ENVIO[DIA]
 
 
+def test_elegir_ningun_reemplazo_deja_el_producto_afuera_del_total():
+    # preparar: "" es "ninguno"
+    flat = _flat({"a": {DIA: 1000}})
+    replacements = {DIA: {"b": [_option("x", 2500)]}}
+
+    # ejecutar
+    dia = _store(_compare(_cart("a", "b"), flat, replacements, stores=[DIA],
+                          choices={DIA: {"b": ""}}), DIA)
+
+    # verificar
+    assert _line(dia, "b")["status"] == "falta"
+    assert dia["missing"] == 1
+    assert dia["total"] == 1000 + ENVIO[DIA]
+
+
+def test_sin_reemplazo_elegido_las_opciones_siguen_disponibles():
+    # preparar
+    flat = _flat({"a": {DIA: 1000}})
+    replacements = {DIA: {"b": [_option("x", 2500), _option("y", 1500)]}}
+
+    # ejecutar
+    dia = _store(_compare(_cart("a", "b"), flat, replacements, stores=[DIA],
+                          choices={DIA: {"b": ""}}), DIA)
+
+    # verificar
+    assert [o["unified_id"] for o in _line(dia, "b")["alternatives"]] == ["x", "y"]
+
+
 def test_producto_que_ya_esta_en_el_carrito_no_es_reemplazo():
     # preparar: el candidato más parecido para "b" es "a", que ya está
     flat = _flat({"a": {DIA: 1000}})

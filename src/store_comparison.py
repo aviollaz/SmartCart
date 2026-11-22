@@ -143,6 +143,12 @@ def _compare_store(store, cart_items, flat_prices, options_by_uid, choices, deli
         if not options:
             lines[uid] = {"unified_id": uid, "quantity": q, "status": "falta"}
             continue
+        # "" es "ninguno": queda afuera del total como un faltante, pero con
+        # sus opciones para poder volver a elegir una.
+        if choices.get(uid) == "":
+            lines[uid] = {"unified_id": uid, "quantity": q, "status": "falta",
+                          "alternatives": [_public(o) for o in options]}
+            continue
         chosen = next((o for o in options if o["unified_id"] == choices.get(uid)), options[0])
         used.add(chosen["unified_id"])
         lines[uid] = {"unified_id": uid, "quantity": q, "status": "reemplazo",
