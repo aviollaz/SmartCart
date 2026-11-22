@@ -95,7 +95,8 @@ SHELF_ATTRIBUTES = {
         _attribute("comun", (
             ("infantil", ("infantil", "nidina", "nutrilon", "nutribaby", "sancor bebe")),
             ("vegetal", ("vegetal", "almendra", "avena", "soja", "coco")),
-            ("chocolatada", ("chocolatada", "chocolate", "cindor")),
+            # Las saborizadas juntas: el sabor es libre (vainilla por chocolate).
+            ("saborizada", ("chocolatada", "chocolate", "cindor", "bebida lactea", "sabor")),
         )),
         SIN_LACTOSA,
         _attribute("fluida", (

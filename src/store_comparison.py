@@ -10,7 +10,10 @@ no el más barato: elegir el más barato también abarataría al súper que más
 reemplazos necesita. Las otras opciones viajan como alternativas.
 
 Un producto sin ningún reemplazo aceptable queda "falta": fuera del total, y
-ese súper no puede ser el más barato.
+ese súper no puede ser el más barato. Para comparar, cada faltante suma lo que
+esa línea cuesta en el súper más caro que la cubre (`comparable_total`): lo que
+falta se compra en otro lado, con otro envío y otro mínimo, así que el error
+tiene que ir contra el incompleto. Sin sumarlo, ganaba el que menos tenía.
 
 El total de cada súper lo calcula `optimize_cart` con ese súper solo: tope y
 mínimo del descuento bancario y redondeo a centavos son los mismos que en el
@@ -104,14 +107,28 @@ def compare_stores(cart_items, flat_prices, replacements, *, stores, delivery_co
                        user_cards, user_memberships, promos_by_day)
         for store in stores
     ]
+    _add_missing_cost(results)
     complete = [r for r in results if r["missing"] == 0 and r["total"] is not None]
-    # Los incompletos por cuánto les falta y no por total: por total, el que
-    # menos tiene saldría primero.
-    results.sort(key=lambda r: (r["missing"], r["total"] is None, r["total"] or 0))
+    results.sort(key=lambda r: (r["total"] is None and r["missing_cost"] == 0, r["comparable_total"]))
     return {
         "stores": results,
         "cheapest": min(complete, key=lambda r: r["total"])["store_id"] if complete else None,
     }
+
+
+def _add_missing_cost(results):
+    """Cada faltante suma lo que cuesta esa línea en el súper más caro que la cubre; nadie, 0."""
+    worst = {}
+    for r in results:
+        for line in r["lines"]:
+            if line["status"] != "falta":
+                worst[line["unified_id"]] = max(worst.get(line["unified_id"], 0), line["total_cost"])
+    for r in results:
+        r["missing_cost"] = round(sum(worst.get(line["unified_id"], 0)
+                                      for line in r["lines"] if line["status"] == "falta"), 2)
+        r["comparable_total"] = round((r["total"] or 0) + r["missing_cost"], 2)
+        if r["best_day"]:
+            r["best_day"]["comparable_total"] = round(r["best_day"]["total"] + r["missing_cost"], 2)
 
 
 def _public(option) -> dict:
