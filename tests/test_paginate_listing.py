@@ -145,9 +145,53 @@ def test_filtrar_por_tipo_deja_solo_ese_corte():
     assert {t["type"] for t in page["types"]} == {"Asado", "Vacío"}
 
 
-def test_una_gondola_sin_tipos_no_devuelve_tipos():
+def test_la_categoria_carnes_llama_tipo_de_corte_a_su_filtro():
+    ofertas = {f["id"]: [_oferta("coto_online", 100.0)] for f in CARNES}
+
+    assert _paginate_listing(CARNES, ofertas, _params())["type_label"] == "Tipo de corte"
+
+
+def _vino(uid, nombre):
+    return {**_fila(uid), "shelf": "vinos", "name": nombre}
+
+
+VINOS = [
+    _vino("t1", "Vino Tinto Malbec Trapiche 750 Ml"),
+    _vino("t2", "Vino Cabernet Sauvignon Alto Molino 750ml"),
+    _vino("b1", "Vino Blanco Chardonnay Alamos 750cc"),
+]
+
+
+def test_la_gondola_de_vinos_filtra_por_tinto_y_blanco():
     # preparar
-    filas = [_fila("p0")]
+    ofertas = {f["id"]: [_oferta("coto_online", 100.0)] for f in VINOS}
+
+    # ejecutar
+    page = _paginate_listing(VINOS, ofertas, _params(types=["Tinto"]))
+
+    # verificar
+    assert _ids(page) == ["t1", "t2"]
+    assert page["type_label"] == "Tipo"
+    assert page["types"] == [{"type": "Blanco", "count": 1}, {"type": "Tinto", "count": 2}]
+
+
+def test_un_resultado_que_mezcla_gondolas_no_ofrece_tipos():
+    # preparar: una búsqueda que trajo vinos y carnes
+    filas = VINOS + CARNES
+    ofertas = {f["id"]: [_oferta("coto_online", 100.0)] for f in filas}
+
+    # ejecutar
+    page = _paginate_listing(filas, ofertas, _params())
+
+    # verificar
+    assert page["types"] == []
+    assert page["type_label"] is None
+
+
+def test_una_gondola_sin_tipos_no_devuelve_tipos():
+    # preparar: huevos no tiene tabla de tipos (te-e-infusiones, la góndola
+    # por defecto de _fila, ahora sí tiene)
+    filas = [{**_fila("p0"), "shelf": "huevos"}]
     ofertas = {"p0": [_oferta("coto_online", 100.0)]}
 
     # ejecutar / verificar

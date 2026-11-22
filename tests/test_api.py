@@ -184,3 +184,35 @@ def test_deals_por_seccion():
 
         # Conjunto cerrado: una sección inventada no es "hoy no hay descuentos".
         assert client.get("/deals", params={"section": "Ferretería"}).status_code == 404
+
+
+@pytest.mark.catalogo
+def test_buscar_vino_tinto_devuelve_la_gondola_entera_filtrada_por_tinto():
+    with TestClient(app) as client:
+        # ejecutar
+        page = client.get("/search", params={"q": "vino tinto"}).json()
+
+        # verificar: la góndola entera (no el pool de 100) y el filtro aplicado
+        assert page["shelf"]["slug"] == "vinos"
+        assert page["applied_types"] == ["Tinto"]
+        assert page["type_label"] == "Tipo"
+        assert page["total"] > 100
+
+
+@pytest.mark.catalogo
+def test_buscar_en_todas_las_gondolas_ignora_la_deteccion():
+    with TestClient(app) as client:
+        page = client.get("/search", params={"q": "vino tinto", "scope": "all"}).json()
+
+        assert page["shelf"] is None
+        assert page["applied_types"] == []
+
+
+@pytest.mark.catalogo
+def test_destildar_el_tipo_detectado_muestra_todos_los_vinos():
+    with TestClient(app) as client:
+        page = client.get("/search", params={"q": "vino tinto", "auto_types": "false"}).json()
+
+        assert page["shelf"]["slug"] == "vinos"
+        assert page["applied_types"] == []
+        assert {t["type"] for t in page["types"]} >= {"Tinto", "Blanco", "Rosado"}

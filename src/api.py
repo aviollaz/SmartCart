@@ -30,8 +30,10 @@ from src.vea_logistics import check_coverage as check_vea_coverage, resolve_vea_
 from src.changomas_logistics import check_coverage as check_changomas_coverage, resolve_changomas_logistics
 from src.jumbo_logistics import check_coverage as check_jumbo_coverage, resolve_jumbo_logistics
 from src.schema import ensure_schema
-from src.meat_cuts import OTROS, product_type
-from src.shelves import SECTIONS, SHELVES, sections as shelf_sections, shelf_label
+from src.meat_cuts import OTROS
+from src.search_intent import read_intent
+from src.shelf_types import product_type, type_label
+from src.shelves import SECTIONS, SECTIONS_WITHOUT_DIETARY_FILTERS, SHELVES, sections as shelf_sections, shelf_label
 from src.stores import STORES
 from src.store_comparison import SPLIT_MIN_SAVING, SPLIT_MIN_SAVING_PCT, compare_stores, find_replacements
 from src.strategic_swaps import find_strategic_swaps
@@ -171,6 +173,11 @@ class TypeCount(BaseModel):
     type: str = Field(..., example="Asado")
     count: int = Field(..., example=11)
 
+class ShelfResponse(BaseModel):
+    slug: str = Field(..., example="yerba-mate")
+    dietary_filters: bool = Field(True, description="Si la grilla ofrece los filtros sin TACC / vegano")
+    label: str = Field(..., example="Yerba y mate")
+
 class ProductPage(BaseModel):
     # Una página de /search o /category. Las facetas (`brands`, `price_bounds`)
     # describen el universo ENTERO de la consulta, no la página: el cliente sólo
@@ -181,14 +188,16 @@ class ProductPage(BaseModel):
     page: int
     page_size: int
     brands: List[BrandCount] = []
-    # El tipo de corte en la góndola de carnes (src/meat_cuts.py); vacío en el resto.
+    # El tipo de la góndola (src/shelf_types.py) y cómo se llama su filtro
+    # ("Tipo de corte" en carnes). Vacío si la góndola no tiene tabla o si el
+    # resultado mezcla góndolas.
     types: List[TypeCount] = []
+    type_label: Optional[str] = None
     price_bounds: List[float] = Field([0.0, 0.0], description="[mínimo, máximo] del precio que muestra la card")
-
-class ShelfResponse(BaseModel):
-    slug: str = Field(..., example="yerba-mate")
-    dietary_filters: bool = Field(True, description="Si la grilla ofrece los filtros sin TACC / vegano")
-    label: str = Field(..., example="Yerba y mate")
+    # Sólo /search: la góndola que nombró la búsqueda (src/search_intent.py) y
+    # los tipos aplicados, para que la grilla los muestre tildados.
+    shelf: Optional[ShelfResponse] = None
+    applied_types: List[str] = []
 
 class SectionResponse(BaseModel):
     section: str = Field(..., example="Desayuno y merienda")
@@ -782,6 +791,13 @@ def _paginate_listing(rows: list, offers_by_product: dict, params: dict) -> dict
         universe.append(_build_product_response(row, offers, distance=float(row["distance"])))
         types_by_id[row["id"]] = product_type(row.get("shelf"), row["name"])
 
+    # El tipo es de UNA góndola: en un resultado que mezcla góndolas, un filtro
+    # "Tipo de corte" con Tinto y Dulces adentro no significaría nada.
+    shelves = {p["shelf"] for p in universe}
+    shelf_of_types = next(iter(shelves)) if len(shelves) == 1 else None
+    if shelf_of_types is None:
+        types_by_id = dict.fromkeys(types_by_id)
+
     brand_counts: Dict[str, int] = {}
     type_counts: Dict[str, int] = {}
     for product in universe:
@@ -840,6 +856,7 @@ def _paginate_listing(rows: list, offers_by_product: dict, params: dict) -> dict
             {"type": kind, "count": count}
             for kind, count in sorted(type_counts.items(), key=lambda kv: (kv[0] == OTROS, kv[0]))
         ],
+        "type_label": type_label(shelf_of_types) if type_counts else None,
         "price_bounds": [min(prices), max(prices)] if prices else [0.0, 0.0],
     }
 
@@ -851,6 +868,10 @@ def search_products(
     vegan: bool = Query(False, description="Devolver solo productos con declaración explícita 'vegano'"),
     memberships: List[str] = Query([], description="Membresías declaradas (ej. mi_carrefour): desbloquean su precio"),
     listing: dict = Depends(_listing_params),
+    scope: str = Query("auto", pattern="^(auto|all)$",
+                       description="auto: si la búsqueda nombra una góndola, buscar ahí; all: en todas"),
+    auto_types: bool = Query(True, description="Aplicar los tipos que nombró la búsqueda ('tinto') "
+                                               "mientras el usuario no elija otros"),
 ):
     """
     Realiza una búsqueda semántica en tiempo real sobre el catálogo de productos unificados.
@@ -858,18 +879,24 @@ def search_products(
     El universo que se pagina es el pool de SEARCH_POOL_SIZE vecinos ya
     reordenado: más allá de ese puesto la búsqueda semántica es ruido, y es
     además lo único que el índice HNSW devuelve (ver `hnsw.ef_search`).
+
+    Si la búsqueda nombra una góndola (src/search_intent.py) cambia el universo:
+    "vino tinto" (sólo palabras de la góndola y sus tipos) es la góndola ENTERA
+    con el filtro Tinto, como /category; "vino reserva" es la búsqueda semántica
+    acotada a vinos. Los tipos detectados se aplican mientras `auto_types`: el
+    frontend lo apaga cuando el usuario toca el filtro, así destildar "Tinto"
+    muestra todos los vinos en vez de volver a aplicarlo.
     """
     if "model" not in ml_models:
         raise HTTPException(status_code=503, detail="El modelo de NLP no está inicializado.")
 
     logger.info(f"Procesando búsqueda semántica: '{q}' (pagina={listing['page']})")
-    
+
+    intent = read_intent(q) if scope == "auto" else None
+    if intent and auto_types and not listing["types"]:
+        listing = {**listing, "types": intent.types}
+
     try:
-        # 1. Generar embedding de la query
-        query_embedding = ml_models["model"].encode(q)
-        # Convertir a string de pgvector
-        vector_str = f"[{','.join(map(str, query_embedding))}]"
-        
         db = SmartCartDB()
 
         # Los filtros dietarios se resuelven en SQL y no en el cliente: el frontend
@@ -883,12 +910,21 @@ def search_products(
         # medir_busqueda.py mida exactamente lo mismo que recibe el usuario.
         with pooled_connection(db.conn_string) as conn:
             with conn.cursor() as cur:
-                nearest_products = search_rows(
-                    cur, vector_str, q, SEARCH_POOL_SIZE,
-                    dietary_clause=dietary_clause, mode=DEFAULT_SEARCH_MODE,
-                    hidden_stores=listing["hidden_stores"],
-                )
-                
+                if intent and intent.mode == "listing":
+                    nearest_products = _shelf_rows(
+                        cur, intent.shelf, listing["hidden_stores"],
+                        _dietary_filter_clause(gluten_free, vegan, alias="u"),
+                    )
+                else:
+                    query_embedding = ml_models["model"].encode(q)
+                    vector_str = f"[{','.join(map(str, query_embedding))}]"
+                    nearest_products = search_rows(
+                        cur, vector_str, q, SEARCH_POOL_SIZE,
+                        dietary_clause=dietary_clause, mode=DEFAULT_SEARCH_MODE,
+                        hidden_stores=listing["hidden_stores"],
+                        shelf=intent.shelf if intent else None,
+                    )
+
                 if not nearest_products:
                     logger.info("No se encontraron productos indexados con embeddings.")
 
@@ -907,7 +943,15 @@ def search_products(
         # La distancia se pasa CRUDA, no el score de ordenamiento: es la
         # relevancia semántica, y mezclarle el bonus por disponibilidad volvería
         # el campo inservible para cualquier lectura futura.
-        return _paginate_listing(nearest_products, offers_by_product, listing)
+        page = _paginate_listing(nearest_products, offers_by_product, listing)
+        if intent:
+            page["shelf"] = {
+                "slug": intent.shelf,
+                "label": shelf_label(intent.shelf),
+                "dietary_filters": SHELVES[intent.shelf].section not in SECTIONS_WITHOUT_DIETARY_FILTERS,
+            }
+        page["applied_types"] = listing["types"]
+        return page
 
     except Exception as e:
         logger.error(f"Error interno durante la búsqueda semántica: {e}")
@@ -1907,6 +1951,34 @@ def get_deals(
         raise HTTPException(status_code=500, detail=str(e))
 
 
+def _shelf_rows(cur, shelf_slug: str, hidden_stores: list, dietary_clause: str) -> list:
+    """
+    Todas las filas de una góndola, para /category y para la búsqueda que
+    nombra una góndola ("vino tinto"). `dietary_clause` va con alias "u".
+
+    No hay noción de relevancia (`distance` es 0.0 fija), así que ordenar por
+    disponibilidad no resigna nada: a diferencia de /search, acá no hay nada
+    que el bonus pueda desplazar. El `name` desempata para que el orden —y con
+    él las páginas— sea estable entre dos llamadas iguales.
+    """
+    cur.execute(f"""
+        SELECT u.id, u.ean, u.name, u.brand, u.shelf,
+               u.unit_type, u.total_volume_weight, u.is_gluten_free,
+               u.is_vegan, 0.0 AS distance,
+               count(DISTINCT sp.store_id) AS store_count
+        FROM unified_products u
+        LEFT JOIN store_products sp
+               ON sp.unified_product_id = u.id AND sp.in_stock
+              AND NOT (sp.store_id = ANY(%s))
+        WHERE u.shelf = %s
+        {dietary_clause}
+        GROUP BY u.id, u.ean, u.name, u.brand, u.shelf,
+                 u.unit_type, u.total_volume_weight, u.is_gluten_free, u.is_vegan
+        ORDER BY store_count DESC, u.name ASC, u.id
+    """, (hidden_stores, shelf_slug))
+    return cur.fetchall()
+
+
 @app.get("/category/{shelf_slug}", response_model=ProductPage)
 def get_products_by_shelf(
     shelf_slug: str,
@@ -1938,27 +2010,7 @@ def get_products_by_shelf(
         dietary_clause = _dietary_filter_clause(gluten_free, vegan, alias="u")
         with pooled_connection(db.conn_string) as conn:
             with conn.cursor() as cur:
-                # Este endpoint no tiene noción de relevancia (su `distance` es
-                # 0.0 fija), así que ordenar por disponibilidad no resigna nada:
-                # a diferencia de /search, acá no hay nada que el bonus pueda
-                # desplazar. El `name` desempata para que el orden —y con él las
-                # páginas— sea estable entre dos llamadas iguales.
-                cur.execute(f"""
-                    SELECT u.id, u.ean, u.name, u.brand, u.shelf,
-                           u.unit_type, u.total_volume_weight, u.is_gluten_free,
-                           u.is_vegan, 0.0 AS distance,
-                           count(DISTINCT sp.store_id) AS store_count
-                    FROM unified_products u
-                    LEFT JOIN store_products sp
-                           ON sp.unified_product_id = u.id AND sp.in_stock
-                          AND NOT (sp.store_id = ANY(%s))
-                    WHERE u.shelf = %s
-                    {dietary_clause}
-                    GROUP BY u.id, u.ean, u.name, u.brand, u.shelf,
-                             u.unit_type, u.total_volume_weight, u.is_gluten_free, u.is_vegan
-                    ORDER BY store_count DESC, u.name ASC, u.id
-                """, (listing["hidden_stores"], shelf_slug))
-                nearest_products = cur.fetchall()
+                nearest_products = _shelf_rows(cur, shelf_slug, listing["hidden_stores"], dietary_clause)
 
                 product_ids = [p["id"] for p in nearest_products]
                 offers_by_product = _fetch_offers_by_product(cur, product_ids, memberships)

@@ -217,7 +217,7 @@ _HYBRID_SQL = """
 
 def search_rows(cur, vector_literal: str, q: str, limit: int,
                 dietary_clause: str = "", mode: str = DEFAULT_SEARCH_MODE,
-                hidden_stores: Sequence[str] = ()) -> list:
+                hidden_stores: Sequence[str] = (), shelf: str | None = None) -> list:
     """
     Corre la búsqueda y devuelve las filas ya ordenadas y cortadas a `limit`.
 
@@ -230,6 +230,9 @@ def search_rows(cur, vector_literal: str, q: str, limit: int,
     bonus por disponibilidad. No sacan productos: eso lo decide el llamador con
     las ofertas (`_paginate_listing`), igual que antes.
 
+    `shelf` acota la búsqueda a una góndola (la que nombró la búsqueda, ver
+    src/search_intent.py), en las dos mitades, como los filtros dietarios.
+
     Sube `hnsw.ef_search` en la conexión antes de consultar: sin eso el pool
     queda topeado en 40 filas (default de pgvector) sin ningún error a la vista.
     `set_config()` y no `SET`: SET no acepta parámetros ligados.
@@ -240,7 +243,7 @@ def search_rows(cur, vector_literal: str, q: str, limit: int,
     cur.execute("SELECT set_config('hnsw.ef_search', %s, false)", (str(SEARCH_EF_SEARCH),))
 
     params = {"vec": vector_literal, "pool": SEARCH_POOL_SIZE, "bonus": STORE_BONUS,
-              "cap": STORE_BONUS_CAP, "limit": limit, "hidden": list(hidden_stores)}
+              "cap": STORE_BONUS_CAP, "limit": limit, "hidden": list(hidden_stores), "shelf": shelf}
     tsquery = build_lexical_query(q) if mode == "hibrido" else None
 
     if tsquery is None:
@@ -249,5 +252,7 @@ def search_rows(cur, vector_literal: str, q: str, limit: int,
         sql = _HYBRID_SQL
         params.update(tsq=tsquery, k=RRF_K)
 
+    if shelf is not None:
+        dietary_clause += " AND shelf = %(shelf)s"
     cur.execute(sql.format(dietary=dietary_clause, columns=_ROW_COLUMNS), params)
     return cur.fetchall()
