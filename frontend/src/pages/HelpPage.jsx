@@ -17,23 +17,27 @@ const FAQ = [
     preguntas: [
       {
         q: "¿Qué hace SmartCart?",
-        a: `Compara los precios de ${STORE_NAMES_LIST} y reparte tu compra entre ellos para que pagues lo menos posible. Vos armás el carrito una sola vez; SmartCart te dice qué conviene comprar en cada súper.`,
+        a: `Te dice cuánto sale tu carrito entero en cada súper: ${STORE_NAMES_LIST}. Vos lo armás una sola vez y SmartCart lo cotiza en todos, con envío, promos y tus descuentos bancarios. Si dividir la compra entre dos súper te ahorra bastante, también te lo ofrece.`,
       },
       {
-        q: "¿Cómo decide dónde comprar cada cosa?",
-        a: "Para cada producto calcula el precio real en cada súper con la cantidad que llevás, aplicando las promos (2x1, segunda unidad al 50%, etc.) y las de las membresías que declaraste. Después suma lo que cambia al repartir: el envío de cada súper, su mínimo de compra y los descuentos bancarios de tus tarjetas, que tienen tope. Con todo eso busca la combinación más barata posible, no una aproximación. Una sola excepción: si un producto cuesta casi lo mismo en Coto que en otro súper, lo pone en el otro, porque en Coto hay que agregar cada producto a mano.",
+        q: "¿Cómo calcula el precio en cada súper?",
+        a: "Para cada producto toma el precio real con la cantidad que llevás, aplicando las promos (2x1, segunda unidad al 50%, etc.) y las de las membresías que declaraste. Después suma el envío a tu dirección y descuenta el mejor descuento bancario de tus tarjetas en ese súper, con su tope.",
       },
       {
-        q: "¿Por qué a veces me recomienda comprar todo en un solo súper?",
-        a: "Porque cada súper suma su propio envío y tiene un mínimo de compra. Si lo que ahorrás repartiendo no alcanza a cubrir un segundo envío, o no llegás al mínimo de otra cadena, lo más barato es comprar todo junto.",
+        q: "¿Qué pasa si un súper no tiene un producto?",
+        a: "Lo reemplazamos por el más parecido que sí tiene: mismo tipo de producto y tamaño equivalente. Abriendo la fila del súper podés elegir otro reemplazo o ninguno. Lo que queda sin reemplazo se cuenta al precio del súper más caro que lo tiene, porque lo vas a tener que comprar en otro lado: así un súper no parece más barato sólo por tener menos cosas.",
       },
       {
-        q: "¿Qué es el precio tachado del resultado?",
-        a: "Es lo que pagarías comprando cada producto al precio promedio de los otros súper que lo tienen, sin tus descuentos bancarios, con los mismos envíos. El porcentaje es cuánto menos pagás con el reparto de SmartCart. En «Ver de dónde sale» está el ahorro en pesos y el detalle, producto por producto.",
+        q: "¿Qué es «Otro día»?",
+        a: "Los descuentos bancarios cambian según el día de la semana. «Otro día» es lo que te saldría el mismo carrito en ese súper el día más barato de la próxima semana, pagando con tu tarjeta. Si ningún día es más barato que hoy, dice «sin promo».",
+      },
+      {
+        q: "¿Cuándo me conviene dividir la compra?",
+        a: "Debajo de la comparación aparece un aviso sólo cuando repartir el carrito entre varios súper ahorra bastante frente al más barato que tiene todo. Cada súper extra es otro envío, otro mínimo de compra y otro pago, así que una diferencia chica no vale la pena. Con «Ver cómo dividir» ves qué comprar en cada uno, y ahí podés limitar a cuántos súper querés ir.",
       },
       {
         q: "¿Por qué el total no coincide con el subtotal estimado?",
-        a: "El subtotal estimado es la suma de los precios que ves, por unidad y sin envíos. Al optimizar, el total suma los envíos, puede mover algún producto para llegar al mínimo de compra de un súper, y aplica las promos por cantidad y tus descuentos bancarios. Por eso puede salir más alto o más bajo que el estimado.",
+        a: "El subtotal estimado es la suma de los precios que ves, por unidad y sin envíos. Al comparar, cada total suma el envío y aplica las promos por cantidad y tus descuentos bancarios. Por eso puede salir más alto o más bajo que el estimado.",
       },
       {
         q: "¿Qué supermercados y zonas cubre?",
@@ -46,7 +50,7 @@ const FAQ = [
     preguntas: [
       {
         q: "¿Cómo agrego productos?",
-        a: "Buscándolos en la barra de arriba, tocando una sección (Almacén, Bebidas…) de la fila de abajo del buscador, o repitiendo una compra anterior. En la página principal hay un video que muestra el recorrido.",
+        a: "Buscándolos en la barra de arriba, tocando una sección (Almacén, Bebidas…) de la fila de abajo del buscador, o repitiendo una compra anterior.",
       },
       {
         q: "¿Cómo compro frutas, verduras y carne?",
@@ -54,7 +58,7 @@ const FAQ = [
       },
       {
         q: "¿Por qué no aparecen productos de un súper?",
-        a: "Puede ser que ese súper no entregue en tu dirección (la cambiás desde «Envío a…», arriba de todo), que lo hayas desmarcado en «Supermercados», en el carrito, o simplemente que no venda ese producto.",
+        a: "Puede ser que ese súper no entregue en tu dirección (la cambiás desde «Envío a…», arriba de todo), que lo hayas desmarcado en el botón de supermercados de arriba o en «Supermercados», en el carrito, o simplemente que no venda ese producto.",
       },
     ],
   },
@@ -63,19 +67,15 @@ const FAQ = [
     preguntas: [
       {
         q: "¿Compro en SmartCart?",
-        a: "No. SmartCart no vende nada ni cobra. Al optimizar, el botón «Comprar en…» te lleva al sitio de cada súper: en Día, Carrefour, Vea, ChangoMás y Jumbo con el carrito ya cargado, y en Coto con una lista de los productos para agregarlos. Pagás ahí, como siempre, y SmartCart nunca ve tus datos de pago.",
+        a: "No. SmartCart no vende nada ni cobra. Abriendo la fila de un súper, el botón «Comprar en…» te lleva a su sitio: en Día, Carrefour, Vea, ChangoMás y Jumbo con el carrito ya cargado, y en Coto con una lista de los productos para agregarlos. Pagás ahí, como siempre, y SmartCart nunca ve tus datos de pago.",
       },
       {
         q: "¿Cómo uso mis descuentos bancarios?",
-        a: "Marcá tus tarjetas y billeteras en «Medios de pago», en el carrito. SmartCart las tiene en cuenta para elegir el reparto; después tenés que pagar con esa tarjeta en el sitio del súper para que el descuento se aplique.",
+        a: "Marcá tus tarjetas y billeteras en «Medios de pago», en el carrito. SmartCart las tiene en cuenta en el precio de cada súper; después tenés que pagar con esa tarjeta en el sitio del súper para que el descuento se aplique.",
       },
       {
-        q: "¿Conviene esperar a otro día para comprar?",
-        a: "A veces: los descuentos bancarios cambian según el día de la semana. En «Compro», en el carrito, elegí hasta cuándo podés esperar y SmartCart te dice qué día conviene comprar en cada súper.",
-      },
-      {
-        q: "¿Puedo comprar en menos supermercados?",
-        a: "Sí. En «Supermercados», en el carrito, podés desmarcar los que no quieras o elegir comprar en como máximo una cantidad. Después de optimizar también te mostramos cuánto más pagarías sacando un súper del reparto, para que decidas si te ahorra un envío que no vale la pena.",
+        q: "¿Puedo dejar afuera un supermercado?",
+        a: "Sí. Desmarcalo en el botón de supermercados, arriba de todo, o en «Supermercados», en el carrito: deja de aparecer en los precios y en la comparación.",
       },
       {
         q: "¿Y las membresías (Comunidad Coto, Mi Carrefour…)?",
