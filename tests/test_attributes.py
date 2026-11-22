@@ -339,3 +339,27 @@ def test_vegano_solo_se_reemplaza_por_vegano():
 
     # verificar
     assert candidatos == {}
+
+
+def test_bebida_lactea_vainilla_se_reemplaza_por_la_de_chocolate():
+    # preparar: el sabor es libre
+    original = "Bebida Láctea Sabor Vainilla 200 Ml La Serenisima"
+    candidato = "Bebida Láctea Sabor Chocolate Intenso 200 Ml La Serenisima"
+
+    # ejecutar
+    compatibles = attributes_match("leches", original, candidato)
+
+    # verificar
+    assert compatibles is True
+
+
+def test_bebida_lactea_saborizada_no_se_reemplaza_por_leche_comun():
+    # preparar
+    original = "Bebida Láctea Sabor Vainilla 200 Ml La Serenisima"
+    candidato = "Leche entera La Serenísima uat fortificada 3% tetra 200 cc."
+
+    # ejecutar
+    compatibles = attributes_match("leches", original, candidato)
+
+    # verificar
+    assert compatibles is False

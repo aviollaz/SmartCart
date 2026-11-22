@@ -2,6 +2,7 @@ import { ArrowRight, ChevronDown, ExternalLink } from "lucide-react";
 import { useLocalStorage } from "../../hooks/useLocalStorage";
 import { formatPrice, formatPriceWhole, storeName } from "../../utils/formatters";
 import { COMPARE_SORTS, COMPARE_SORT_LABELS, sortStores } from "../../utils/storeComparisonSort";
+import { FeedbackBanner } from "../common/FeedbackBanner";
 import { ProductChecklist } from "./StoreBreakdownCard";
 
 function formatDay(isoDate) {
@@ -62,13 +63,9 @@ export function StoreComparison({ result, cartItems, onChooseReplacement, onShow
           />
         ))}
       </ul>
-      {sortBy !== COMPARE_SORTS.FIDELITY && stores.some((store) => store.missing > 0) && (
-        <p className="text-xs text-ink-muted">
-          Los súper a los que les falta algo van al final: su precio no incluye lo que no tienen.
-        </p>
-      )}
 
       <SplitOfferBanner offer={result.split_offer} onShow={onShowSplit} loading={splitLoading} />
+      <FeedbackBanner />
     </div>
   );
 }
@@ -114,11 +111,12 @@ function StoreCompareRow({ store, names, onChooseReplacement }) {
             {storeName(store.store_id)}
           </p>
           <div className="grid min-w-0 grid-cols-3 gap-3 sm:flex-1">
-            <SummaryCell label="Hoy" value={store.total != null ? formatPriceWhole(store.total) : "—"} />
+            {/* Lo que le falta ya suma su precio en otro súper: ver PriceBreakdown. */}
+            <SummaryCell label="Hoy" value={store.total != null ? formatPriceWhole(store.comparable_total) : "—"} />
             {/* Entre días sólo cambian los descuentos bancarios. */}
             <SummaryCell
               label="Otro día"
-              value={store.best_day ? formatPriceWhole(store.best_day.total) : "—"}
+              value={store.best_day ? formatPriceWhole(store.best_day.comparable_total) : "—"}
               valueClass={store.best_day ? "text-state-success" : "text-ink-muted"}
               note={store.best_day ? `el ${formatDay(store.best_day.date)}` : "sin promo"}
             />
@@ -138,9 +136,6 @@ function StoreCompareRow({ store, names, onChooseReplacement }) {
           {toSwap.length > 0 && (
             <section>
               <p className="font-semibold text-ink">Productos a cambiar ({toSwap.length})</p>
-              <p className="text-xs text-ink-muted">
-                {storeName(store.store_id)} no los vende: elegimos el más parecido. Podés cambiarlo.
-              </p>
               <ul className="mt-2 space-y-2">
                 {toSwap.map((line) => (
                   <SwapLine
@@ -156,8 +151,7 @@ function StoreCompareRow({ store, names, onChooseReplacement }) {
 
           {noSwap.length > 0 && (
             <section>
-              <p className="font-semibold text-state-warning">Sin reemplazo posible ({noSwap.length})</p>
-              <p className="text-xs text-ink-muted">No tiene nada comparable: no están en el precio.</p>
+              <p className="font-semibold text-state-warning">Sin reemplazo ({noSwap.length})</p>
               <ul className="mt-2 space-y-1">
                 {noSwap.map((line) => (
                   <li key={line.unified_id} className="truncate text-ink" title={name(line.unified_id)}>
@@ -195,8 +189,6 @@ function StoreCompareRow({ store, names, onChooseReplacement }) {
               <ProductChecklist storeId={store.store_id} items={productLinks} productName={(item) => name(item.unified_id)} />
             )
           )}
-
-          <p className="text-xs text-ink-muted">El súper confirma el stock final para tu dirección al cerrar la compra.</p>
         </div>
       </details>
     </li>
@@ -226,9 +218,21 @@ function PriceBreakdown({ store }) {
         </div>
       )}
       <div className="flex justify-between border-t border-line pt-1 font-semibold">
-        <dt>Total hoy</dt>
+        <dt>Total en {storeName(store.store_id)}</dt>
         <dd>{formatPrice(store.total)}</dd>
       </div>
+      {store.missing_cost > 0 && (
+        <>
+          <div className="flex justify-between text-state-warning">
+            <dt>Lo que no tiene, en otro súper</dt>
+            <dd>+{formatPrice(store.missing_cost)}</dd>
+          </div>
+          <div className="flex justify-between font-semibold">
+            <dt>Para comparar</dt>
+            <dd>{formatPrice(store.comparable_total)}</dd>
+          </div>
+        </>
+      )}
       {store.best_day && (
         <p className="text-xs text-state-success">
           Comprando el {formatDay(store.best_day.date)} con tu tarjeta: {formatPrice(store.best_day.total)}

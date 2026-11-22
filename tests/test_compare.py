@@ -109,16 +109,66 @@ def test_super_con_faltantes_no_es_el_mas_barato():
     assert result["cheapest"] == COTO
 
 
-def test_supers_incompletos_van_despues_y_primero_al_que_le_falta_menos():
-    # preparar: Coto tiene todo; a Día le falta uno; a Vea dos, pero es el más barato
+def test_supers_se_ordenan_por_precio_para_comparar():
+    # preparar: a Vea le faltan "b" y "c", que suman lo que valen en Coto
     VEA = "vea_online"
-    flat = _flat({"a": {COTO: 9000, DIA: 5000, VEA: 1000}, "b": {COTO: 9000, DIA: 5000}, "c": {COTO: 9000}})
+    flat = _flat({"a": {COTO: 9000, DIA: 3000, VEA: 1000}, "b": {COTO: 9000, DIA: 3000}, "c": {COTO: 9000}})
 
     # ejecutar
     result = _compare(_cart("a", "b", "c"), flat, stores=[VEA, DIA, COTO])
 
+    # verificar: Día 6.000 + 9.000; Vea 1.000 + 9.000 + 9.000; Coto 27.000 (más envío)
+    assert [s["store_id"] for s in result["stores"]] == [DIA, VEA, COTO]
+
+
+def test_faltante_suma_el_precio_mas_caro_de_los_otros_supers():
+    # preparar
+    VEA = "vea_online"
+    flat = _flat({"a": {COTO: 1000, DIA: 1000, VEA: 1000}, "b": {DIA: 2000, VEA: 3000}})
+
+    # ejecutar
+    coto = _store(_compare(_cart("a", "b"), flat, stores=[COTO, DIA, VEA]), COTO)
+
     # verificar
-    assert [s["store_id"] for s in result["stores"]] == [COTO, DIA, VEA]
+    assert coto["missing_cost"] == 3000
+    assert coto["comparable_total"] == coto["total"] + 3000
+
+
+def test_faltante_se_cotiza_con_el_reemplazo_de_otro_super():
+    # preparar: nadie vende "b", pero Día tiene un reemplazo
+    flat = _flat({"a": {COTO: 1000, DIA: 1000}})
+    replacements = {DIA: {"b": [_option("x", 2500)]}}
+
+    # ejecutar
+    coto = _store(_compare(_cart("a", "b"), flat, replacements, stores=[COTO, DIA]), COTO)
+
+    # verificar
+    assert coto["missing_cost"] == 2500
+
+
+def test_faltante_que_ningun_otro_super_cubre_no_suma():
+    # preparar
+    flat = _flat({"a": {COTO: 1000, DIA: 1000}})
+
+    # ejecutar
+    coto = _store(_compare(_cart("a", "b"), flat, stores=[COTO, DIA]), COTO)
+
+    # verificar
+    assert coto["missing_cost"] == 0
+    assert coto["comparable_total"] == coto["total"]
+
+
+def test_elegir_ninguno_suma_como_un_faltante():
+    # preparar
+    flat = _flat({"a": {COTO: 1000, DIA: 1000}, "b": {COTO: 4000}})
+    replacements = {DIA: {"b": [_option("x", 2500)]}}
+
+    # ejecutar
+    dia = _store(_compare(_cart("a", "b"), flat, replacements, stores=[COTO, DIA],
+                          choices={DIA: {"b": ""}}), DIA)
+
+    # verificar
+    assert dia["missing_cost"] == 4000
 
 
 def test_reemplazo_elegido_por_el_usuario_pisa_el_por_defecto():
@@ -226,8 +276,22 @@ def test_mejor_dia_aparece_solo_si_es_mas_barato_que_hoy():
     sin_tarjeta = _store(_compare(_cart("a"), flat, promos=promos), COTO)
 
     # verificar
-    assert con_tarjeta["best_day"] == {"date": "2026-11-26", "total": 20000 + ENVIO[COTO] - 2000}
+    total = 20000 + ENVIO[COTO] - 2000
+    assert con_tarjeta["best_day"] == {"date": "2026-11-26", "total": total, "comparable_total": total}
     assert sin_tarjeta["best_day"] is None
+
+
+def test_el_mejor_dia_tambien_suma_los_faltantes():
+    # preparar: Galicia rige el jueves 26; a Coto le falta "b", que Día vende a $3.000
+    galicia = {"card": "galicia", "discount_pct": 10, "cap": 5000, "description": "10% Galicia"}
+    promos = [(d, {COTO: [galicia]} if d == "2026-11-26" else {}) for d, _ in SIN_PROMOS]
+    flat = _flat({"a": {COTO: 20000, DIA: 20000}, "b": {DIA: 3000}})
+
+    # ejecutar
+    coto = _store(_compare(_cart("a", "b"), flat, stores=[COTO, DIA], promos=promos, cards=["galicia"]), COTO)
+
+    # verificar
+    assert coto["best_day"]["comparable_total"] == coto["best_day"]["total"] + 3000
 
 
 # --------------------------------------------------------------------------
