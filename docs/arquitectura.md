@@ -8,17 +8,23 @@ Cómo funciona SmartCart hoy, etapa por etapa. Dónde corre está en
 
 El mismo producto cuesta distinto en Coto, Día, Carrefour, Vea, ChangoMás y Jumbo (la yerba puede
 diferir 20-30%), y ninguna cadena gana en todo. SmartCart toma un carrito armado
-en lenguaje natural y calcula cómo repartirlo entre las seis para gastar lo
-mínimo, con las restricciones reales como duras: el mínimo de compra de cada
-tienda, la cobertura de envío, y sólo los descuentos que el usuario declaró
-(tarjetas, membresías).
+en lenguaje natural y dice cuánto sale entero en cada cadena que llega a la
+dirección del usuario, con envío, promos y sólo los descuentos que declaró
+(tarjetas, membresías). Lo que una cadena no vende se reemplaza por lo más
+parecido que sí tiene, para que todas coticen el mismo carrito.
+
+Si repartir el carrito entre varias ahorra bastante frente a la más barata, lo
+ofrece aparte: el reparto óptimo, con el mínimo de compra de cada tienda como
+restricción dura. Es opcional porque cada tienda extra es otro envío, otro
+checkout y otro carrito que vaciar. (El producto anterior, donde el reparto era
+el flujo principal, quedó en la rama `optimizador-dividido`.)
 
 Son dos problemas separados:
 
 1. **Ingesta**, offline y nocturna: un catálogo unificado y al día de las
    seis cadenas.
-2. **Optimización**, online, al apretar el botón: la combinación más barata
-   para un carrito puntual.
+2. **Cotización**, online, al apretar el botón: el carrito en cada tienda y,
+   si conviene, el reparto más barato.
 
 ## 2. Vista de alto nivel
 
@@ -39,9 +45,11 @@ flowchart LR
 
     subgraph Backend["FastAPI (Cloud Run)"]
         API["src/api.py"]
+        CMP["store_comparison.py"]
         FLAT["flattener.py"]
         OPT["optimizer.py\nCP-SAT"]
-        API --> FLAT --> OPT
+        API --> CMP --> FLAT --> OPT
+        API --> FLAT
     end
 
     DB <--> API
@@ -97,7 +105,7 @@ nunca HTML.
 $5.289 en CABA y $4.399 en Córdoba. El catálogo, sin `regionId`, trae el precio
 de CABA.
 
-**Jumbo** es Cencosud como Vea: el mismo árbol de categorías (las 104 claves
+**Jumbo** es Cencosud como Vea: el mismo árbol de categorías (todas las claves
 de Vea existen en Jumbo), el mismo `ListPrice` que no es un precio y la misma
 entidad de promos bancarias. Vende por el canal 32.
 
@@ -114,7 +122,8 @@ misma góndola. El slug decide, con una igualdad SQL:
 
 - qué categorías barre cada tienda (`keys_for_store`),
 - de qué góndola es un producto (`unified_products.shelf`),
-- qué puede sustituir a qué (`substitutions.py`, `strategic_swaps.py`),
+- qué puede sustituir a qué (`substitutions.py`, `store_comparison.py`,
+  `strategic_swaps.py`),
 - qué dibuja el mega-menú (`GET /categories`).
 
 Vea y Jumbo no cubren tres góndolas de protección femenina: su taxonomía mezcla
@@ -181,7 +190,7 @@ producto sin embedding no aparece en `GET /search`.
 
 ### 3.4 Logística (`src/coto_logistics.py`, `src/vtex_logistics.py`)
 
-Antes de optimizar, se le pregunta a cada tienda si llega a la dirección y
+Antes de cotizar, se le pregunta a cada tienda si llega a la dirección y
 cuánto cobra el envío, por endpoints públicos sin login: `getCobertura` en
 Coto, el checkout de VTEX (`regions` + `orderForms/simulation`) en las demás.
 
@@ -189,8 +198,9 @@ Coto, el checkout de VTEX (`regions` + `orderForms/simulation`) en las demás.
   que suele ser Vea (2-6 s). Las respuestas válidas se cachean 30 minutos.
 - **Coto** no expone el costo real sin sesión, y desde nov-2026 tampoco publica
   su tarifa: su envío sale del costo por zona, marcado como estimado.
-- **Día** cobra por peso: después de optimizar se cotiza el carrito real de Día
-  y, si sale más caro, se vuelve a optimizar (`_requote_dia_shipping`).
+- **Día** cobra por peso: después de resolver se cotiza el carrito real de Día
+  y, si sale más caro, se vuelve a resolver (`_requote_dia_shipping`). Vale
+  igual para la comparación y para el reparto.
 
 Es **fail-open**: si un endpoint falla, la tienda compite con el costo por zona.
 Sólo un "no llegamos" explícito la excluye.
@@ -208,6 +218,7 @@ FastAPI. Carga el modelo de embeddings una vez, al arrancar.
 | `GET /deals` | límite, membresías, sección | los mayores descuentos del día |
 | `GET /logistics/{tienda}/coverage` | coordenadas | si esa tienda llega |
 | `POST /price-preview` | ítems + membresías | precio por tienda a esa cantidad |
+| `POST /compare` | carrito, dirección, tarjetas, membresías, tiendas deshabilitadas, reemplazos elegidos | el carrito en cada tienda, la más barata completa y, si conviene, la oferta de dividir |
 | `POST /optimize` | carrito, dirección, tarjetas, membresías, tiendas deshabilitadas, días para comprar, tope de tiendas | el reparto óptimo, o 400 con el motivo |
 
 **Listados** (`/search`, `/category`): devuelven una página de 48
@@ -223,7 +234,42 @@ Calibrado contra el catálogo real: más bonus empieza a ordenar por cantidad de
 tiendas en vez de por relevancia. Hay un modo híbrido (léxico + denso, por
 Reciprocal Rank Fusion) apagado hasta medirlo (issue #24).
 
-### 3.6 Optimización (`src/flattener.py`, `src/optimizer.py`)
+### 3.6 Comparación por tienda (`src/store_comparison.py`)
+
+El flujo principal (`POST /compare`). Por cada tienda habilitada y que llega,
+cada línea del carrito es `igual` (la vende), `reemplazo` o `falta`.
+
+- **Reemplazar es obligatorio**: un total sin lo que falta premiaría a la
+  tienda que menos tiene. El reemplazo por defecto es el **más parecido** (por
+  distancia de embedding), nunca el más barato, que también favorecería a la
+  tienda que más reemplaza. Sale de la misma góndola, a la cantidad
+  equivalente, y tiene que compartir los atributos de la góndola
+  (`src/attributes.py`: una leche reducida en lactosa no se reemplaza por una
+  chocolatada; sin TACC y vegano salen de los flags dietarios). El sabor es
+  libre a propósito. Viajan hasta tres alternativas más, y el usuario puede
+  elegir otra o ninguna (`replacement_choices`).
+- **Lo que queda en `falta` suma lo que cuesta en la tienda más cara que lo
+  tiene** (`missing_cost`, `comparable_total`): lo va a tener que comprar en
+  otro lado. Sin eso, en carritos reales donde ninguna tienda tenía todo, la
+  que más faltantes tenía salía la más barata.
+- **El total sale de `optimize_cart` con esa tienda sola** (mínimo de compra 0,
+  para mostrar el precio aunque no llegue, junto con lo que le falta): la misma
+  aritmética que el reparto, así el ahorro de dividir compara lo mismo.
+- **`best_day`**: el mismo carrito el día más barato de los próximos siete,
+  sólo si es estrictamente más barato que hoy. Entre días sólo cambian los
+  descuentos bancarios.
+- **`split_offer`** corre el pipeline de `/optimize` (3.7) y se ofrece sólo si
+  ahorra lo suficiente frente a `cheapest`, la tienda completa más barata
+  (`SPLIT_MIN_SAVING`, `SPLIT_MIN_SAVING_PCT`), o siempre si ninguna está
+  completa.
+
+`python -m src.scripts.medir_reemplazos` lista los reemplazos por defecto de
+cada góndola para revisarlos a mano; uno malo se vuelve primero un par en
+`tests/test_attributes.py`.
+
+### 3.7 Reparto (`src/flattener.py`, `src/optimizer.py`)
+
+La vista opcional detrás del cartel de dividir (`POST /optimize`).
 
 1. **Aplanar** (`flatten_cart_prices`): para cada producto y tienda, el costo
    neto más barato a esa cantidad, con todas las promos que el usuario puede
@@ -239,18 +285,22 @@ Reciprocal Rank Fusion) apagado hasta medirlo (issue #24).
    Cada producto en una tienda sin carrito armado (Coto) suma $5 a lo que se
    minimiza, nunca al total informado: un casi-empate se va a otro súper,
    porque en Coto cada producto se agrega a mano.
+3. **Días de compra** (`purchase_days`): resuelve con las promos de hoy y con
+   las de toda la semana; la semana gana sólo si es más barata, y cada tienda
+   dice qué día le conviene.
 
 Con el reparto vienen: el ahorro contra el promedio de las otras tiendas
 (`price_savings`, informativo, no comparable con el total), el costo de comprar
-en menos tiendas (`fewer_stores_options`), reemplazos más baratos
-(`suggestions`) y el cierre de tienda (3.7). Los candidatos para reemplazos y
+en menos tiendas (`fewer_stores_options`, que es donde el usuario limita a
+cuántas ir), reemplazos más baratos (`suggestions`) y el cierre de tienda
+(3.8). Los candidatos para reemplazos y
 cierre salen de una sola consulta (`CROSS JOIN LATERAL`), no de una por
 producto.
 
 Un carrito inviable devuelve 400 con la causa real: si un producto sólo lo vende
 una tienda excluida, el mensaje lo dice, en vez de pedir "agregá más productos".
 
-### 3.7 Cierre de tienda (`src/strategic_swaps.py`)
+### 3.8 Cierre de tienda (`src/strategic_swaps.py`)
 
 El solver es óptimo, pero no puede cambiar el carrito. Si un producto barato
 sólo está en Carrefour, abre esa tienda y su mínimo arrastra el resto del
@@ -262,7 +312,7 @@ productos exclusivos se salta: cerrarla ya era una opción que el solver evaluó
 **Salida:** `strategic_swaps`, casi siempre vacía: "cambiá X por Y, sacá Z y
 ahorrás $N".
 
-### 3.8 Descuentos bancarios (`src/promotions/`, `src/bank_promos.py`)
+### 3.9 Descuentos bancarios (`src/promotions/`, `src/bank_promos.py`)
 
 Un pipeline aparte, bajo demanda, que lee los descuentos por tarjeta o
 billetera de cada cadena y los guarda en `src/scrapers/bank_promos.json`, no en
@@ -278,7 +328,7 @@ solver. Lo que no se puede representar se descarta: promos sólo en locales, en
 productos seleccionados o con productos excluidos ("NO INCLUYE CARNES,
 LECHES…"), porque aplicarlas al carrito entero cotizaría de menos.
 
-### 3.9 Analítica (`src/analytics.py`)
+### 3.10 Analítica (`src/analytics.py`)
 
 Cada `/optimize`, exitoso o inviable, manda un evento `cart_optimized` al
 **SmartCart Performance Analyzer** (otro repo, otro servicio de Cloud Run, con su
@@ -290,7 +340,10 @@ de 2 s y sólo loguea si falla. Por eso el caso inviable responde con
 background cuando el endpoint lanza, y se perdería justo el evento de "carrito
 inviable".
 
-### 3.10 Orquestación (`src/scripts/orchestrator.py`)
+`/compare` todavía no emite eventos: `cart_optimized` sólo sale si el usuario
+abre la vista de dividir.
+
+### 3.11 Orquestación (`src/scripts/orchestrator.py`)
 
 Envuelve el barrido de `run_scrapers.py` con lo que hace falta para correr sin
 supervisión: logs a archivo con la fecha en el nombre, una fila de telemetría
@@ -309,15 +362,19 @@ El recorrido del usuario:
 1. **Dirección** (`LocationModal.jsx`): geocodifica con Nominatim y deja
    seguir sin dirección si Nominatim está caído. Después pregunta las
    membresías, porque cambian los precios de la grilla desde el primer producto.
-2. **Carrito**: por búsqueda, el mega-menú, el historial o el carrito de
-   ejemplo. Guarda sólo `{unified_id: {name, quantity}}`; precio e imagen se
+2. **Carrito**: por búsqueda, el mega-menú o el historial. Guarda sólo `{unified_id: {name, quantity}}`; precio e imagen se
    piden al catálogo del día (`POST /products/by-ids`).
 3. **Perfil** (`ProfileContext.jsx`): tarjetas, membresías y dirección. La zona
    de envío se deriva de la dirección, nunca se pregunta.
-4. **Optimizar** (`/carrito`): el reparto por tienda, el ahorro, los avisos de
-   cobertura y las sugerencias.
+4. **Comparar** (`/carrito`, `StoreComparison.jsx`): una fila por tienda con
+   tres datos (precio hoy, precio el mejor día, cuántos productos tiene tal
+   cual), ordenable por precio o por fidelidad. El desplegable tiene los
+   reemplazos para elegir, lo que no tiene, el desglose y el botón de compra:
+   carrito armado por URL en las VTEX, una lista de links en Coto.
+5. **Dividir** (opcional): el cartel debajo de las filas abre el reparto, con
+   el ahorro, la opción de ir a menos tiendas y las sugerencias.
 
-Cada optimización exitosa se guarda en el historial (`localStorage`). Dentro de
+Cada comparación o reparto exitoso se guarda en el historial (`localStorage`). Dentro de
 30 minutos reemplaza a la anterior, para no partir una compra en varias.
 
 ## 5. Tests
@@ -337,7 +394,7 @@ El backend se importa siempre como `src.<módulo>` (`pythonpath = .` en
 | componente | dónde | por qué |
 |---|---|---|
 | Base | Neon, `aws-us-east-1` | escala a cero; el catálogo es derivado, así que no necesita backup |
-| API | Cloud Run, `us-east1` | 413 MB de pico entran en el free tier; misma región que la base porque `/optimize` hace ~10 consultas en fila |
+| API | Cloud Run, `us-east1` | 413 MB de pico entran en el free tier; misma región que la base porque `/compare` y `/optimize` hacen ~10 consultas en fila |
 | Frontend | Vercel | se despliega en segundos, sin reconstruir la imagen de la API (~10 min con torch) |
 | Barrido | GitHub Actions | sin costo |
 
