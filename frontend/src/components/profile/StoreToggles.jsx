@@ -62,7 +62,7 @@ export function StoreToggles({ className = "" }) {
           </div>
         );
       })}
-      <p className="text-xs text-ink-muted">Los que desmarques no se usan al optimizar ni aparecen en los precios.</p>
+      <p className="text-xs text-ink-muted">Los que desmarques no se usan al comparar ni aparecen en los precios.</p>
     </fieldset>
   );
 }
