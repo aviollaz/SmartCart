@@ -2,11 +2,13 @@
 
 **Live demo: [smart-cart-rouge.vercel.app](https://smart-cart-rouge.vercel.app)**
 
-SmartCart finds the cheapest way to buy a grocery list in Argentina. Every night it
-scrapes **Coto, Día, Carrefour, Vea, ChangoMás and Jumbo**, unifies their catalogs by barcode (EAN),
-and a constraint solver (OR-Tools CP-SAT) splits the cart across the chains,
-counting promotions, bank discounts, delivery costs and each store's minimum
-purchase.
+SmartCart tells you what your whole grocery cart costs at each supermarket in
+Argentina. Every night it scrapes **Coto, Día, Carrefour, Vea, ChangoMás and Jumbo**
+and unifies their catalogs by barcode (EAN). For a cart, it prices every chain
+with promotions, bank discounts and delivery, swapping what a chain doesn't sell
+for its closest equivalent there. When splitting the cart across chains saves
+enough, a constraint solver (OR-Tools CP-SAT) offers the cheapest split, counting
+each store's minimum purchase.
 
 **⚠️ While scraping, it uncovered a card skimmer in Jumbo, Disco and Vea's online stores. You can read about it [here](https://www.brodersendarknews.com/p/disco-jumbo-y-vea-un-estudiante-de)**
 
@@ -19,7 +21,7 @@ purchase.
 
 <p align="center">
   <img src="docs/demo.gif" width="800" alt="SmartCart demo: browsing a category, adding products, reviewing the cart and getting the cheapest split across three supermarkets">
-  <br><sub>Browse or search, build the cart, and get the cheapest split across chains, with the savings and a buy button per store.</sub>
+  <br><sub>Browse or search, build the cart, and see what it costs at each chain (recorded before the per-store comparison became the main view).</sub>
 </p>
 
 ## Architecture
@@ -32,7 +34,7 @@ flowchart LR
     end
     U --> DB[(Postgres + pgvector<br/>Neon)]
     E --> DB
-    DB <--> API[FastAPI · Cloud Run<br/>/search · /optimize]
+    DB <--> API[FastAPI · Cloud Run<br/>/search · /compare · /optimize]
     API --> L[Delivery coverage<br/>and cost per store]
     API --> O[CP-SAT solver<br/>OR-Tools]
     FE[React · Vercel] <--> API
@@ -42,14 +44,22 @@ flowchart LR
 ## How it works
 
 1. **Scraping.** Each chain's internal API: a REST BFF at Coto, VTEX GraphQL at
-   the other three. Every chain sweeps the same shelves, because prices are only
+   the other five. Every chain sweeps the same shelves, because prices are only
    comparable over the same aisle.
 2. **Unification.** The EAN is the identity (`prod_<ean>`): one row per product,
    one offer per chain.
 3. **Search.** Products are embedded with `all-MiniLM-L6-v2` and queried through
    pgvector, so "gaseosa cola" finds Coca-Cola.
-4. **Optimization.** CP-SAT minimizes subtotal + delivery − bank discount, with
-   each store's minimum purchase as a hard constraint.
+4. **Comparison.** The whole cart at each chain. A product a chain doesn't sell
+   is replaced by the most similar one on the same shelf that shares its
+   attributes (lactose-free stays lactose-free); with no acceptable replacement,
+   it is priced at the most expensive other chain, so the chain missing the most
+   never looks cheapest. Bank discounts vary by weekday, so each chain also
+   reports its cheapest day of the week.
+5. **Split (opt-in).** CP-SAT minimizes subtotal + delivery − bank discount, with
+   each store's minimum purchase as a hard constraint. It is only offered when it
+   saves a lot against the cheapest complete chain: every extra store is another
+   checkout.
 
 ## Tech stack
 
@@ -90,4 +100,4 @@ pytest                     # everything; needs Postgres populated and downloads 
 - [`docs/operacion.md`](docs/operacion.md): where it runs, how to deploy, which limits to watch.
 - [Issues](https://github.com/aviollaz/SmartCart/issues): pending work and known risks.
 - [SmartCart Performance Analyzer](https://github.com/aviollaz/SmartCart-Performance-Analyzer):
-  the analytics service that receives one event per optimized cart and feeds the Power BI KPIs.
+  the analytics service that receives one event per optimized split and feeds the Power BI KPIs.
