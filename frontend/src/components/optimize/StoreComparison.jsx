@@ -136,7 +136,7 @@ function StoreCompareRow({ store, names, onChooseReplacement }) {
           {toSwap.length > 0 && (
             <section>
               <p className="font-semibold text-ink">Productos a cambiar ({toSwap.length})</p>
-              <ul className="mt-2 space-y-2">
+              <ul className="mt-2 space-y-3">
                 {toSwap.map((line) => (
                   <SwapLine
                     key={line.unified_id}
@@ -152,9 +152,9 @@ function StoreCompareRow({ store, names, onChooseReplacement }) {
           {noSwap.length > 0 && (
             <section>
               <p className="font-semibold text-state-warning">Sin reemplazo ({noSwap.length})</p>
-              <ul className="mt-2 space-y-1">
+              <ul className="mt-2 divide-y divide-line">
                 {noSwap.map((line) => (
-                  <li key={line.unified_id} className="truncate text-ink" title={name(line.unified_id)}>
+                  <li key={line.unified_id} className="truncate py-1.5 text-ink" title={name(line.unified_id)}>
                     {name(line.unified_id)} <span className="text-ink-muted">x{line.quantity}</span>
                   </li>
                 ))}
@@ -242,25 +242,43 @@ function PriceBreakdown({ store }) {
   );
 }
 
+/** El original arriba con su precio más barato en otro súper, el reemplazo
+ * elegido abajo y la diferencia en color, para comparar de un vistazo. */
 function SwapLine({ line, name, onChoose }) {
+  const diff =
+    line.replacement && line.original_cost != null ? line.replacement.total_cost - line.original_cost : null;
   return (
-    <li>
-      <span className="flex items-center gap-1 truncate text-ink-muted" title={name(line.unified_id)}>
-        {name(line.unified_id)}
-        <ArrowRight size={12} className="shrink-0" />
-      </span>
-      <select
-        value={line.replacement?.unified_id ?? ""}
-        onChange={(event) => onChoose(event.target.value)}
-        className="mt-0.5 w-full truncate rounded border border-line bg-surface px-2 py-1 text-sm text-ink"
-      >
-        {line.alternatives.map((option) => (
-          <option key={option.unified_id} value={option.unified_id}>
-            {option.name} x{option.quantity} · {formatPrice(option.total_cost)}
-          </option>
-        ))}
-        <option value="">Ninguno (queda fuera del precio)</option>
-      </select>
+    <li className="rounded-md border border-line bg-surface-muted p-2">
+      <div className="flex items-center justify-between gap-2 text-ink-muted">
+        <span className="flex min-w-0 items-center gap-1" title={name(line.unified_id)}>
+          <span className="truncate">
+            {name(line.unified_id)} x{line.quantity}
+          </span>
+          <ArrowRight size={12} className="shrink-0" />
+        </span>
+        <span className="shrink-0">{line.original_cost != null ? formatPrice(line.original_cost) : ""}</span>
+      </div>
+      <div className="mt-1 flex items-center gap-2">
+        <select
+          value={line.replacement?.unified_id ?? ""}
+          onChange={(event) => onChoose(event.target.value)}
+          className="min-w-0 flex-1 truncate rounded border border-line bg-surface px-2 py-1 text-sm text-ink"
+        >
+          {line.alternatives.map((option) => (
+            <option key={option.unified_id} value={option.unified_id}>
+              {option.name} x{option.quantity} · {formatPrice(option.total_cost)}
+            </option>
+          ))}
+          <option value="">Ninguno (queda fuera del precio)</option>
+        </select>
+        <span
+          className={`w-24 shrink-0 text-right text-sm font-semibold ${
+            diff > 0 ? "text-state-warning" : diff < 0 ? "text-state-success" : "text-ink-muted"
+          }`}
+        >
+          {diff != null && `${diff > 0 ? "+" : diff < 0 ? "-" : ""}${formatPrice(Math.abs(diff))}`}
+        </span>
+      </div>
     </li>
   );
 }
