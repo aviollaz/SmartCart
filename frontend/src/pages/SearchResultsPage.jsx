@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
-import { useParams, useSearchParams } from "react-router-dom";
+import { Link, useParams, useSearchParams } from "react-router-dom";
 import { searchProducts, getProductsByShelf } from "../api/products";
 import { useProductFilters } from "../hooks/useProductFilters";
 import { useShelves } from "../hooks/useShelves";
@@ -17,6 +17,8 @@ export function SearchResultsPage() {
   const { shelf } = useParams();
   const [searchParams] = useSearchParams();
   const query = searchParams.get("q");
+  // "Buscar en todas las góndolas": apaga la detección de góndola de la búsqueda.
+  const allShelves = searchParams.get("todas") === "1";
   const [dietary, setDietary] = useState(NO_DIETARY_FILTERS);
 
   const toggleDietary = useCallback((key) => {
@@ -31,24 +33,29 @@ export function SearchResultsPage() {
   const mode = shelf ? "shelf" : "search";
   return (
     <ResultsView
-      key={`${mode}:${shelf || query}:${dietary.glutenFree}:${dietary.vegan}`}
+      key={`${mode}:${shelf || query}:${allShelves}:${dietary.glutenFree}:${dietary.vegan}`}
       mode={mode}
       shelf={shelf}
       query={query}
+      allShelves={allShelves}
       dietary={dietary}
       onToggleDietary={toggleDietary}
     />
   );
 }
 
-function ResultsView({ mode, shelf, query, dietary, onToggleDietary }) {
+function ResultsView({ mode, shelf, query, allShelves, dietary, onToggleDietary }) {
   const { labelBySlug, shelves } = useShelves();
+  const [results, setResults] = useState(null);
   // Las góndolas donde los filtros dietarios no dicen nada (src/shelves.py). Ahí
   // tampoco se mandan: el estado dietario viene de arriba y sobrevive al cambio
   // de góndola, y un "sin TACC" tildado en Almacén vaciaría Carnes sin verse.
-  const showDietary = mode !== "shelf" || shelves.find((s) => s.slug === shelf)?.dietary_filters !== false;
+  // Una búsqueda que nombró una de esas góndolas ("asado") cuenta igual.
+  const showDietary =
+    mode === "shelf"
+      ? shelves.find((s) => s.slug === shelf)?.dietary_filters !== false
+      : results?.shelf?.dietary_filters !== false;
   const activeDietary = showDietary ? dietary : NO_DIETARY_FILTERS;
-  const [results, setResults] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const { memberships } = useProfile();
@@ -80,7 +87,7 @@ function ResultsView({ mode, shelf, query, dietary, onToggleDietary }) {
     const request =
       mode === "shelf"
         ? getProductsByShelf(term, listing, activeDietary, membershipList)
-        : searchProducts(term, listing, activeDietary, membershipList);
+        : searchProducts(term, listing, activeDietary, membershipList, allShelves);
     request
       .then((data) => {
         if (!cancelled) setResults(data);
@@ -95,7 +102,7 @@ function ResultsView({ mode, shelf, query, dietary, onToggleDietary }) {
     return () => {
       cancelled = true;
     };
-  }, [mode, term, activeDietary, membershipsKey, listingKey]);
+  }, [mode, term, allShelves, activeDietary, membershipsKey, listingKey]);
 
   function goToPage(page) {
     filters.setPage(page);
@@ -123,6 +130,19 @@ function ResultsView({ mode, shelf, query, dietary, onToggleDietary }) {
   return (
     <div className="mx-auto w-full max-w-7xl px-4 py-6">
       <h1 className="mb-4 font-display text-xl font-bold text-ink">{title}</h1>
+      {/* La búsqueda se acotó a la góndola que nombró ("vino tinto" → Vinos):
+          si la lectura fue mala, un click la deshace. */}
+      {mode === "search" && results?.shelf && (
+        <p className="-mt-2 mb-4 text-sm text-ink-muted">
+          En {results.shelf.label}.{" "}
+          <Link
+            to={`/buscar?q=${encodeURIComponent(query)}&todas=1`}
+            className="font-semibold text-brand-violet-700 hover:underline"
+          >
+            Buscar en todas las góndolas
+          </Link>
+        </p>
+      )}
 
       {excludedLabel && (
         <p className="mb-4 rounded-md border border-state-warning/40 bg-state-warning/10 px-3 py-2 text-sm text-ink-muted">

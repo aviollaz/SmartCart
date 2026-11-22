@@ -29,7 +29,12 @@ function emptyStoreFilter() {
 export function useProductFilters(page) {
   const { unavailableStores, excludedStores, hiddenStores } = useProfile();
   const [selectedBrands, setSelectedBrands] = useState(() => new Set());
-  const [selectedTypes, setSelectedTypes] = useState(() => new Set());
+  // null = el usuario no tocó el filtro de tipo: vale lo que aplicó el backend
+  // (`applied_types`, los tipos que nombró la búsqueda, "vino tinto"). Al
+  // tocarlo pasa a ser suyo y se apaga la detección (`autoTypes`), si no
+  // destildar "Tinto" lo volvería a aplicar.
+  const [touchedTypes, setSelectedTypes] = useState(null);
+  const selectedTypes = touchedTypes ?? new Set(page?.applied_types || []);
   // null = sin filtro de precio (el usuario no tocó el slider).
   const [priceRange, setPriceRangeState] = useState(null);
   const [storeFilter, setStoreFilter] = useState(emptyStoreFilter);
@@ -57,8 +62,8 @@ export function useProductFilters(page) {
   }
 
   function toggleType(type) {
-    setSelectedTypes((prev) => {
-      const next = new Set(prev);
+    setSelectedTypes(() => {
+      const next = new Set(selectedTypes);
       if (next.has(type)) next.delete(type);
       else next.add(type);
       return next;
@@ -86,7 +91,8 @@ export function useProductFilters(page) {
   const query = {
     page: pageNumber,
     brands: [...selectedBrands].sort(),
-    types: [...selectedTypes].sort(),
+    types: touchedTypes ? [...touchedTypes].sort() : [],
+    autoTypes: touchedTypes === null,
     stores: Object.keys(storeFilter).filter((id) => storeFilter[id]).sort(),
     priceRange,
     sort: sortBy,
@@ -107,6 +113,7 @@ export function useProductFilters(page) {
     selectedBrands,
     toggleBrand,
     typeOptions: page?.types || [],
+    typeLabel: page?.type_label || "Tipo",
     selectedTypes,
     toggleType,
     priceBounds,

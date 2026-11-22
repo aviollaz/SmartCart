@@ -39,11 +39,17 @@ function listingParams(listing, dietary, memberships) {
 
 /**
  * Una página de resultados de búsqueda: `{items, total, page, page_size,
- * brands, price_bounds}`. El universo son los 100 más cercanos a la query.
+ * brands, price_bounds, shelf, applied_types}`. El universo son los 100 más
+ * cercanos a la query, o la góndola entera si la búsqueda la nombra.
  */
-export function searchProducts(query, listing, dietary, memberships) {
+export function searchProducts(query, listing, dietary, memberships, allShelves = false) {
   const params = listingParams(listing, dietary, memberships);
   params.set("q", query);
+  // Si la búsqueda nombra una góndola ("vino tinto") el backend busca ahí y
+  // aplica el tipo; `scope=all` lo apaga, y `auto_types=false` deja sólo los
+  // tipos que eligió el usuario (ver search_products en src/api.py).
+  if (allShelves) params.set("scope", "all");
+  if (listing.autoTypes === false) params.set("auto_types", "false");
   return apiFetch(`/search?${params.toString()}`);
 }
 

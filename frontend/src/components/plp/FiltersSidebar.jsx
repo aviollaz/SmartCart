@@ -15,6 +15,7 @@ export function FiltersSidebar({ filters, dietary, onToggleDietary, showDietary 
     selectedBrands,
     toggleBrand,
     typeOptions,
+    typeLabel,
     selectedTypes,
     toggleType,
     priceBounds,
@@ -48,7 +49,7 @@ export function FiltersSidebar({ filters, dietary, onToggleDietary, showDietary 
         {/* En carnes y frutas/verduras "sin TACC" o "vegano" no dicen nada. */}
         {showDietary && <DietaryFacet dietary={dietary} onToggle={onToggleDietary} />}
         <BrandFacet
-          legend="Tipo de corte"
+          legend={typeLabel}
           brandOptions={typeOptions.map(({ type, count }) => ({ brand: type, count }))}
           selectedBrands={selectedTypes}
           onToggle={toggleType}
