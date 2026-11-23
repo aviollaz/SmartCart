@@ -12,6 +12,7 @@ carrito entre dos supermercados duplica el envío, así que un ahorro chico por
 producto no alcanza para justificarlo.
 """
 import itertools
+import time
 
 import pytest
 
@@ -894,3 +895,96 @@ def test_el_descuento_aplicado_trae_titulo_y_condiciones(fake_prices):
     descuento = result["split"][COTO]["bank_discount"]
     assert (descuento["title"], descuento["conditions"]) == (
         "20% de descuento con MODO", "Tope $25.000 por mes · compra mínima $100.000")
+
+
+
+# --------------------------------------------------------------------------
+# Carritos grandes: seis súper y 76 productos (el carrito de un usuario real,
+# nov 2026). Con la división y el mínimo exactos en el modelo, /compare no
+# contestaba nunca. Los precios salen de una fórmula fija para no escribir 456
+# números; lo que importa es el tamaño y que haya promos con tope y mínimo.
+# --------------------------------------------------------------------------
+
+SEIS_SUPER = ["coto_online", "dia_online", "carrefour_online", "vea_online", "changomas_online", "jumbo_online"]
+PROMOS_GRANDES = [_promo("banco_a", 20, 15000), _promo("banco_b", 25, 10000, minimo=60000), _promo("club", 10, 8000)]
+TARJETAS_GRANDES = ["banco_a", "banco_b", "club"]
+
+
+def _optimizar_carrito_grande(matrix):
+    return optimize_cart(
+        _cart(*matrix), user_cards=TARJETAS_GRANDES, bank_promos={s: PROMOS_GRANDES for s in SEIS_SUPER},
+        min_spend_limits={s: 20000 for s in SEIS_SUPER}, delivery_costs={s: 4000 for s in SEIS_SUPER},
+    )
+
+
+def _carrito_grande_realista():
+    """Cada producto cuesta parecido en todos lados (±10%), como en la realidad."""
+    return {
+        f"prod_{i}": {s: round((1000 + i * 137 % 9000) * (1 + ((i * 7 + k * 13) % 21 - 10) / 100), 2)
+                      for k, s in enumerate(SEIS_SUPER) if (i + k) % 5}
+        for i in range(76)
+    }
+
+
+def _carrito_grande_patologico():
+    """El mismo producto cuesta entre $1.000 y $10.000 según el súper: un
+    problema mucho más combinatorio que cualquier carrito real."""
+    return {
+        f"prod_{i}": {s: 1000 + (i * 37 + k * 53) % 9000 for k, s in enumerate(SEIS_SUPER) if (i + k) % 5}
+        for i in range(76)
+    }
+
+
+# El óptimo de _carrito_grande_realista, demostrado (OPTIMAL) corriendo el
+# solver sin tope de tiempo con 8 workers.
+OPTIMO_CARRITO_GRANDE_REALISTA = 304144.62
+
+
+def test_carrito_grande_contesta_al_llegar_al_tope_de_tiempo(fake_prices, monkeypatch):
+    # preparar
+    monkeypatch.setattr(optimizer_module, "SOLVER_TIME_LIMIT_SECONDS", 2)
+    matrix = _carrito_grande_patologico()
+    fake_prices(matrix)
+
+    # ejecutar
+    inicio = time.perf_counter()
+    result = _optimizar_carrito_grande(matrix)
+    demora = time.perf_counter() - inicio
+
+    # verificar
+    assert result["status"] == "success"
+    assert demora < 3
+
+
+def test_carrito_grande_cortado_por_tiempo_queda_a_menos_de_1_por_ciento_del_optimo(fake_prices, monkeypatch):
+    # preparar
+    monkeypatch.setattr(optimizer_module, "SOLVER_TIME_LIMIT_SECONDS", 2)
+    matrix = _carrito_grande_realista()
+    fake_prices(matrix)
+
+    # ejecutar
+    result = _optimizar_carrito_grande(matrix)
+
+    # verificar
+    assert result["total_spent_net"] <= OPTIMO_CARRITO_GRANDE_REALISTA * 1.01
+
+
+def test_cortado_por_tiempo_informa_el_descuento_real_de_la_promo_elegida(fake_prices, monkeypatch):
+    # preparar: cortado, la variable del descuento puede quedar por debajo de lo
+    # que la promo da; lo informado tiene que ser lo que da de verdad
+    monkeypatch.setattr(optimizer_module, "SOLVER_TIME_LIMIT_SECONDS", 2)
+    matrix = _carrito_grande_patologico()
+    fake_prices(matrix)
+
+    # ejecutar
+    result = _optimizar_carrito_grande(matrix)
+
+    # verificar
+    for tienda in result["split"].values():
+        descuento, esperado = tienda["bank_discount"], 0
+        if descuento is not None:
+            promo = next(p for p in PROMOS_GRANDES if p["card"] == descuento["card"])
+            esperado = min(round(tienda["subtotal_products"] * 100) * promo["discount_pct"] // 100,
+                           promo["cap"] * 100) / 100
+            assert descuento["amount"] == esperado
+        assert tienda["store_total"] == round(tienda["subtotal_products"] + 4000 - esperado, 2)
