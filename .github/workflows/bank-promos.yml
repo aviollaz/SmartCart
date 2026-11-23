@@ -49,12 +49,14 @@ jobs:
             .github/workflows/bank-promos.yml
 
       # Sólo lo que usan los scrapers de promos y sus tests: sin torch ni base.
-      # `-c requirements.txt` fija las versiones a las del proyecto.
+      # Sin `-c requirements.txt`: pip ya no acepta extras (httpx[http2],
+      # psycopg[binary,pool]) en un archivo de constraints, y como
+      # requirements.txt no fija versiones, tampoco aportaba nada.
       - name: Dependencias
         run: |
           sudo apt-get update
           sudo apt-get install -y tesseract-ocr
-          pip install -c requirements.txt "httpx[http2]" playwright pillow pytest python-dotenv
+          pip install "httpx[http2]" playwright pillow pytest python-dotenv
           python -m playwright install --with-deps chromium
 
       # Una tienda que falla conserva su bloque anterior (get_bank_promos), así
