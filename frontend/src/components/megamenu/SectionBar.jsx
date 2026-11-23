@@ -12,8 +12,11 @@ import { MegaMenuPanel } from "./MegaMenuPanel";
  * en todas las páginas, con marco para que se lean como botones.
  *
  * Con mouse, pasar por encima despliega las góndolas; en un touchscreen no hay
- * hover, así que el tap hace lo mismo. Se cierra al salir con el mouse, al
- * tocar afuera, con Escape o al elegir una góndola.
+ * hover, así que el tap abre y un segundo tap en el mismo botón cierra. El hover
+ * filtra `pointerType === "mouse"`: el tap también emite un mouseenter
+ * sintético justo antes del click, que abriría el panel para que el click lo
+ * cerrara. Se cierra al salir con el mouse, al tocar afuera, con Escape o al
+ * elegir una góndola.
  *
  * Siempre una sola fila. Envolver en dos filas rompía el hover: bajar hacia las
  * góndolas de una sección de arriba pasaba por encima de la fila de abajo y
@@ -95,8 +98,10 @@ export function SectionBar() {
                 <button
                   type="button"
                   aria-expanded={isActive}
-                  onMouseEnter={() => setActiveSection(node.section)}
-                  onClick={() => setActiveSection(node.section)}
+                  onPointerEnter={(event) => {
+                    if (event.pointerType === "mouse") setActiveSection(node.section);
+                  }}
+                  onClick={() => setActiveSection(isActive ? null : node.section)}
                   className={`flex items-center gap-1.5 whitespace-nowrap rounded-md border px-2.5 py-2 text-sm font-medium transition-colors ${
                     isActive
                       ? "border-brand-violet-500 bg-brand-violet-100 text-brand-violet-700"
