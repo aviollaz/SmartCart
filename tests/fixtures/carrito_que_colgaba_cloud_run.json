@@ -1,0 +1,548 @@
+{
+ "cart": [
+  {
+   "unified_id": "prod_7790742172105",
+   "quantity": 3
+  },
+  {
+   "unified_id": "prod_7791337007260",
+   "quantity": 4
+  },
+  {
+   "unified_id": "prod_7790742624109",
+   "quantity": 6
+  },
+  {
+   "unified_id": "prod_7790742624901",
+   "quantity": 6
+  },
+  {
+   "unified_id": "prod_7790742625304",
+   "quantity": 6
+  },
+  {
+   "unified_id": "prod_7790742625205",
+   "quantity": 6
+  },
+  {
+   "unified_id": "prod_7790787153664",
+   "quantity": 4
+  },
+  {
+   "unified_id": "prod_7790742625106",
+   "quantity": 5
+  },
+  {
+   "unified_id": "prod_8480017286291",
+   "quantity": 4
+  },
+  {
+   "unified_id": "prod_7798060850019",
+   "quantity": 5
+  },
+  {
+   "unified_id": "prod_7790742566010",
+   "quantity": 6
+  },
+  {
+   "unified_id": "prod_7790742249906",
+   "quantity": 2
+  },
+  {
+   "unified_id": "prod_7798099130045",
+   "quantity": 4
+  },
+  {
+   "unified_id": "prod_7790616000503",
+   "quantity": 3
+  },
+  {
+   "unified_id": "prod_7790616000442",
+   "quantity": 3
+  },
+  {
+   "unified_id": "prod_7790616000473",
+   "quantity": 3
+  },
+  {
+   "unified_id": "prod_7790616080048",
+   "quantity": 3
+  },
+  {
+   "unified_id": "prod_7798158630127",
+   "quantity": 3
+  },
+  {
+   "unified_id": "prod_7891000474372",
+   "quantity": 5
+  },
+  {
+   "unified_id": "prod_7891000473689",
+   "quantity": 5
+  },
+  {
+   "unified_id": "prod_8445291395961",
+   "quantity": 4
+  },
+  {
+   "unified_id": "prod_7790742335500",
+   "quantity": 4
+  },
+  {
+   "unified_id": "prod_7790742358608",
+   "quantity": 4
+  }
+ ],
+ "user_memberships": [
+  "comunidad_coto",
+  "mi_carrefour",
+  "club_la_nacion"
+ ],
+ "user_cards": [
+  "banco_del_sol",
+  "carrefour_banco",
+  "comafi",
+  "coto_tci",
+  "credicoop",
+  "modo",
+  "naranja_x",
+  "personal_pay",
+  "supervielle"
+ ],
+ "flat_prices": {
+  "prod_7790742625205": {
+   "carrefour_online": {
+    "total_cost": 29940.0
+   },
+   "changomas_online": {
+    "total_cost": 29994.0
+   },
+   "coto_online": {
+    "total_cost": 22455.0
+   },
+   "dia_online": {
+    "total_cost": 29940.0
+   },
+   "jumbo_online": {
+    "total_cost": 29952.0
+   },
+   "vea_online": {
+    "total_cost": 29940.0
+   }
+  },
+  "prod_7790742358608": {
+   "carrefour_online": {
+    "total_cost": 12800.0
+   },
+   "changomas_online": {
+    "total_cost": 12996.0
+   },
+   "coto_online": {
+    "total_cost": 12976.0
+   },
+   "dia_online": {
+    "total_cost": 9720.0
+   },
+   "jumbo_online": {
+    "total_cost": 14200.0
+   },
+   "vea_online": {
+    "total_cost": 13560.0
+   }
+  },
+  "prod_7790742172105": {
+   "carrefour_online": {
+    "total_cost": 15000.0
+   },
+   "coto_online": {
+    "total_cost": 15099.0
+   },
+   "dia_online": {
+    "total_cost": 11310.0
+   },
+   "jumbo_online": {
+    "total_cost": 15900.0
+   },
+   "vea_online": {
+    "total_cost": 15570.0
+   }
+  },
+  "prod_7791337007260": {
+   "carrefour_online": {
+    "total_cost": 11940.0
+   },
+   "changomas_online": {
+    "total_cost": 11956.0
+   },
+   "coto_online": {
+    "total_cost": 7761.0
+   },
+   "dia_online": {
+    "total_cost": 11940.0
+   },
+   "jumbo_online": {
+    "total_cost": 12600.0
+   },
+   "vea_online": {
+    "total_cost": 11960.0
+   }
+  },
+  "prod_7891000473689": {
+   "carrefour_online": {
+    "total_cost": 27515.05
+   },
+   "changomas_online": {
+    "total_cost": 19281.5
+   },
+   "coto_online": {
+    "total_cost": 27525.0
+   },
+   "dia_online": {
+    "total_cost": 27500.0
+   },
+   "jumbo_online": {
+    "total_cost": 29500.0
+   },
+   "vea_online": {
+    "total_cost": 28450.0
+   }
+  },
+  "prod_7891000474372": {
+   "carrefour_online": {
+    "total_cost": 20387.65
+   },
+   "changomas_online": {
+    "total_cost": 14276.5
+   },
+   "coto_online": {
+    "total_cost": 20395.0
+   },
+   "dia_online": {
+    "total_cost": 20350.0
+   },
+   "jumbo_online": {
+    "total_cost": 22250.0
+   },
+   "vea_online": {
+    "total_cost": 21450.0
+   }
+  },
+  "prod_7790616000442": {
+   "carrefour_online": {
+    "total_cost": 21207.0
+   },
+   "changomas_online": {
+    "total_cost": 21897.0
+   },
+   "coto_online": {
+    "total_cost": 22497.0
+   },
+   "dia_online": {
+    "total_cost": 21207.0
+   }
+  },
+  "prod_7790616000473": {
+   "carrefour_online": {
+    "total_cost": 22407.0
+   },
+   "coto_online": {
+    "total_cost": 23097.0
+   },
+   "dia_online": {
+    "total_cost": 22407.0
+   }
+  },
+  "prod_7790616000503": {
+   "carrefour_online": {
+    "total_cost": 25947.0
+   },
+   "changomas_online": {
+    "total_cost": 27207.0
+   },
+   "coto_online": {
+    "total_cost": 26997.0
+   },
+   "dia_online": {
+    "total_cost": 25947.0
+   }
+  },
+  "prod_7790616080048": {
+   "carrefour_online": {
+    "total_cost": 31017.0
+   },
+   "changomas_online": {
+    "total_cost": 31377.0
+   },
+   "coto_online": {
+    "total_cost": 30897.0
+   }
+  },
+  "prod_8445291395961": {
+   "carrefour_online": {
+    "total_cost": 4380.0
+   },
+   "changomas_online": {
+    "total_cost": 8956.0
+   },
+   "coto_online": {
+    "total_cost": 4380.0
+   },
+   "dia_online": {
+    "total_cost": 8760.0
+   },
+   "jumbo_online": {
+    "total_cost": 9400.0
+   },
+   "vea_online": {
+    "total_cost": 7960.0
+   }
+  },
+  "prod_7790742249906": {
+   "carrefour_online": {
+    "total_cost": 28558.0
+   },
+   "changomas_online": {
+    "total_cost": 28558.0
+   },
+   "coto_online": {
+    "total_cost": 28558.0
+   },
+   "jumbo_online": {
+    "total_cost": 28600.0
+   },
+   "vea_online": {
+    "total_cost": 28580.0
+   }
+  },
+  "prod_7798099130045": {
+   "carrefour_online": {
+    "total_cost": 22780.0
+   },
+   "changomas_online": {
+    "total_cost": 23996.0
+   },
+   "coto_online": {
+    "total_cost": 21940.0
+   },
+   "jumbo_online": {
+    "total_cost": 26800.0
+   },
+   "vea_online": {
+    "total_cost": 25960.0
+   }
+  },
+  "prod_8480017286291": {
+   "dia_online": {
+    "total_cost": 7860.0
+   }
+  },
+  "prod_7790742624109": {
+   "carrefour_online": {
+    "total_cost": 20640.0
+   },
+   "changomas_online": {
+    "total_cost": 20694.0
+   },
+   "coto_online": {
+    "total_cost": 20640.0
+   },
+   "dia_online": {
+    "total_cost": 20640.0
+   },
+   "jumbo_online": {
+    "total_cost": 22200.0
+   },
+   "vea_online": {
+    "total_cost": 20940.0
+   }
+  },
+  "prod_7790742624901": {
+   "carrefour_online": {
+    "total_cost": 29940.0
+   },
+   "changomas_online": {
+    "total_cost": 29994.0
+   },
+   "coto_online": {
+    "total_cost": 29940.0
+   },
+   "dia_online": {
+    "total_cost": 29940.0
+   },
+   "jumbo_online": {
+    "total_cost": 32700.0
+   },
+   "vea_online": {
+    "total_cost": 31140.0
+   }
+  },
+  "prod_7790742625106": {
+   "carrefour_online": {
+    "total_cost": 16375.0
+   },
+   "coto_online": {
+    "total_cost": 13100.0
+   },
+   "dia_online": {
+    "total_cost": 16375.0
+   },
+   "jumbo_online": {
+    "total_cost": 17500.0
+   },
+   "vea_online": {
+    "total_cost": 16950.0
+   }
+  },
+  "prod_7790787153664": {
+   "carrefour_online": {
+    "total_cost": 16000.0
+   },
+   "changomas_online": {
+    "total_cost": 16156.0
+   },
+   "coto_online": {
+    "total_cost": 16140.0
+   },
+   "dia_online": {
+    "total_cost": 12200.0
+   },
+   "jumbo_online": {
+    "total_cost": 16600.0
+   },
+   "vea_online": {
+    "total_cost": 15560.0
+   }
+  },
+  "prod_7798158630127": {
+   "dia_online": {
+    "total_cost": 12150.0
+   },
+   "jumbo_online": {
+    "total_cost": 13770.0
+   },
+   "vea_online": {
+    "total_cost": 13770.0
+   }
+  },
+  "prod_7790742625304": {
+   "carrefour_online": {
+    "total_cost": 25050.0
+   },
+   "changomas_online": {
+    "total_cost": 25074.0
+   },
+   "coto_online": {
+    "total_cost": 25050.0
+   },
+   "dia_online": {
+    "total_cost": 25050.0
+   },
+   "jumbo_online": {
+    "total_cost": 27000.0
+   },
+   "vea_online": {
+    "total_cost": 25140.0
+   }
+  },
+  "prod_7790742335500": {
+   "carrefour_online": {
+    "total_cost": 12800.0
+   },
+   "changomas_online": {
+    "total_cost": 12756.0
+   },
+   "coto_online": {
+    "total_cost": 12728.0
+   },
+   "dia_online": {
+    "total_cost": 12720.0
+   },
+   "jumbo_online": {
+    "total_cost": 13600.0
+   },
+   "vea_online": {
+    "total_cost": 13160.0
+   }
+  },
+  "prod_7790742566010": {
+   "jumbo_online": {
+    "total_cost": 8400.0
+   }
+  },
+  "prod_7798060850019": {
+   "carrefour_online": {
+    "total_cost": 13200.0
+   },
+   "changomas_online": {
+    "total_cost": 12895.0
+   },
+   "coto_online": {
+    "total_cost": 8450.0
+   },
+   "jumbo_online": {
+    "total_cost": 13250.0
+   },
+   "vea_online": {
+    "total_cost": 12450.0
+   }
+  }
+ },
+ "bank_promos": {
+  "coto_online": [
+   {
+    "card": "ciudad",
+    "discount_pct": 25,
+    "cap": 30000,
+    "description": "25% de descuento con Ciudad (Tope $30.000)",
+    "title": "25% de descuento con Ciudad",
+    "conditions": "Tope $30.000",
+    "min_purchase": 0,
+    "is_membership": false
+   },
+   {
+    "card": "icbc",
+    "discount_pct": 20,
+    "cap": 15000,
+    "description": "20% de descuento con ICBC (Tope $15.000)",
+    "title": "20% de descuento con ICBC",
+    "conditions": "Tope $15.000 por compra",
+    "min_purchase": 0,
+    "is_membership": false
+   }
+  ],
+  "dia_online": [
+   {
+    "card": "columbia",
+    "discount_pct": 20,
+    "cap": 10000,
+    "description": "20% de ahorro con Columbia (Tope $10.000)",
+    "title": "20% de descuento con Columbia",
+    "conditions": "Tope $10.000 por compra",
+    "min_purchase": 0,
+    "is_membership": false
+   }
+  ],
+  "carrefour_online": [
+   {
+    "card": "club_la_nacion",
+    "discount_pct": 15,
+    "cap": 100000000,
+    "description": "15% de ahorro con Club La Nación",
+    "title": "15% de descuento con Club La Nación",
+    "conditions": null,
+    "min_purchase": 0,
+    "is_membership": true
+   },
+   {
+    "card": "carrefour_banco",
+    "discount_pct": 15,
+    "cap": 100000000,
+    "description": "15% de ahorro con Carrefour Banco",
+    "title": "15% de descuento con Carrefour Banco",
+    "conditions": null,
+    "min_purchase": 0,
+    "is_membership": false
+   }
+  ]
+ }
+}

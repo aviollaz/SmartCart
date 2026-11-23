@@ -193,7 +193,14 @@ def optimize_cart(cart_items, user_memberships=None, user_cards=None, min_spend_
     model.Minimize(sum(store_final_costs_cents.values())
                    + sum(margen * x for (i, j), x in compra.items() if j in MANUAL_CHECKOUT_STORES))
     solver = cp_model.CpSolver()
-    
+    # Por defecto CP-SAT usa un worker por núcleo, y Cloud Run tiene uno: con un
+    # solo worker algunos carritos con descuento bancario no terminaban nunca
+    # (CPU al 99% y memoria creciendo hasta matar la instancia, nov-2026). Ocho
+    # workers resuelven esos mismos carritos en décimas aun compartiendo un
+    # núcleo. El tope de tiempo es la red: pasado, vale la mejor solución hallada.
+    solver.parameters.num_workers = 8
+    solver.parameters.max_time_in_seconds = 10.0
+
     if solver.Solve(model) in [cp_model.OPTIMAL, cp_model.FEASIBLE]:
         assigned_cart = {}
         total_spent = 0.0
