@@ -16,7 +16,7 @@ each store's minimum purchase.
 |---|---|
 | Chains | Coto, Día, Carrefour, Vea, ChangoMás, Jumbo — the same 85 shelves in each (79 to 85 depending on the chain) |
 | Refresh | Nightly, GitHub Actions |
-| Tests | 540+ (pytest) |
+| Tests | 2,200+ (pytest) |
 | Infra | API on Cloud Run, Postgres + pgvector on Neon, frontend on Vercel — all free tiers |
 
 <p align="center">
